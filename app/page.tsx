@@ -120,7 +120,7 @@ function Hero() {
                 Impayés, litiges, démarches :
               </span>
               <span className="mt-2 block text-4xl leading-[1.06] sm:text-5xl lg:text-6xl">
-                l’IA qui s’occupe de vos dossiers.
+                l’IA qui s’occupe de vos problèmes.
               </span>
             </h1>
           </Reveal>
@@ -431,22 +431,42 @@ function Faq() {
 }
 
 function FinalCta() {
+  const garanties = [
+    "Premier dossier 39 €, remboursé si aucune relance n’est générée",
+    "Sans abonnement, sans engagement",
+    "Données hébergées en Europe, exportables à tout moment",
+  ];
   return (
-    <section className="relative overflow-hidden bg-brand text-brand-foreground">
-      <div aria-hidden className="absolute -left-24 -top-32 size-[24rem] rounded-full bg-white/10 blur-[100px]" />
-      <div className="relative mx-auto flex max-w-6xl flex-col items-start gap-8 px-6 py-24 lg:flex-row lg:items-center lg:justify-between">
+    <section className="relative overflow-hidden bg-ink text-ink-foreground">
+      <div aria-hidden className="absolute inset-0 bg-hero-grid [mask-image:radial-gradient(ellipse_70%_80%_at_50%_100%,black,transparent)]" />
+      <div aria-hidden className="absolute -bottom-56 left-1/2 size-[36rem] -translate-x-1/2 rounded-full bg-brand/25 blur-[150px]" />
+
+      <div className="relative mx-auto flex max-w-3xl flex-col items-center px-6 pb-28 pt-24 text-center lg:pt-32">
         <Reveal>
-          <h2 className="max-w-xl text-3xl font-bold tracking-tight sm:text-4xl">
-            Votre plus vieux blème a déjà trop attendu.
+          <h2 className="text-4xl font-bold leading-[1.08] tracking-tight sm:text-5xl">
+            Votre plus vieux problème a déjà trop attendu.
           </h2>
-          <p className="mt-3 text-lg opacity-90">
-            Dans 15 minutes, la première relance est partie.
+          <p className="mt-5 text-lg text-ink-muted">
+            Racontez-le maintenant. Dans 15 minutes, la première relance est
+            partie.
           </p>
         </Reveal>
         <Reveal delay={0.15}>
-          <PillCta href="/nouveau" tone="light" className="shrink-0">
-            {CTA_LABEL}
-          </PillCta>
+          <div className="mt-10">
+            <PillCta href="/nouveau" className="text-base">
+              {CTA_LABEL}
+            </PillCta>
+          </div>
+        </Reveal>
+        <Reveal delay={0.25}>
+          <ul className="mt-12 flex flex-col items-center gap-3 text-sm text-ink-muted sm:flex-row sm:gap-8">
+            {garanties.map((g) => (
+              <li key={g} className="flex items-center gap-2">
+                <Check className="size-4 shrink-0 text-brand" />
+                {g}
+              </li>
+            ))}
+          </ul>
         </Reveal>
       </div>
     </section>
@@ -455,26 +475,53 @@ function FinalCta() {
 
 function Footer() {
   return (
-    <footer className="border-t">
-      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-10 text-sm text-muted-foreground md:flex-row md:items-center md:justify-between">
-        <p>
-          <span className="font-semibold text-foreground">BLEME</span> · Vos
-          blèmes de pro, pris au sérieux.
-        </p>
-        <nav className="flex flex-wrap gap-x-6 gap-y-2">
-          <a href="#tarifs" className="transition-colors duration-300 hover:text-foreground">
-            Tarifs
-          </a>
-          <a href="#faq" className="transition-colors duration-300 hover:text-foreground">
-            FAQ
-          </a>
-          <Link href="/mentions-legales" className="transition-colors duration-300 hover:text-foreground">
-            Mentions légales
-          </Link>
-          <Link href="/confidentialite" className="transition-colors duration-300 hover:text-foreground">
-            Confidentialité
-          </Link>
-        </nav>
+    <footer className="relative overflow-hidden border-t border-white/10 bg-ink text-ink-foreground">
+      <div className="relative mx-auto max-w-6xl px-6 pt-16">
+        <div className="grid gap-12 pb-16 md:grid-cols-12">
+          <div className="md:col-span-6">
+            <p className="text-lg font-bold tracking-tight">
+              BLEME<span className="text-brand">.</span>
+            </p>
+            <p className="mt-3 max-w-xs text-sm leading-relaxed text-ink-muted">
+              Impayés, litiges, démarches : l’IA qui s’occupe de vos problèmes.
+              Vous validez, ça avance.
+            </p>
+          </div>
+          <nav className="md:col-span-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">
+              Produit
+            </p>
+            <ul className="mt-4 space-y-2.5 text-sm">
+              <li><a href="#comment" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Comment ça marche</a></li>
+              <li><a href="#suivi" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Suivi des dossiers</a></li>
+              <li><a href="#tarifs" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Tarifs</a></li>
+              <li><a href="#faq" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">FAQ</a></li>
+            </ul>
+          </nav>
+          <nav className="md:col-span-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">
+              Compte et légal
+            </p>
+            <ul className="mt-4 space-y-2.5 text-sm">
+              <li><Link href="/login" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Se connecter</Link></li>
+              <li><Link href="/nouveau" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Créer mon premier dossier</Link></li>
+              <li><Link href="/mentions-legales" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Mentions légales</Link></li>
+              <li><Link href="/confidentialite" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Confidentialité</Link></li>
+            </ul>
+          </nav>
+        </div>
+
+        <div className="flex flex-col gap-2 border-t border-white/10 py-6 text-xs text-ink-muted sm:flex-row sm:items-center sm:justify-between">
+          <p>© 2026 BLEME. Vos blèmes de pro, pris au sérieux.</p>
+          <p>BLEME n’est ni un cabinet d’avocats, ni une société de recouvrement.</p>
+        </div>
+
+        {/* Signature typographique */}
+        <div aria-hidden className="pointer-events-none select-none overflow-hidden">
+          <p className="translate-y-[30%] bg-gradient-to-b from-white/10 to-white/0 bg-clip-text text-center text-[23vw] font-bold leading-none tracking-tight text-transparent lg:text-[19rem]">
+            BLEME.
+          </p>
+        </div>
       </div>
     </footer>
   );
