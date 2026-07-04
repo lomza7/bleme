@@ -148,7 +148,7 @@ export function HeroPreview() {
 
       {/* Notification flottante : la relance vient d'être lue */}
       <div
-        className="anim-load absolute -bottom-12 -left-6 hidden w-64 -rotate-2 rounded-2xl border bg-card p-3.5 text-foreground shadow-xl shadow-zinc-950/[0.25] sm:block lg:-left-14"
+        className="anim-load absolute -bottom-14 -left-1 w-64 -rotate-2 rounded-2xl border bg-card p-3.5 text-foreground shadow-xl shadow-zinc-950/[0.25] sm:-left-6 lg:-left-14"
         style={{ "--delay": "2.4s" } as React.CSSProperties}
       >
         <div className="flex items-start gap-3">

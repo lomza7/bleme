@@ -89,7 +89,7 @@ function Nav() {
         <div className="flex items-center gap-1.5">
           <Link
             href="/login"
-            className="hidden rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition-colors duration-300 hover:text-foreground sm:block"
+            className="rounded-full px-3 py-2 text-sm font-medium text-muted-foreground transition-colors duration-300 hover:text-foreground"
           >
             Se connecter
           </Link>
@@ -97,7 +97,8 @@ function Nav() {
             href="/nouveau"
             className="rounded-full bg-brand px-4 py-2 text-sm font-medium text-brand-foreground transition-all duration-500 ease-fluid hover:bg-brand-strong active:scale-[0.98]"
           >
-            {CTA_LABEL}
+            <span className="sm:hidden">Commencer</span>
+            <span className="hidden sm:inline">{CTA_LABEL}</span>
           </Link>
         </div>
       </div>
