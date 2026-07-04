@@ -84,6 +84,12 @@ export async function signUp(
     return { error: "Un compte existe déjà avec cet email. Connectez-vous." };
   }
 
+  // Confirmation d'email désactivée : session immédiate, entrée directe.
+  if (data.session) {
+    redirect(nextPath(formData.get("next")));
+  }
+
+  // Si la confirmation est réactivée un jour, le flux email reprend.
   redirect(`/verifier-email?email=${encodeURIComponent(parsed.data.email)}`);
 }
 
