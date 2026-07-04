@@ -4,6 +4,7 @@ import { CountUp } from "@/components/landing/count-up";
 import { HeroPreview } from "@/components/landing/hero-preview";
 import { Marquee } from "@/components/landing/marquee";
 import { Reveal, RevealItem, RevealStagger } from "@/components/landing/reveal";
+import { HowItWorks } from "@/components/landing/how-it-works";
 
 const CTA_LABEL = "Créer mon premier dossier";
 
@@ -20,7 +21,7 @@ export default function Home() {
         <Hero />
         <Marquee />
         <Piliers />
-        <CommentCaMarche />
+        <HowItWorks />
         <Suivi />
         <DashboardBand />
         <IaEtGardeFous />
@@ -226,59 +227,6 @@ function Piliers() {
           </div>
         </RevealItem>
       </RevealStagger>
-    </section>
-  );
-}
-
-function CommentCaMarche() {
-  const etapes = [
-    {
-      titre: "Racontez",
-      texte:
-        "Deux à cinq minutes à l’oral, comme à un ami. L’IA vous pose deux ou trois questions, y compris celle qui fâche : « qu’est-ce qu’il pourrait vous répondre ? ». Un dossier solide a anticipé la réponse d’en face.",
-    },
-    {
-      titre: "Ajoutez vos preuves",
-      texte:
-        "Photos de factures, PDF, emails transférés : tout est reconnu, daté, classé. Chaque dossier a sa propre adresse email, transférez-y n’importe quel échange, il se range tout seul.",
-    },
-    {
-      titre: "Validez",
-      texte:
-        "Le courrier est déjà écrit, avec les bons montants et les bonnes références. Vous relisez, vous cliquez, il part en votre nom. Jamais rien ne s’envoie sans vous.",
-    },
-    {
-      titre: "Laissez tourner",
-      texte:
-        "Les relances s’enchaînent au bon rythme, chaque réponse est analysée et la suite proposée. Vous êtes prévenu quand une décision vous revient.",
-    },
-  ];
-  return (
-    <section id="comment" className="border-y bg-muted/40">
-      <div className="mx-auto max-w-6xl scroll-mt-24 px-6 py-24 lg:py-32">
-        <Reveal>
-          <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-            Votre premier dossier en 15 minutes.
-          </h2>
-        </Reveal>
-        <RevealStagger className="mt-12">
-          {etapes.map((e, i) => (
-            <RevealItem key={e.titre}>
-              <div className="grid gap-4 border-t py-9 sm:grid-cols-12 sm:gap-8">
-                <span className="font-mono text-sm text-brand sm:col-span-1 sm:pt-1.5">
-                  {String(i + 1).padStart(2, "0")}
-                </span>
-                <h3 className="text-xl font-semibold sm:col-span-3">
-                  {e.titre}
-                </h3>
-                <p className="max-w-[60ch] leading-relaxed text-muted-foreground sm:col-span-8">
-                  {e.texte}
-                </p>
-              </div>
-            </RevealItem>
-          ))}
-        </RevealStagger>
-      </div>
     </section>
   );
 }
