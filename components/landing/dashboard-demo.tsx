@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   ArrowRight,
+  BanknoteArrowDown,
   CalendarClock,
   LogOut,
   Plus,
@@ -20,6 +21,7 @@ const DOSSIERS = [
     statut: "Action attendue",
     tone: "amber",
     type: "Impayé",
+    initiales: "BC",
     titre: "Facture F-2026-042 · SARL Bâti Concept",
     action: "Valider la mise en demeure · demain",
     montant: "2 400 €",
@@ -29,6 +31,7 @@ const DOSSIERS = [
     statut: "En attente de réponse",
     tone: "muted",
     type: "Impayé",
+    initiales: "MR",
     titre: "Facture 2026-118 · Menuiserie Roux",
     action: "Relance ferme programmée · dans 4 j",
     montant: "5 850 €",
@@ -38,6 +41,7 @@ const DOSSIERS = [
     statut: "Action attendue",
     tone: "amber",
     type: "Litige",
+    initiales: "DR",
     titre: "Litige réception · Dubois Rénovation",
     action: "Ajouter le PV de réception · dans 2 j",
     montant: "3 200 €",
@@ -47,6 +51,7 @@ const DOSSIERS = [
     statut: "Résolu",
     tone: "green",
     type: "Impayé",
+    initiales: "CP",
     titre: "Facture A-2026-07 · Atelier Camille Perrin",
     action: "1 680 € récupérés",
     montant: "1 680 €",
@@ -58,6 +63,16 @@ const AGENDA = [
   { quand: "demain", quoi: "Valider la mise en demeure", qui: "SARL Bâti Concept" },
   { quand: "dans 2 j", quoi: "Ajouter le PV de réception", qui: "Dubois Rénovation" },
   { quand: "dans 4 j", quoi: "Relance ferme programmée", qui: "Menuiserie Roux" },
+] as const;
+
+// Données d'exemple du graphique (cohérentes avec la tuile « Récupéré »).
+const BARRES = [
+  { mois: "fév", h: 30 },
+  { mois: "mar", h: 55 },
+  { mois: "avr", h: 42 },
+  { mois: "mai", h: 68 },
+  { mois: "juin", h: 78 },
+  { mois: "juil", h: 100 },
 ] as const;
 
 const CHIP_TONES: Record<string, string> = {
@@ -87,7 +102,7 @@ export function DashboardDemo() {
 
         {/* Fenêtre app (double bezel) */}
         <Reveal delay={0.15}>
-          <div className="mx-auto mt-14 max-w-5xl rounded-[2rem] bg-white/[0.06] p-2 ring-1 ring-white/10">
+          <div className="relative mx-auto mt-14 max-w-5xl rounded-[2rem] bg-white/[0.06] p-2 ring-1 ring-white/10">
             <div className="overflow-hidden rounded-[calc(2rem-0.5rem)] bg-muted/40 text-foreground shadow-[inset_0_1px_1px_rgba(255,255,255,0.35)]">
               {/* Topbar de l'app */}
               <div className="flex items-center justify-between border-b bg-background px-5 py-3.5">
@@ -132,7 +147,10 @@ export function DashboardDemo() {
                         key={d.titre}
                         className="group flex items-center justify-between gap-4 rounded-2xl border bg-card p-4 transition-all duration-500 ease-fluid hover:-translate-y-0.5 hover:shadow-md hover:shadow-zinc-950/[0.05]"
                       >
-                        <div className="min-w-0">
+                        <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
+                          {d.initiales}
+                        </span>
+                        <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-1.5">
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${CHIP_TONES[d.tone]}`}>
                               {d.statut}
@@ -163,7 +181,27 @@ export function DashboardDemo() {
                     ))}
                   </div>
 
-                  {/* Agenda */}
+                  {/* Graphique + agenda */}
+                  <div className="flex flex-col gap-4">
+                  <div className="rounded-2xl border bg-card p-4">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                        Récupéré · 6 derniers mois
+                      </p>
+                      <p className="text-xs font-bold tracking-tight">8 320 €</p>
+                    </div>
+                    <div className="mt-3 flex h-20 items-end gap-1.5">
+                      {BARRES.map((b) => (
+                        <div key={b.mois} className="flex h-full flex-1 flex-col items-center justify-end gap-1">
+                          <span
+                            className={`anim-grow-bar w-full rounded-t-md ${b.h === 100 ? "bg-brand" : "bg-brand/25"}`}
+                            style={{ height: `${b.h}%` }}
+                          />
+                          <span className="text-[9px] text-muted-foreground/70">{b.mois}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                   <div className="rounded-2xl border bg-card p-2">
                     <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                       À venir
@@ -182,6 +220,24 @@ export function DashboardDemo() {
                       </div>
                     ))}
                   </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Notification flottante : paiement reçu */}
+            <div className="anim-scroll absolute -right-3 top-16 hidden w-60 rotate-2 rounded-2xl border bg-card p-3.5 text-foreground shadow-xl shadow-zinc-950/[0.35] lg:-right-8 lg:block">
+              <div className="flex items-start gap-3">
+                <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                  <BanknoteArrowDown className="size-4" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[13px] font-semibold leading-snug">
+                    Paiement reçu : 1 680 €
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Atelier Camille Perrin · dossier soldé
+                  </p>
                 </div>
               </div>
             </div>

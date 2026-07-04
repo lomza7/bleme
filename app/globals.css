@@ -213,6 +213,14 @@
       animation-timeline: view();
       animation-range: entry 25% exit 75%;
     }
+
+    /* Barres de graphique qui poussent à l'entrée dans le viewport. */
+    .anim-grow-bar {
+      transform-origin: bottom;
+      animation: grow-line cubic-bezier(0.16, 1, 0.3, 1) both;
+      animation-timeline: view();
+      animation-range: entry 30% entry 80%;
+    }
   }
 }
 
