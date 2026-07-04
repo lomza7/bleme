@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { ArrowRight, Check, X } from "lucide-react";
-import { CountUp } from "@/components/landing/count-up";
 import { HeroPreview } from "@/components/landing/hero-preview";
 import { Marquee } from "@/components/landing/marquee";
 import { Reveal, RevealItem, RevealStagger } from "@/components/landing/reveal";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { CaseTimeline } from "@/components/landing/case-timeline";
+import { DashboardDemo } from "@/components/landing/dashboard-demo";
 
 const CTA_LABEL = "Créer mon premier dossier";
 
@@ -24,7 +24,7 @@ export default function Home() {
         <Piliers />
         <HowItWorks />
         <CaseTimeline />
-        <DashboardBand />
+        <DashboardDemo />
         <IaEtGardeFous />
         <Pricing />
         <Faq />
@@ -228,45 +228,6 @@ function Piliers() {
           </div>
         </RevealItem>
       </RevealStagger>
-    </section>
-  );
-}
-
-function DashboardBand() {
-  // Données d’illustration du dashboard.
-  const stats = [
-    { valeur: 12460, suffix: " €", label: "en jeu, suivis et relancés" },
-    { valeur: 8320, suffix: " €", label: "récupérés depuis janvier" },
-    { valeur: 2, suffix: "", label: "dossiers à risque, sans réponse" },
-    { valeur: 1, suffix: "", label: "action en attente de validation" },
-  ];
-  return (
-    <section className="relative overflow-hidden bg-ink text-ink-foreground">
-      <div aria-hidden className="absolute -right-40 top-1/2 size-[28rem] -translate-y-1/2 rounded-full bg-brand/15 blur-[130px]" />
-      <div className="relative mx-auto max-w-6xl px-6 py-24 lg:py-32">
-        <Reveal>
-          <div className="max-w-2xl">
-            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Vous pilotez vos chantiers. Pilotez aussi votre argent dehors.
-            </h2>
-            <p className="mt-4 text-lg text-ink-muted">
-              Un écran. Fini les impayés qui dorment dans un coin de Gmail.
-            </p>
-          </div>
-        </Reveal>
-        <RevealStagger className="mt-16 grid grid-cols-2 gap-y-12 lg:grid-cols-4 lg:divide-x lg:divide-ink-soft" stagger={0.1}>
-          {stats.map((s) => (
-            <RevealItem key={s.label} className="lg:px-8 lg:first:pl-0 lg:last:pr-0">
-              <p className="text-4xl font-bold tracking-tight sm:text-5xl">
-                <CountUp value={s.valeur} suffix={s.suffix} />
-              </p>
-              <p className="mt-2.5 text-sm leading-snug text-ink-muted">
-                {s.label}
-              </p>
-            </RevealItem>
-          ))}
-        </RevealStagger>
-      </div>
     </section>
   );
 }
