@@ -112,7 +112,7 @@ function Hero() {
       <div aria-hidden className="absolute -right-32 -top-48 size-[34rem] rounded-full bg-brand/25 blur-[140px]" />
       <div aria-hidden className="absolute -left-48 bottom-0 size-[26rem] rounded-full bg-brand/10 blur-[120px]" />
 
-      <div className="relative mx-auto grid max-w-6xl items-center gap-14 px-6 pb-24 pt-36 lg:grid-cols-12 lg:gap-10 lg:pb-32 lg:pt-44">
+      <div className="relative mx-auto grid max-w-6xl grid-cols-1 items-center gap-14 px-6 pb-24 pt-36 lg:grid-cols-12 lg:gap-10 lg:pb-32 lg:pt-44">
         <div className="lg:col-span-7">
           <Reveal onLoad>
             <h1 className="font-bold tracking-tight">
@@ -159,9 +159,9 @@ function Piliers() {
           fronts.
         </h2>
       </Reveal>
-      <RevealStagger className="mt-14 grid gap-4 lg:grid-cols-2">
+      <RevealStagger className="mt-14 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <RevealItem className="lg:col-span-2">
-          <div className="grid gap-10 rounded-[1.75rem] bg-ink p-9 text-ink-foreground sm:p-12 lg:grid-cols-2">
+          <div className="grid grid-cols-1 gap-10 rounded-[1.75rem] bg-ink p-9 text-ink-foreground sm:p-12 lg:grid-cols-2">
             <div>
               <p className="text-sm font-medium uppercase tracking-[0.16em] text-brand">
                 Impayés
@@ -254,7 +254,7 @@ function IaEtGardeFous() {
           Une IA qui travaille comme une assistante, pas comme un oracle.
         </h2>
       </Reveal>
-      <RevealStagger className="mt-12 grid gap-4 lg:grid-cols-2" stagger={0.12}>
+      <RevealStagger className="mt-12 grid grid-cols-1 gap-4 lg:grid-cols-2" stagger={0.12}>
         <RevealItem>
           <div className="h-full rounded-[1.75rem] border bg-card p-9">
             <h3 className="font-semibold">Ce qu’elle fait</h3>
@@ -322,7 +322,7 @@ function Pricing() {
             Commencez par un dossier. Continuez si ça rapporte.
           </h2>
         </Reveal>
-        <RevealStagger className="mt-12 grid gap-4 lg:grid-cols-5" stagger={0.12}>
+        <RevealStagger className="mt-12 grid grid-cols-1 gap-4 lg:grid-cols-5" stagger={0.12}>
           <RevealItem className="lg:col-span-2">
             <div className="flex h-full flex-col justify-between rounded-[1.75rem] bg-ink p-9 text-ink-foreground">
               <div>

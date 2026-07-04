@@ -100,7 +100,7 @@ export default async function CaseDetailPage({
           </div>
         </div>
 
-        <div className="mt-8 grid items-start gap-6 lg:grid-cols-3">
+        <div className="mt-8 grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
           {/* Colonne principale */}
           <div className="flex flex-col gap-6 lg:col-span-2">
             {c.summary_md ? (

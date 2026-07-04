@@ -41,6 +41,14 @@ Autres providers (Apple, Microsoft…) : même logique, un provider à activer c
 
 ## 4. Emails d'auth via Resend (production)
 
+> ⚠️ **Pourquoi c'est indispensable** : le service email par défaut de Supabase
+> n'envoie qu'aux adresses des **membres de l'équipe du projet** (et ~2
+> emails/heure). Toute inscription d'un tiers échoue avec « error sending
+> confirmation email » et l'utilisateur n'est même pas créé. Constaté le
+> 05/07/2026 (compte gmail impossible à créer tant que le SMTP custom n'est
+> pas branché). Resend exige de son côté un **domaine vérifié** (DNS
+> SPF/DKIM) pour envoyer à n'importe qui.
+
 Supabase envoie ses emails d'auth (confirmation, reset, magic link) par SMTP. Pour les faire partir via **Resend** :
 
 1. Resend → Domains → ajouter `bleme.fr` (ou `mail.bleme.fr`), poser les DNS (SPF, DKIM) chez le registrar, attendre la vérification.

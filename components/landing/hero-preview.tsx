@@ -138,7 +138,7 @@ export function HeroPreview() {
             <p className="text-[13px] text-muted-foreground">
               Prochaine action : à valider
             </p>
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-brand px-4 py-2 text-xs font-medium text-brand-foreground">
+            <span className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full bg-brand px-4 py-2 text-xs font-medium text-brand-foreground">
               Relire et envoyer
               <ArrowRight className="size-3" />
             </span>

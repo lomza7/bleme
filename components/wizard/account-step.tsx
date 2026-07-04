@@ -86,7 +86,7 @@ export function AccountStep({ data }: { data: WizardData }) {
         l’ouverture du dossier.
       </p>
 
-      <div className="mt-9 grid gap-4 lg:grid-cols-5">
+      <div className="mt-9 grid grid-cols-1 gap-4 lg:grid-cols-5">
         <motion.ul
           initial={reduce ? false : "hidden"}
           animate="visible"

@@ -73,7 +73,7 @@ export function KindStep({
           hidden: {},
           visible: { transition: { staggerChildren: 0.09, delayChildren: 0.18 } },
         }}
-        className="mt-10 grid gap-4 lg:grid-cols-3"
+        className="mt-10 grid grid-cols-1 gap-4 lg:grid-cols-3"
       >
         {KINDS.map((k) => (
           <motion.button

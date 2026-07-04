@@ -149,7 +149,7 @@ export default async function AppHomePage() {
         {all.length === 0 ? (
           <EmptyState />
         ) : (
-          <div className="grid items-start gap-6 lg:grid-cols-3">
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
             {/* Liste des dossiers */}
             <section className="lg:col-span-2">
               <h2 className="px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">

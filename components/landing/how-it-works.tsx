@@ -86,7 +86,7 @@ function StepCard({
   return (
     <li className={`sticky top-20 ${TOPS[index]}`}>
       <div
-        className={`grid min-h-[24rem] items-center gap-10 rounded-[2rem] p-8 shadow-xl shadow-zinc-950/[0.08] sm:p-12 lg:grid-cols-2 ${skins[skin]}`}
+        className={`grid min-h-[24rem] grid-cols-1 items-center gap-10 rounded-[2rem] p-8 shadow-xl shadow-zinc-950/[0.08] sm:p-12 lg:grid-cols-2 ${skins[skin]}`}
       >
         <div>
           <span className={`font-mono text-sm ${numero[skin]}`}>

@@ -139,7 +139,7 @@ export function DashboardDemo() {
                   <DemoTile label="Cette semaine" value={3} suffix="" sub="actions à traiter" />
                 </div>
 
-                <div className="grid items-start gap-4 lg:grid-cols-3">
+                <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-3">
                   {/* Dossiers */}
                   <div className="flex flex-col gap-2.5 lg:col-span-2">
                     {DOSSIERS.map((d) => (
