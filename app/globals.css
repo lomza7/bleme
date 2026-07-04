@@ -179,6 +179,15 @@
   }
 }
 
+@keyframes grow-line {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
 /*
  * Reveals sans JavaScript : l'état masqué n'existe que si le navigateur
  * anime (pas de reduced-motion, et animation-timeline supporté pour le
@@ -195,6 +204,14 @@
       animation: reveal-up cubic-bezier(0.16, 1, 0.3, 1) both;
       animation-timeline: view();
       animation-range: entry 10% entry 50%;
+    }
+
+    /* Ligne de timeline qui se dessine au fil du scroll. */
+    .anim-draw-line {
+      transform-origin: top;
+      animation: grow-line linear both;
+      animation-timeline: view();
+      animation-range: entry 25% exit 75%;
     }
   }
 }

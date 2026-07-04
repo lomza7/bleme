@@ -5,6 +5,7 @@ import { HeroPreview } from "@/components/landing/hero-preview";
 import { Marquee } from "@/components/landing/marquee";
 import { Reveal, RevealItem, RevealStagger } from "@/components/landing/reveal";
 import { HowItWorks } from "@/components/landing/how-it-works";
+import { CaseTimeline } from "@/components/landing/case-timeline";
 
 const CTA_LABEL = "Créer mon premier dossier";
 
@@ -22,7 +23,7 @@ export default function Home() {
         <Marquee />
         <Piliers />
         <HowItWorks />
-        <Suivi />
+        <CaseTimeline />
         <DashboardBand />
         <IaEtGardeFous />
         <Pricing />
@@ -227,71 +228,6 @@ function Piliers() {
           </div>
         </RevealItem>
       </RevealStagger>
-    </section>
-  );
-}
-
-function Suivi() {
-  const jalons = [
-    {
-      nom: "Relance amiable",
-      quand: "jour 0",
-      duree: "réponse sous 5 j en moyenne",
-    },
-    {
-      nom: "Relance ferme",
-      quand: "jour 7",
-      duree: "réponse sous 4 j en moyenne",
-    },
-    {
-      nom: "Mise en demeure",
-      quand: "jour 15",
-      duree: "recommandé distribué sous 3 j",
-    },
-    {
-      nom: "Escalade préparée",
-      quand: "jour 30",
-      duree: "dossier exporté en 1 clic",
-    },
-  ];
-  return (
-    <section id="suivi" className="mx-auto max-w-6xl scroll-mt-24 px-6 py-24 lg:py-32">
-      <Reveal>
-        <h2 className="max-w-2xl text-3xl font-bold tracking-tight sm:text-4xl">
-          Vous savez toujours où en est le dossier. Et combien de temps chaque
-          étape prend.
-        </h2>
-        <p className="mt-4 max-w-xl text-lg text-muted-foreground">
-          Chaque dossier avance sur une timeline claire, avec la durée moyenne
-          constatée à chaque étape.
-        </p>
-      </Reveal>
-      <RevealStagger className="relative mt-16 grid gap-10 sm:grid-cols-2 lg:grid-cols-4 lg:gap-6" stagger={0.14}>
-        <span
-          aria-hidden
-          className="absolute left-2 top-[7px] hidden h-px w-[calc(100%-1rem)] bg-border lg:block"
-        />
-        {jalons.map((j) => (
-          <RevealItem key={j.nom}>
-            <div className="relative">
-              <span className="relative z-[1] block size-3.5 rounded-full border-[3px] border-background bg-brand shadow-[0_0_0_1px_var(--border)]" />
-              <p className="mt-5 text-xs font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                {j.quand}
-              </p>
-              <h3 className="mt-1.5 text-lg font-semibold">{j.nom}</h3>
-              <p className="mt-2 inline-block rounded-full bg-muted px-3 py-1 text-[13px] text-muted-foreground">
-                {j.duree}
-              </p>
-            </div>
-          </RevealItem>
-        ))}
-      </RevealStagger>
-      <Reveal delay={0.3}>
-        <p className="mt-12 text-[13px] text-muted-foreground/80">
-          Durées indicatives constatées sur les dossiers types. Chaque dossier
-          reste particulier, et la cadence s’adapte aux réponses reçues.
-        </p>
-      </Reveal>
     </section>
   );
 }
