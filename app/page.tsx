@@ -1,5 +1,15 @@
 import Link from "next/link";
-import { ArrowRight, Check, X } from "lucide-react";
+import {
+  ArrowRight,
+  BookMarked,
+  BookOpenText,
+  Check,
+  Gavel,
+  Landmark as LandmarkIcon,
+  Newspaper,
+  Percent,
+  X,
+} from "lucide-react";
 import { HeroPreview } from "@/components/landing/hero-preview";
 import { Marquee } from "@/components/landing/marquee";
 import { Reveal, RevealItem, RevealStagger } from "@/components/landing/reveal";
@@ -237,7 +247,7 @@ function IaEtGardeFous() {
   const fait = [
     "Écoute votre récit et en fait un dossier structuré",
     "Lit vos documents, en sort montants, dates et échéances, avec la source",
-    "Rédige des brouillons à partir de modèles éprouvés",
+    "Rédige des brouillons appuyés sur les textes et barèmes en vigueur",
     "Anticipe ce que l’autre partie pourrait répondre",
     "Suit les réponses et prépare la suite au bon moment",
   ];
@@ -255,7 +265,53 @@ function IaEtGardeFous() {
           Une IA qui travaille comme une assistante, pas comme un oracle.
         </h2>
       </Reveal>
-      <RevealStagger className="mt-12 grid grid-cols-1 gap-4 lg:grid-cols-2" stagger={0.12}>
+
+      {/* La matière juridique condensée dans l'IA */}
+      <Reveal delay={0.1}>
+        <div className="mt-12 rounded-[2rem] bg-ink p-9 text-ink-foreground sm:p-12">
+          <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-5">
+            <div className="lg:col-span-2">
+              <h3 className="text-2xl font-semibold tracking-tight sm:text-3xl">
+                Le droit public disponible, condensé dedans.
+              </h3>
+              <p className="mt-4 leading-relaxed text-ink-muted">
+                Codes en vigueur, décisions de justice publiées, Journal
+                officiel, taux et indemnités : l’IA de BLEME s’appuie sur les
+                sources officielles ouvertes du droit français, tenues à jour,
+                pour des courriers qui citent juste.
+              </p>
+            </div>
+            <ul className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:col-span-3">
+              {[
+                { icon: BookOpenText, titre: "Codes en vigueur", detail: "Légifrance, mis à jour en continu" },
+                { icon: Gavel, titre: "Jurisprudence judiciaire", detail: "décisions publiées des tribunaux" },
+                { icon: LandmarkIcon, titre: "Jurisprudence administrative", detail: "Conseil d’État et cours" },
+                { icon: Newspaper, titre: "Journal officiel", detail: "lois, décrets, barèmes publiés" },
+                { icon: Percent, titre: "Taux et indemnités légaux", detail: "intérêt légal, indemnité de 40 €" },
+                { icon: BookMarked, titre: "Modèles éprouvés", detail: "courriers conformes aux usages" },
+              ].map((src) => (
+                <li key={src.titre} className="flex items-start gap-3.5 rounded-2xl bg-white/[0.06] px-5 py-4 ring-1 ring-white/10">
+                  <span className="mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full bg-brand/15 text-brand">
+                    <src.icon className="size-4.5" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold">{src.titre}</span>
+                    <span className="block text-xs leading-relaxed text-ink-muted">{src.detail}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+          <p className="mt-8 text-xs leading-relaxed text-ink-muted/80">
+            Information générale issue de sources publiques officielles,
+            intégrée aux modèles de courriers. Ce n’est pas un conseil
+            juridique personnalisé : pour les situations complexes, votre
+            dossier s’exporte vers un professionnel.
+          </p>
+        </div>
+      </Reveal>
+
+      <RevealStagger className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2" stagger={0.12}>
         <RevealItem>
           <div className="h-full rounded-[1.75rem] border bg-card p-9">
             <h3 className="font-semibold">Ce qu’elle fait</h3>
@@ -393,6 +449,10 @@ function Faq() {
     {
       q: "Et si le client conteste la facture ?",
       r: "Sa réponse arrive dans le dossier, l’IA la résume et vous aide à documenter votre position : preuves à ajouter, points de vigilance. Si ça se durcit, vous exportez tout pour un professionnel.",
+    },
+    {
+      q: "Sur quoi l’IA s’appuie-t-elle ?",
+      r: "Sur les sources officielles ouvertes du droit français : codes en vigueur (Légifrance), décisions de justice publiées, Journal officiel, taux et indemnités légaux. Cette matière alimente les modèles de courriers et les vérifications du dossier. Elle informe, elle ne remplace pas un conseil juridique personnalisé.",
     },
     {
       q: "Où sont mes données ?",
