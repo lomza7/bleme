@@ -9,7 +9,13 @@ const INITIAL: HermesState = {};
 const inputCls =
   "rounded-xl border bg-background px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-brand";
 
-export function RoutineCreateForm() {
+export function RoutineCreateForm({
+  agents = [],
+  skills = [],
+}: {
+  agents?: { key: string; prenom: string }[];
+  skills?: string[];
+}) {
   const [state, action, pending] = useActionState(createRoutine, INITIAL);
   return (
     <details className="group rounded-[1.75rem] border border-dashed bg-card">
@@ -19,7 +25,7 @@ export function RoutineCreateForm() {
         <span className="ml-auto text-xs text-muted-foreground group-open:hidden">Ouvrir</span>
       </summary>
       <form action={action} className="flex flex-col gap-3 border-t px-6 py-4">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           <input
             name="title"
             required
@@ -32,6 +38,16 @@ export function RoutineCreateForm() {
             placeholder="Cron (ex. 0 8 * * 1-5) — vide = manuel"
             className={`${inputCls} font-mono text-xs`}
           />
+          <select name="agent" required defaultValue="" className={inputCls}>
+            <option value="" disabled>
+              Agent responsable…
+            </option>
+            {agents.map((a) => (
+              <option key={a.key} value={a.key}>
+                {a.prenom}
+              </option>
+            ))}
+          </select>
         </div>
         <textarea
           name="description"
@@ -40,6 +56,24 @@ export function RoutineCreateForm() {
           placeholder="Ce que l'agent doit faire à chaque déclenchement…"
           className={inputCls}
         />
+        {skills.length > 0 ? (
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+              Skills à mobiliser
+            </p>
+            <div className="mt-1.5 flex flex-wrap gap-2">
+              {skills.map((s) => (
+                <label
+                  key={s}
+                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-full bg-muted px-3 py-1.5 font-mono text-[11px] ring-1 ring-black/5 has-[:checked]:bg-brand has-[:checked]:text-brand-foreground has-[:checked]:ring-brand"
+                >
+                  <input type="checkbox" name="skills" value={s} className="sr-only" />
+                  {s}
+                </label>
+              ))}
+            </div>
+          </div>
+        ) : null}
         <div className="flex items-center gap-3">
           <button
             type="submit"

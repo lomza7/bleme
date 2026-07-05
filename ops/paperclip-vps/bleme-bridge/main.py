@@ -154,6 +154,167 @@ def _chat_sync(agent: str, model: str, system: str, message: str) -> str:
     return str(response).strip()
 
 
+# ── Routines liées : chaque cron appartient à un agent, avec ses skills ──────
+# Binding = {agent, skills[], system (prompt capturé au lien), input, last_fire}
+BINDINGS_FILE = Path(os.getenv("HERMES_HOME", str(Path.home() / ".hermes"))) / "routine-bindings.json"
+
+
+def _load_bindings() -> dict:
+    with contextlib.suppress(Exception):
+        return json.loads(BINDINGS_FILE.read_text())
+    return {}
+
+
+def _save_bindings(b: dict) -> None:
+    BINDINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    BINDINGS_FILE.write_text(json.dumps(b, ensure_ascii=False, indent=1))
+
+
+class RoutineBind(BaseModel):
+    id: str
+    agent: str
+    skills: list[str] = []
+    system: str
+    input: str
+
+
+@app.post("/routines/bind", dependencies=[Depends(_auth)])
+def routine_bind(req: RoutineBind) -> dict:
+    if req.agent not in AGENTS:
+        raise HTTPException(400, f"agent inconnu: {req.agent}")
+    bindings = _load_bindings()
+    prev = bindings.get(req.id, {})
+    bindings[req.id] = {
+        "agent": req.agent,
+        "skills": [s for s in req.skills if SKILL_NAME_RE.match(s)][:12],
+        "system": req.system[:20000],
+        "input": req.input[:8000],
+        "last_fire": prev.get("last_fire", 0),
+    }
+    _save_bindings(bindings)
+    # Miroir Paperclip : la routine est assignée à l agent homonyme (requis
+    # pour l activation côté Paperclip).
+    with contextlib.suppress(Exception):
+        assignee = _pc_agent_id(req.agent)
+        if assignee:
+            _pc("PATCH", f"/routines/{req.id}", {"assigneeAgentId": assignee})
+    return {"ok": True}
+
+
+class RoutineUnbind(BaseModel):
+    id: str
+
+
+@app.post("/routines/unbind", dependencies=[Depends(_auth)])
+def routine_unbind(req: RoutineUnbind) -> dict:
+    bindings = _load_bindings()
+    bindings.pop(req.id, None)
+    _save_bindings(bindings)
+    return {"ok": True}
+
+
+async def _execute_routine(routine_id: str, title: str) -> str:
+    """Exécute la routine via l'agent lié (skills injectées) et dépose le
+    résultat en ticket Paperclip. Retourne le texte produit."""
+    bindings = _load_bindings()
+    binding = bindings.get(routine_id)
+    if not binding:
+        raise HTTPException(400, "routine non liée à un agent")
+    agent = binding["agent"]
+    system = binding["system"]
+    if binding.get("skills"):
+        ctx = _skills_context(binding["skills"])
+        if ctx:
+            system = f"{system}\n\n[SAVOIR-FAIRE À TA DISPOSITION]\n{ctx}"
+    message = (
+        f"[ROUTINE PLANIFIÉE : {title}]\n{binding.get('input') or title}\n\n"
+        "Exécute cette routine et rédige le résultat en français clair et "
+        "structuré, prêt à être lu dans un ticket. Pour cette tâche, ignore "
+        "toute consigne de format JSON : réponds en texte libre (titres et "
+        "puces bienvenus)."
+    )
+    loop = asyncio.get_running_loop()
+    async with _locks[agent]:
+        text = await asyncio.wait_for(
+            loop.run_in_executor(None, _chat_sync, agent, MODEL, system, message),
+            timeout=CHAT_TIMEOUT,
+        )
+    # Rapport en ticket Paperclip
+    with contextlib.suppress(Exception):
+        cid = _pc_company_id()
+        stamp = time.strftime("%d/%m %H:%M")
+        _pc("POST", f"/companies/{cid}/issues", {
+            "title": f"[{agent}] {title} — {stamp}",
+            "description": text[:8000],
+        })
+    # Si le déclencheur natif de Paperclip a ouvert un ticket de travail pour
+    # cette routine, on le clôt : notre rapport fait foi.
+    with contextlib.suppress(Exception):
+        routine = _pc("GET", f"/routines/{routine_id}")
+        active_issue = (routine.get("activeIssue") or {}).get("id")
+        if active_issue:
+            _pc("PATCH", f"/issues/{active_issue}", {"status": "done"})
+    bindings = _load_bindings()
+    if routine_id in bindings:
+        bindings[routine_id]["last_fire"] = time.time()
+        _save_bindings(bindings)
+    return text
+
+
+class RoutineExecute(BaseModel):
+    id: str
+    title: str = "Routine"
+
+
+@app.post("/routines/execute", dependencies=[Depends(_auth)])
+async def routine_execute(req: RoutineExecute) -> dict:
+    text = await _execute_routine(req.id, req.title)
+    return {"ok": True, "preview": text[:400]}
+
+
+async def _scheduler() -> None:
+    """Toutes les 60 s : déclenche les routines actives dont le cron est dû."""
+    from croniter import croniter
+
+    while True:
+        await asyncio.sleep(60)
+        try:
+            cid = _pc_company_id()
+            routines = _pc("GET", f"/companies/{cid}/routines")
+            bindings = _load_bindings()
+            now = time.time()
+            for r in routines:
+                if r.get("status") != "active":
+                    continue
+                binding = bindings.get(r["id"])
+                if not binding:
+                    continue
+                crons = [
+                    tr.get("cronExpression")
+                    for tr in (r.get("triggers") or [])
+                    if tr.get("kind") == "schedule" and tr.get("cronExpression")
+                ]
+                if not crons:
+                    continue
+                last = binding.get("last_fire") or (now - 90)
+                due = any(
+                    croniter(c, last).get_next() <= now for c in crons if croniter.is_valid(c)
+                )
+                if due:
+                    print(f"[scheduler] routine due: {r['title']} → {binding['agent']}")
+                    try:
+                        await _execute_routine(r["id"], r["title"])
+                    except Exception as exc:
+                        print(f"[scheduler] échec {r['title']}: {exc!r}")
+        except Exception as exc:
+            print(f"[scheduler] tick en erreur: {exc!r}")
+
+
+@app.on_event("startup")
+async def _start_scheduler() -> None:
+    asyncio.create_task(_scheduler())
+
+
 # ── Version et mise à jour de Hermes (checkout dédié BLEME) ──────────────────
 
 ROLLBACK_FILE = Path(HERMES_ROOT) / ".bleme-rollback"
@@ -345,6 +506,21 @@ def _pc_company_id() -> str:
     return companies[0]["id"]
 
 
+_PC_AGENTS_CACHE: dict = {"at": 0.0, "map": {}}
+
+
+def _pc_agent_id(persona: str) -> str | None:
+    """Retrouve l'agent Paperclip homonyme (Marius → marius) avec cache 5 min."""
+    now = time.time()
+    if now - _PC_AGENTS_CACHE["at"] > 300:
+        with contextlib.suppress(Exception):
+            cid = _pc_company_id()
+            agents = _pc("GET", f"/companies/{cid}/agents")
+            _PC_AGENTS_CACHE["map"] = {a["name"].lower(): a["id"] for a in agents}
+            _PC_AGENTS_CACHE["at"] = now
+    return _PC_AGENTS_CACHE["map"].get(persona.lower())
+
+
 @app.get("/paperclip/summary", dependencies=[Depends(_auth)])
 def paperclip_summary() -> dict:
     try:
@@ -359,6 +535,9 @@ def paperclip_routines() -> dict:
     try:
         cid = _pc_company_id()
         routines = _pc("GET", f"/companies/{cid}/routines")
+        bindings = _load_bindings()
+        for r in routines:
+            r["binding"] = bindings.get(r["id"])
         return {"ok": True, "routines": routines}
     except HTTPException:
         raise
@@ -371,14 +550,17 @@ class RoutineCreate(BaseModel):
     description: str | None = None
     cron: str | None = None
     activate: bool = False
+    agent: str | None = None
 
 
 @app.post("/paperclip/routines", dependencies=[Depends(_auth)])
 def paperclip_routine_create(req: RoutineCreate) -> dict:
     cid = _pc_company_id()
+    assignee = _pc_agent_id(req.agent) if req.agent else None
     routine = _pc("POST", f"/companies/{cid}/routines", {
         "title": req.title,
         **({"description": req.description} if req.description else {}),
+        **({"assigneeAgentId": assignee} if assignee else {}),
     })
     rid = routine["id"]
     if req.cron:

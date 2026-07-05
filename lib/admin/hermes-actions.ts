@@ -254,9 +254,11 @@ export async function toggleSkillScope(formData: FormData): Promise<void> {
 export type Routine = {
   id: string;
   title: string;
+  description: string | null;
   status: string;
   triggers: { id: string; kind: string; cronExpression?: string }[];
   lastTriggeredAt: string | null;
+  binding: { agent: string; skills: string[] } | null;
 };
 
 export async function getRoutines(): Promise<{ ok: boolean; routines: Routine[] }> {
@@ -266,9 +268,11 @@ export async function getRoutines(): Promise<{ ok: boolean; routines: Routine[] 
     const routines = (payload.routines ?? []).map((r: Record<string, unknown>) => ({
       id: r.id,
       title: r.title,
+      description: r.description ?? null,
       status: r.status,
       triggers: r.triggers ?? [],
       lastTriggeredAt: r.lastTriggeredAt ?? null,
+      binding: r.binding ?? null,
     }));
     return { ok: Boolean(payload.ok), routines };
   } catch {
@@ -285,7 +289,33 @@ const routineSchema = z.object({
     .regex(/^\S+ \S+ \S+ \S+ \S+$/, "Expression cron attendue (5 champs, ex. 0 8 * * 1-5).")
     .optional()
     .or(z.literal("")),
+  agent: z.string().regex(/^[a-z]+$/, "Choisissez l'agent responsable."),
 });
+
+async function bindRoutineOnBridge(
+  routineId: string,
+  agentKey: string,
+  skills: string[],
+  input: string,
+): Promise<void> {
+  const supabase = await createClient();
+  const { data: agent } = await supabase
+    .from("agents")
+    .select("system_prompt")
+    .eq("key", agentKey)
+    .maybeSingle();
+  if (!agent) throw new Error("agent inconnu");
+  await bridgeFetch("/routines/bind", {
+    method: "POST",
+    body: JSON.stringify({
+      id: routineId,
+      agent: agentKey,
+      skills,
+      system: agent.system_prompt,
+      input,
+    }),
+  });
+}
 
 export async function createRoutine(
   _prev: HermesState,
@@ -296,22 +326,56 @@ export async function createRoutine(
     title: formData.get("title"),
     description: formData.get("description") ?? "",
     cron: formData.get("cron") ?? "",
+    agent: formData.get("agent"),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Routine invalide." };
+  const skills = formData
+    .getAll("skills")
+    .map(String)
+    .filter((s) => /^[a-z0-9_-]+\/[a-z0-9_-]+$/.test(s));
   try {
-    await bridgeFetch("/paperclip/routines", {
+    const created = await bridgeFetch("/paperclip/routines", {
       method: "POST",
       body: JSON.stringify({
         title: parsed.data.title,
         description: parsed.data.description || null,
         cron: parsed.data.cron || null,
         activate: Boolean(parsed.data.cron),
+        agent: parsed.data.agent,
       }),
     });
+    await bindRoutineOnBridge(
+      created.routine.id,
+      parsed.data.agent,
+      skills,
+      parsed.data.description || parsed.data.title,
+    );
     revalidatePath("/admin/hermes");
-    return { success: `Routine « ${parsed.data.title} » créée${parsed.data.cron ? " et activée" : ""}.` };
+    return { success: `Routine « ${parsed.data.title} » créée, confiée à ${parsed.data.agent}${parsed.data.cron ? ", cron actif" : ""}.` };
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Échec de la création." };
+  }
+}
+
+export async function executeRoutine(
+  _prev: HermesState,
+  formData: FormData,
+): Promise<HermesState> {
+  if (!(await requireAdmin())) return { error: "Accès réservé aux administrateurs." };
+  const id = z.string().uuid().safeParse(formData.get("id"));
+  if (!id.success) return { error: "Routine inconnue." };
+  const title = String(formData.get("title") ?? "Routine");
+  try {
+    const r = await bridgeFetch("/routines/execute", {
+      method: "POST",
+      body: JSON.stringify({ id: id.data, title }),
+    });
+    revalidatePath("/admin/hermes");
+    return {
+      success: `Exécutée : « ${String(r.preview ?? "").slice(0, 140)}… » — rapport déposé en ticket Paperclip.`,
+    };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Échec de l'exécution." };
   }
 }
 

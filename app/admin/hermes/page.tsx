@@ -14,13 +14,13 @@ import {
   getRoutines,
   getSkillScopes,
   setRoutineStatus,
-  fireRoutine,
   toggleSkillScope,
   type Skill,
 } from "@/lib/admin/hermes-actions";
 import { HermesUpdateControls } from "@/components/admin/hermes-update";
 import { InstallSkillButton, RemoveSkillButton } from "@/components/admin/skills";
 import { RoutineCreateForm } from "@/components/admin/routines";
+import { ExecuteRoutineButton } from "@/components/admin/routine-execute";
 import { createClient } from "@/lib/supabase/server";
 import { getSecret } from "@/lib/secrets";
 
@@ -322,24 +322,27 @@ export default async function HermesAdminPage() {
                       title={r.status}
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium">{r.title}</span>
+                      <span className="flex items-center gap-2">
+                        <span className="truncate text-sm font-medium">{r.title}</span>
+                        {r.binding ? (
+                          <span className="shrink-0 rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-medium capitalize text-brand-strong">
+                            {r.binding.agent}
+                          </span>
+                        ) : (
+                          <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-200">
+                            non assignée
+                          </span>
+                        )}
+                      </span>
                       <span className="block text-[11px] text-muted-foreground">
                         {r.triggers.filter((tr) => tr.kind === "schedule").map((tr) => tr.cronExpression).join(" · ") ||
                           "déclenchement manuel"}
-                        {r.lastTriggeredAt
-                          ? ` · dernier run ${new Date(r.lastTriggeredAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}`
+                        {r.binding?.skills?.length
+                          ? ` · skills : ${r.binding.skills.map((s) => s.split("/")[1]).join(", ")}`
                           : ""}
                       </span>
                     </span>
-                    <form action={fireRoutine}>
-                      <input type="hidden" name="id" value={r.id} />
-                      <button
-                        type="submit"
-                        className="rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors hover:border-brand/50 hover:text-brand-strong"
-                      >
-                        Lancer maintenant
-                      </button>
-                    </form>
+                    {r.binding ? <ExecuteRoutineButton id={r.id} title={r.title} /> : null}
                     <form action={setRoutineStatus}>
                       <input type="hidden" name="id" value={r.id} />
                       <input type="hidden" name="status" value={r.status === "active" ? "paused" : "active"} />
@@ -373,7 +376,10 @@ export default async function HermesAdminPage() {
               dashboard Paperclip.
             </p>
           )}
-          <RoutineCreateForm />
+          <RoutineCreateForm
+            agents={agents}
+            skills={installed.map((s) => s.name)}
+          />
         </div>
       </section>
 
