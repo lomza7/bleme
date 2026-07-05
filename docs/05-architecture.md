@@ -120,8 +120,16 @@ Deux couches complémentaires, pas une :
    batchs). Les tickets référencent des `case_id`, jamais le contenu des
    dossiers clients : les données restent dans Supabase sous RLS.
 
-Écarté : Paperclip comme runtime des appels synchrones (boucle de tickets
-inadaptée à un utilisateur qui attend, données clients hors RLS). Différé :
-modèles Hermes (Nous Research) pour les tâches de volume à faible enjeu
-(classification d'emails, doc_class) — le wrapper est agnostique du
-fournisseur, ce sera un changement de config, pas un refactor.
+**Révision du 05/07/2026 — runtime Hermes en production.** Décision
+produit : les agents BLEME peuvent tourner en Hermes (Nous Research).
+Nouvelle pièce : le **bleme-bridge** (FastAPI sur le VPS,
+ops/paperclip-vps/bleme-bridge/, exposé sur https://api.1010101.online/bleme,
+bearer token) charge une instance HermesCLI par persona (hermes-4 via
+OpenRouter), prompt système envoyé PAR REQUÊTE depuis la table `agents`.
+La colonne `agents.runtime` ('claude'|'hermes'), pilotée depuis /admin,
+route chaque appel dans lib/ai — mêmes garde-fous quel que soit le
+runtime (Zod, budgets, pause, agent_runs, approval_logs). Clés :
+BLEME_BRIDGE_URL + BLEME_BRIDGE_TOKEN dans le coffre. Écarté : Paperclip
+comme runtime des appels synchrones (boucle de tickets inadaptée à un
+utilisateur qui attend) — il reste la couche d'orchestration des travaux
+de fond.

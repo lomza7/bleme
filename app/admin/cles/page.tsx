@@ -51,6 +51,16 @@ const REGISTRY: { name: string; service: string; usage: string; testable?: boole
     usage: "Signature des événements de paiement entrants (phase 6).",
   },
   {
+    name: "BLEME_BRIDGE_URL",
+    service: "bleme-bridge (VPS)",
+    usage: "URL du pont Hermes du produit : https://api.1010101.online/bleme. Requis pour le runtime Hermes.",
+  },
+  {
+    name: "BLEME_BRIDGE_TOKEN",
+    service: "bleme-bridge (jeton)",
+    usage: "Jeton bearer du pont (généré sur le VPS, /root/.bleme-bridge.env). Requis pour le runtime Hermes.",
+  },
+  {
     name: "NOUS_API_KEY",
     service: "Nous Research (Hermes)",
     usage: "Les agents Hermes du Paperclip ops (endpoint inference-api.nousresearch.com/v1).",

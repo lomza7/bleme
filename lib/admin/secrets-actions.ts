@@ -199,6 +199,8 @@ const ENV_WATCHLIST = [
   "STRIPE_WEBHOOK_SECRET",
   "NOUS_API_KEY",
   "PAPERCLIP_URL",
+  "BLEME_BRIDGE_URL",
+  "BLEME_BRIDGE_TOKEN",
 ];
 
 function mask(value: string): string {

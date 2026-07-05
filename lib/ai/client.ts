@@ -18,6 +18,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 type AgentConfig = {
   key: string;
   model: string;
+  runtime: "claude" | "hermes";
   status: "active" | "paused";
   monthly_budget_cents: number;
   system_prompt: string;
@@ -49,7 +50,7 @@ async function loadAgent(key: string): Promise<AgentConfig | null> {
   const supabase = createServiceClient();
   const { data } = await supabase
     .from("agents")
-    .select("key, model, status, monthly_budget_cents, system_prompt, prompt_version")
+    .select("key, model, runtime, status, monthly_budget_cents, system_prompt, prompt_version")
     .eq("key", key)
     .maybeSingle();
   return (data as AgentConfig | null) ?? null;
@@ -125,8 +126,69 @@ export async function runAgent<T>(opts: {
   }
 
   // Coffre de la console d'abord (effet immédiat), variable d'ENV en repli.
-  const apiKey = await getSecret("ANTHROPIC_API_KEY");
   const started = Date.now();
+
+  // ── Runtime Hermes : le bleme-bridge du VPS (piloté par /admin) ────────────
+  if (agent.runtime === "hermes") {
+    const [bridgeUrl, bridgeToken] = await Promise.all([
+      getSecret("BLEME_BRIDGE_URL"),
+      getSecret("BLEME_BRIDGE_TOKEN"),
+    ]);
+    if (!bridgeUrl || !bridgeToken) {
+      await logRun({
+        ...base,
+        model: "hermes",
+        status: "error",
+        duration_ms: 0,
+        error: "BLEME_BRIDGE_URL / BLEME_BRIDGE_TOKEN absents du coffre (/admin/cles)",
+      });
+      throw new AgentUnavailableError(
+        "budget",
+        "Runtime Hermes non configuré : renseignez BLEME_BRIDGE_URL et BLEME_BRIDGE_TOKEN dans le coffre.",
+      );
+    }
+    try {
+      const response = await fetch(`${bridgeUrl.replace(/\/$/, "")}/run`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${bridgeToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({
+          agent: agent.key,
+          system: agent.system_prompt,
+          input: JSON.stringify(opts.input),
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`bridge ${response.status} : ${(await response.text()).slice(0, 300)}`);
+      }
+      const payload = await response.json();
+      const text: string = payload.text ?? "";
+      const jsonText = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
+      const data = opts.schema.parse(JSON.parse(jsonText));
+      await logRun({
+        ...base,
+        model: `hermes:${payload.model ?? "?"}`,
+        status: "ok",
+        // Coût facturé côté OpenRouter (compte VPS), non tracé ici.
+        duration_ms: Date.now() - started,
+      });
+      return { data, simulated: false };
+    } catch (err) {
+      await logRun({
+        ...base,
+        model: "hermes",
+        status: "error",
+        duration_ms: Date.now() - started,
+        error: err instanceof Error ? err.message.slice(0, 500) : "Erreur inconnue",
+      });
+      throw err;
+    }
+  }
+
+  // ── Runtime Claude (API Anthropic) ─────────────────────────────────────────
+  const apiKey = await getSecret("ANTHROPIC_API_KEY");
 
   // Bêta sans clé réelle : simulation tracée, jamais silencieuse.
   if (!apiKey || apiKey === "local-placeholder") {

@@ -37,15 +37,28 @@ const inputCls =
 export function AgentSettingsForm({
   agent,
 }: {
-  agent: { key: string; model: string; status: string; monthly_budget_cents: number };
+  agent: {
+    key: string;
+    model: string;
+    runtime: string;
+    status: string;
+    monthly_budget_cents: number;
+  };
 }) {
   const [state, action, pending] = useActionState(updateAgentSettings, INITIAL);
   return (
     <form action={action} className="flex flex-col gap-4">
       <input type="hidden" name="key" value={agent.key} />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
         <label className="flex flex-col gap-1.5 text-sm font-medium">
-          Modèle
+          Runtime
+          <select name="runtime" defaultValue={agent.runtime} className={inputCls}>
+            <option value="claude">Claude (API Anthropic)</option>
+            <option value="hermes">Hermes (VPS · Nous)</option>
+          </select>
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm font-medium">
+          Modèle (runtime Claude)
           <select name="model" defaultValue={agent.model} className={inputCls}>
             <option value="claude-sonnet-5">Sonnet 5 (défaut)</option>
             <option value="claude-haiku-4-5">Haiku 4.5 (rapide)</option>
