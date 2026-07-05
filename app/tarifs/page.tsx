@@ -13,6 +13,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { Reveal, RevealItem, RevealStagger } from "@/components/landing/reveal";
+import { ImpayeTypeTabs, SimulateurAnnee } from "@/components/tarifs/simulateur";
 import { JsonLd } from "@/components/seo/json-ld";
 
 /*
@@ -333,43 +334,30 @@ export default function TarifsPage() {
           </section>
         </Reveal>
 
-        {/* L'exemple chiffré */}
+        {/* L'exemple chiffré, à onglets (à l'unité / Pro) */}
         <Reveal>
-          <section className="mx-auto mt-20 max-w-4xl rounded-[2rem] bg-ink p-8 text-ink-foreground sm:p-10">
-            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-              Un impayé type, au total.
-            </h2>
-            <p className="mt-3 max-w-2xl leading-relaxed text-ink-muted">
-              Facture de 2 400 € impayée depuis 47 jours : relances par email,
-              puis mise en demeure en recommandé.
+          <ImpayeTypeTabs />
+        </Reveal>
+
+        {/* Simulateur annuel : l'investissement, pas la dépense */}
+        <Reveal>
+          <SimulateurAnnee />
+        </Reveal>
+
+        {/* Bientôt : le front administratif */}
+        <Reveal>
+          <div className="mx-auto mt-6 flex max-w-4xl flex-wrap items-center gap-x-6 gap-y-3 rounded-[1.75rem] border border-dashed bg-card px-7 py-5">
+            <span className="rounded-full bg-brand px-2.5 py-1 text-[11px] font-medium text-brand-foreground">
+              Bientôt
+            </span>
+            <p className="min-w-0 flex-1 basis-72 text-sm leading-relaxed text-muted-foreground">
+              Le même réflexe s’appliquera aux amendes et aux impôts : chaque
+              année, plus d’un million de demandes de remise gracieuse sont
+              déposées auprès de l’administration fiscale, et environ deux sur
+              trois aboutissent à une remise partielle ou totale (rapport
+              DGFiP au Parlement). Encore de l’argent qui se défend.
             </p>
-            <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div className="rounded-2xl bg-white/10 p-6 ring-1 ring-white/10">
-                <p className="text-sm text-ink-muted">Avec BLEME</p>
-                <p className="mt-2 text-3xl font-bold tracking-tight">49 € HT</p>
-                <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">
-                  Dossier 39 € + recommandé AR 10 €. Et 29 € HT pour un abonné
-                  Pro.
-                </p>
-              </div>
-              <div className="rounded-2xl bg-white/5 p-6 ring-1 ring-white/10">
-                <p className="text-sm text-ink-muted">Mise en demeure par avocat</p>
-                <p className="mt-2 text-3xl font-bold tracking-tight text-ink-muted">90 à 300 €</p>
-                <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">
-                  Tarif généralement constaté pour un courrier seul, sans le
-                  suivi.
-                </p>
-              </div>
-              <div className="rounded-2xl bg-white/5 p-6 ring-1 ring-white/10">
-                <p className="text-sm text-ink-muted">Société de recouvrement</p>
-                <p className="mt-2 text-3xl font-bold tracking-tight text-ink-muted">240 à 480 €</p>
-                <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">
-                  10 à 20 % de commission prélevée sur votre facture de
-                  2 400 €.
-                </p>
-              </div>
-            </div>
-          </section>
+          </div>
         </Reveal>
 
         {/* Garanties */}
