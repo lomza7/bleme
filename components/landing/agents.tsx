@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Armchair, ArrowRight, Check, Database } from "lucide-react";
 import { AGENTS, type Agent, type AgentSkill } from "@/lib/agents/data";
+import { CountUp } from "@/components/landing/count-up";
 import { Reveal, RevealItem, RevealStagger } from "@/components/landing/reveal";
 import { SpriteAvatar } from "@/components/landing/sprite-avatar";
 
@@ -89,10 +90,21 @@ function AgentCard({ agent, index }: { agent: Agent; index: number }) {
         {agent.expertise}
       </p>
 
-      {/* Niveaux de maîtrise */}
-      <div className="relative mt-3 flex-1 space-y-1.5 border-t pt-3 sm:mt-5 sm:flex-none sm:space-y-2 sm:pt-4">
-        {agent.skills.map((s) => (
-          <SkillBar key={s.label} skill={s} />
+      {/* Les 2 chiffres les plus parlants (détail complet sur la fiche) */}
+      <div className="relative mt-3 flex-1 space-y-2 border-t pt-3 sm:mt-5 sm:flex-none sm:space-y-2.5 sm:pt-4">
+        {agent.stats.slice(0, 2).map((stat) => (
+          <div key={stat.label} className="flex flex-wrap items-baseline gap-x-2.5 gap-y-0.5">
+            <span className="shrink-0 text-lg font-bold tabular-nums tracking-tight text-brand-strong sm:text-xl">
+              {stat.valeur !== undefined ? (
+                <CountUp value={stat.valeur} suffix={stat.suffixe ?? ""} />
+              ) : (
+                stat.chiffre
+              )}
+            </span>
+            <span className="min-w-0 flex-1 basis-28 text-[11px] leading-snug text-muted-foreground sm:text-xs">
+              {stat.court ?? stat.label}
+            </span>
+          </div>
         ))}
       </div>
 
@@ -116,7 +128,9 @@ function AgentCard({ agent, index }: { agent: Agent; index: number }) {
 
       {/* Lien vers la fiche */}
       <p className="relative mt-3 flex items-center gap-1.5 border-t pt-3 text-[13px] font-medium text-brand-strong sm:mt-4 sm:pt-4 sm:text-sm">
-        Voir sa fiche<span className="hidden sm:inline"> complète</span>
+        <span>
+          Voir sa fiche<span className="hidden sm:inline"> complète</span>
+        </span>
         <ArrowRight className="size-3.5 transition-transform duration-300 group-hover:translate-x-1 sm:size-4" />
       </p>
     </Link>

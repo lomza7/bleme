@@ -21,6 +21,8 @@ export type AgentStat = {
   valeur?: number;
   suffixe?: string;
   label: string;
+  /** Libellé compact pour les cartes de la landing (2 premières stats). */
+  court?: string;
 };
 
 export type SavoirIcone =
@@ -57,7 +59,8 @@ export type Agent = {
   skills: AgentSkill[];
   /** Chips "branché sur" de la landing (3 max). */
   sources: string[];
-  /** Les 3 grands chiffres du haut de fiche. */
+  /** Les 3 grands chiffres du haut de fiche ; les 2 premiers, les plus
+   *  parlants, sont repris sur la carte de la landing. */
   stats: [AgentStat, AgentStat, AgentStat];
   mission: AgentMission[];
   savoir: AgentSavoir[];
@@ -80,9 +83,9 @@ export const AGENTS: Agent[] = [
     ],
     sources: ["Légifrance · Code de commerce", "Taux et indemnités légaux", "Modèles éprouvés BLEME"],
     stats: [
-      { chiffre: "40 €", valeur: 40, suffixe: " €", label: "d'indemnité forfaitaire chiffrée par facture en retard, de plein droit" },
-      { chiffre: "60 j", valeur: 60, suffixe: " j", label: "le plafond légal de paiement entre pros, qu'il connaît par cœur" },
-      { chiffre: "5 ans", valeur: 5, suffixe: " ans", label: "de prescription commerciale surveillée sur chaque créance" },
+      { chiffre: "40 €", valeur: 40, suffixe: " €", label: "d'indemnité forfaitaire chiffrée par facture en retard, de plein droit", court: "chiffrés par facture en retard, de plein droit" },
+      { chiffre: "5 ans", valeur: 5, suffixe: " ans", label: "de prescription commerciale surveillée sur chaque créance", court: "de prescription surveillée par créance" },
+      { chiffre: "60 j", valeur: 60, suffixe: " j", label: "le plafond légal de paiement entre pros, qu'il connaît par cœur", court: "de plafond légal de paiement, connu par cœur" },
     ],
     mission: [
       {
@@ -151,9 +154,9 @@ export const AGENTS: Agent[] = [
     ],
     sources: ["Judilibre · Cour de cassation", "Légifrance · Code civil", "Dossiers types litiges"],
     stats: [
-      { chiffre: "2 534", valeur: 2534, label: "articles du Code civil dans son corpus, réforme des contrats incluse" },
-      { chiffre: "500 000+", valeur: 500000, suffixe: "+", label: "décisions de justice consultables via l'open data Judilibre" },
-      { chiffre: "100 %", valeur: 100, suffixe: " %", label: "de ses réponses appuyées sur une pièce du dossier, sinon marquées « à confirmer »" },
+      { chiffre: "2 534", valeur: 2534, label: "articles du Code civil dans son corpus, réforme des contrats incluse", court: "articles du Code civil en corpus" },
+      { chiffre: "500 000+", valeur: 500000, suffixe: "+", label: "décisions de justice consultables via l'open data Judilibre", court: "décisions de justice consultables" },
+      { chiffre: "100 %", valeur: 100, suffixe: " %", label: "de ses réponses appuyées sur une pièce du dossier, sinon marquées « à confirmer »", court: "de réponses appuyées sur une pièce" },
     ],
     mission: [
       {
@@ -222,9 +225,9 @@ export const AGENTS: Agent[] = [
     ],
     sources: ["Jurisprudence contradictoire", "Moyens de défense recensés", "Récits des deux parties"],
     stats: [
-      { chiffre: "100 %", valeur: 100, suffixe: " %", label: "des dossiers passés au contre-interrogatoire avant le premier courrier" },
-      { chiffre: "2", valeur: 2, label: "versions de l'histoire confrontées : la vôtre, et celle d'en face" },
-      { chiffre: "0", valeur: 0, label: "courrier généré tant qu'une incohérence signalée n'est pas levée" },
+      { chiffre: "100 %", valeur: 100, suffixe: " %", label: "des dossiers passés au contre-interrogatoire avant le premier courrier", court: "des dossiers contre-interrogés avant courrier" },
+      { chiffre: "0", valeur: 0, label: "courrier généré tant qu'une incohérence signalée n'est pas levée", court: "courrier tant qu'une incohérence reste ouverte" },
+      { chiffre: "2", valeur: 2, label: "versions de l'histoire confrontées : la vôtre, et celle d'en face", court: "versions de l'histoire confrontées" },
     ],
     mission: [
       {
@@ -285,9 +288,9 @@ export const AGENTS: Agent[] = [
     ],
     sources: ["Vision + OCR multi-format", "Exports WhatsApp et emails", "Référentiel de pièces BLEME"],
     stats: [
-      { chiffre: "0,01 €", label: "la précision d'extraction : chaque montant est stocké au centime" },
-      { chiffre: "25 Mo", valeur: 25, suffixe: " Mo", label: "acceptés par pièce : plans, photos HD, PDF scannés" },
-      { chiffre: "100 %", valeur: 100, suffixe: " %", label: "des valeurs extraites gardent leur source et restent éditables" },
+      { chiffre: "0,01 €", label: "la précision d'extraction : chaque montant est stocké au centime", court: "de précision : montants extraits au centime" },
+      { chiffre: "100 %", valeur: 100, suffixe: " %", label: "des valeurs extraites gardent leur source et restent éditables", court: "des valeurs extraites gardent leur source" },
+      { chiffre: "25 Mo", valeur: 25, suffixe: " Mo", label: "acceptés par pièce : plans, photos HD, PDF scannés", court: "acceptés par pièce, photos HD comprises" },
     ],
     mission: [
       {
@@ -356,9 +359,9 @@ export const AGENTS: Agent[] = [
     ],
     sources: ["Prescription et délais légaux", "Suivi recommandés et AR", "Cadences éprouvées BLEME"],
     stats: [
-      { chiffre: "15 min", valeur: 15, suffixe: " min", label: "entre deux contrôles : chaque dossier est réexaminé à cette cadence" },
-      { chiffre: "24 h/24", label: "de veille : les échéances ne prennent ni week-end ni congés" },
-      { chiffre: "5 ans", valeur: 5, suffixe: " ans", label: "de prescription commerciale suivie dossier par dossier" },
+      { chiffre: "15 min", valeur: 15, suffixe: " min", label: "entre deux contrôles : chaque dossier est réexaminé à cette cadence", court: "entre deux tours de garde sur vos dossiers" },
+      { chiffre: "24 h/24", label: "de veille : les échéances ne prennent ni week-end ni congés", court: "de veille sur vos échéances" },
+      { chiffre: "5 ans", valeur: 5, suffixe: " ans", label: "de prescription commerciale suivie dossier par dossier", court: "de prescription suivie dossier par dossier" },
     ],
     mission: [
       {
@@ -419,9 +422,9 @@ export const AGENTS: Agent[] = [
     ],
     sources: ["BOFiP · doctrine fiscale", "Code général des impôts", "Livre des procédures fiscales"],
     stats: [
-      { chiffre: "6 mois", valeur: 6, suffixe: " mois", label: "le délai de réponse de l'administration à une réclamation, qu'il suit au jour près" },
-      { chiffre: "N+2", label: "l'horizon de réclamation qu'il surveille : jusqu'au 31 décembre de la 2e année" },
-      { chiffre: "L247", label: "l'article du LPF qui permet de demander une remise gracieuse" },
+      { chiffre: "6 mois", valeur: 6, suffixe: " mois", label: "le délai de réponse de l'administration à une réclamation, qu'il suit au jour près", court: "de silence administratif suivis au jour près" },
+      { chiffre: "L247", label: "l'article du LPF qui permet de demander une remise gracieuse", court: "la remise gracieuse, son article de prédilection" },
+      { chiffre: "N+2", label: "l'horizon de réclamation qu'il surveille : jusqu'au 31 décembre de la 2e année", court: "l'horizon de réclamation surveillé" },
     ],
     mission: [
       {
