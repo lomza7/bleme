@@ -9,6 +9,7 @@ import { KnowledgeGraph } from "@/components/landing/knowledge-graph";
 import { EvidenceSources } from "@/components/landing/evidence-sources";
 import { CaseTimeline } from "@/components/landing/case-timeline";
 import { DashboardDemo } from "@/components/landing/dashboard-demo";
+import { AgentsTeam } from "@/components/landing/agents";
 
 const CTA_LABEL = "Créer mon premier dossier";
 
@@ -68,6 +69,7 @@ export default function Home() {
         <HowItWorks />
         <CaseTimeline />
         <DashboardDemo />
+        <AgentsTeam />
         <IaEtGardeFous />
         <Pricing />
         <Faq />
