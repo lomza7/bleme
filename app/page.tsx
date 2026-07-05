@@ -124,9 +124,9 @@ function Nav() {
           <a href="#suivi" className="transition-colors duration-300 hover:text-foreground">
             Suivi
           </a>
-          <a href="#tarifs" className="transition-colors duration-300 hover:text-foreground">
+          <Link href="/tarifs" className="transition-colors duration-300 hover:text-foreground">
             Tarifs
-          </a>
+          </Link>
           <a href="#faq" className="transition-colors duration-300 hover:text-foreground">
             FAQ
           </a>
