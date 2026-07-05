@@ -1,48 +1,56 @@
+import {
+  BookOpenText,
+  Gavel,
+  Landmark,
+  Newspaper,
+  Percent,
+  ScrollText,
+} from "lucide-react";
 import { Reveal } from "@/components/landing/reveal";
 
 /*
- * « Branchée sur le savoir juridique public » : les institutions sources
- * (plaques officielles avec glyphe tricolore) convergent vers le cœur
- * BLEME par des flèches animées. SVG + SMIL + CSS, aucun JavaScript,
- * désactivé proprement en reduced-motion.
+ * « Branchée sur le savoir juridique public » : constellation lumineuse à
+ * la Stitch. Fond crème, cœur BLEME rayonnant, fines courbes qui filent
+ * vers les bords, tuiles-icônes flottantes, wordmarks des institutions en
+ * pied. SVG + SMIL + CSS, aucun JavaScript.
  */
 
-type Source = {
-  nom: string;
-  detail: string;
-  side: "left" | "right";
-  slot: number;
-  bleme?: boolean;
-};
+// Tuiles-icônes dispersées (fractions du viewBox 1200 × 560).
+const TILES = [
+  { icon: BookOpenText, label: "Codes en vigueur", x: 0.2, y: 0.28, delay: 0 },
+  { icon: Gavel, label: "Jurisprudence judiciaire", x: 0.115, y: 0.52, delay: 0.4 },
+  { icon: Landmark, label: "Jurisprudence administrative", x: 0.265, y: 0.74, delay: 0.8 },
+  { icon: Newspaper, label: "Journal officiel", x: 0.8, y: 0.28, delay: 0.2 },
+  { icon: Percent, label: "Taux et indemnités", x: 0.885, y: 0.52, delay: 0.6 },
+  { icon: ScrollText, label: "Doctrine fiscale", x: 0.735, y: 0.74, delay: 1 },
+] as const;
 
-const SOURCES: Source[] = [
-  { nom: "Légifrance", detail: "Codes et lois en vigueur, consolidés", side: "left", slot: 0 },
-  { nom: "Judilibre · Cour de cassation", detail: "Jurisprudence judiciaire publiée", side: "left", slot: 1 },
-  { nom: "Conseil d’État", detail: "Jurisprudence administrative", side: "left", slot: 2 },
-  { nom: "Journal officiel · DILA", detail: "Lois, décrets, barèmes publiés", side: "right", slot: 0 },
-  { nom: "BOFiP · Impôts", detail: "Doctrine fiscale officielle", side: "right", slot: 1 },
-  { nom: "Modèles BLEME", detail: "Courriers éprouvés, conformes aux usages", side: "right", slot: 2, bleme: true },
-];
+// Courbes rayonnant du cœur vers les bords (5 par côté).
+const RAY_ENDS = [50, 165, 280, 395, 510];
+const CORE = { x: 600, y: 280 };
 
-// Géométrie (viewBox 1000 × 540) : constellation en arc autour du cœur.
-const SLOT_Y = [80, 270, 460];
-const X = { left: [215, 165, 215], right: [785, 835, 785] };
-const CORE = { x: 500, y: 270, r: 92 };
-
-function beamPath(side: "left" | "right", slot: number): string {
-  const x = X[side][slot];
-  const y = SLOT_Y[slot];
-  const endX = side === "left" ? CORE.x - CORE.r : CORE.x + CORE.r;
-  const c1x = side === "left" ? x + 130 : x - 130;
-  const c2x = side === "left" ? CORE.x - CORE.r - 90 : CORE.x + CORE.r + 90;
-  return `M ${x} ${y} C ${c1x} ${y}, ${c2x} ${CORE.y}, ${endX} ${CORE.y}`;
+function rayPath(side: "left" | "right", endY: number): string {
+  const startX = side === "left" ? CORE.x - 64 : CORE.x + 64;
+  const endX = side === "left" ? -40 : 1240;
+  const c1x = side === "left" ? CORE.x - 240 : CORE.x + 240;
+  const c2x = side === "left" ? 260 : 940;
+  return `M ${startX} ${CORE.y} C ${c1x} ${CORE.y}, ${c2x} ${endY}, ${endX} ${endY}`;
 }
 
-function FlagGlyph() {
+const WORDMARKS = [
+  "Légifrance",
+  "Judilibre",
+  "Cour de cassation",
+  "Conseil d’État",
+  "DILA",
+  "BOFiP",
+];
+
+function FlagGlyph({ small = false }: { small?: boolean }) {
   return (
     <span
       aria-hidden
-      className="flex h-5 w-7 shrink-0 overflow-hidden rounded-[4px] ring-1 ring-black/15"
+      className={`flex shrink-0 overflow-hidden ${small ? "h-3 w-[18px] rounded-[2px]" : "h-5 w-7 rounded-[4px]"} ring-1 ring-black/10`}
     >
       <span className="h-full w-1/3 bg-[#000091]" />
       <span className="h-full w-1/3 bg-white" />
@@ -51,139 +59,88 @@ function FlagGlyph() {
   );
 }
 
-function Plaque({ source, detail = false }: { source: Source; detail?: boolean }) {
-  const inner = (
-    <>
-      {source.bleme ? (
-        <span className="flex h-5 w-7 shrink-0 items-center justify-center rounded-[4px] bg-white/20 text-[11px] font-bold">
-          B.
-        </span>
-      ) : (
-        <FlagGlyph />
-      )}
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-semibold tracking-tight">
-          {source.nom}
-        </span>
-        {detail ? (
-          <span className={source.bleme ? "block truncate text-xs opacity-85" : "block truncate text-xs text-zinc-500"}>
-            {source.detail}
-          </span>
-        ) : null}
-      </span>
-    </>
-  );
-  return (
-    <div
-      className={
-        source.bleme
-          ? "flex w-max max-w-full items-center gap-3 rounded-xl bg-brand px-4 py-3 text-brand-foreground shadow-xl shadow-brand/25 transition-all duration-500 ease-fluid hover:-translate-y-0.5"
-          : "flex w-max max-w-full items-center gap-3 rounded-xl bg-white px-4 py-3 text-zinc-900 shadow-xl shadow-zinc-950/30 transition-all duration-500 ease-fluid hover:-translate-y-0.5"
-      }
-    >
-      {inner}
-    </div>
-  );
-}
-
 export function KnowledgeGraph() {
   return (
-    <section className="relative overflow-hidden bg-ink text-ink-foreground">
-      <div aria-hidden className="absolute left-1/2 top-1/2 size-[32rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/15 blur-[140px]" />
-
-      <div className="relative mx-auto max-w-6xl px-6 py-24 lg:py-32">
+    <section className="relative overflow-hidden bg-brand-soft/60">
+      <div className="relative mx-auto max-w-6xl px-6 py-24 lg:py-28">
         <Reveal>
           <div className="mx-auto max-w-2xl text-center">
-            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+            <span className="inline-flex items-center gap-2 rounded-full border border-brand/30 bg-white px-3.5 py-1.5 text-xs font-medium text-brand-strong">
+              <span className="size-1.5 bg-brand" aria-hidden />
+              Sources officielles françaises
+            </span>
+            <h2 className="mt-5 text-3xl font-bold tracking-tight sm:text-4xl">
               Branchée sur le savoir juridique public.
             </h2>
-            <p className="mt-4 text-lg text-ink-muted">
+            <p className="mt-4 text-lg text-muted-foreground">
               Codes, jurisprudence, Journal officiel, doctrine fiscale : tout
               converge dans l’IA de BLEME et se condense dans vos dossiers.
             </p>
           </div>
         </Reveal>
 
-        {/* Diagramme desktop */}
-        <Reveal delay={0.15} className="relative mt-4 hidden lg:block">
-          <div className="relative mx-auto h-[540px] max-w-5xl">
+        {/* Constellation desktop */}
+        <Reveal delay={0.15} className="relative hidden lg:block">
+          <div className="relative mx-auto h-[560px] max-w-6xl">
+            {/* Halo central */}
+            <div aria-hidden className="absolute left-1/2 top-1/2 size-[26rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/15 blur-3xl" />
+            <div aria-hidden className="absolute left-1/2 top-1/2 size-48 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/25 blur-2xl" />
+
             <svg
               aria-hidden
               className="absolute inset-0 h-full w-full"
-              viewBox="0 0 1000 540"
+              viewBox="0 0 1200 560"
               preserveAspectRatio="none"
             >
               <defs>
-                <radialGradient id="beamGrad" cx="50%" cy="50%" r="50%">
-                  <stop offset="0%" stopColor="var(--brand)" stopOpacity="0.9" />
-                  <stop offset="55%" stopColor="var(--brand)" stopOpacity="0.35" />
-                  <stop offset="100%" stopColor="white" stopOpacity="0.10" />
-                </radialGradient>
-                <marker
-                  id="arrowHead"
-                  viewBox="0 0 10 10"
-                  refX="7"
-                  refY="5"
-                  markerWidth="7"
-                  markerHeight="7"
-                  orient="auto-start-reverse"
-                >
-                  <path d="M 0 1.5 L 8.5 5 L 0 8.5 z" fill="var(--brand)" />
-                </marker>
+                <linearGradient id="rayLeft" x1="1" y1="0" x2="0" y2="0">
+                  <stop offset="0%" stopColor="var(--brand)" stopOpacity="0.55" />
+                  <stop offset="45%" stopColor="var(--brand)" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="var(--brand)" stopOpacity="0" />
+                </linearGradient>
+                <linearGradient id="rayRight" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor="var(--brand)" stopOpacity="0.55" />
+                  <stop offset="45%" stopColor="var(--brand)" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="var(--brand)" stopOpacity="0" />
+                </linearGradient>
               </defs>
 
-              {/* Traits pleins discrets + flux en tirets + pointe de flèche */}
-              {SOURCES.map((s) => (
-                <g key={s.nom}>
+              {(["left", "right"] as const).map((side) =>
+                RAY_ENDS.map((endY) => (
                   <path
-                    d={beamPath(s.side, s.slot)}
+                    key={`${side}-${endY}`}
+                    d={rayPath(side, endY)}
                     fill="none"
-                    stroke="oklch(1 0 0 / 0.07)"
+                    stroke={side === "left" ? "url(#rayLeft)" : "url(#rayRight)"}
                     strokeWidth="1.5"
                   />
-                  <path
-                    className="anim-dash"
-                    d={beamPath(s.side, s.slot)}
-                    fill="none"
-                    stroke="url(#beamGrad)"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeDasharray="7 9"
-                    markerEnd="url(#arrowHead)"
-                  />
-                </g>
-              ))}
+                )),
+              )}
 
-              {/* Impulsions lumineuses */}
+              {/* Impulsions discrètes remontant vers le cœur */}
               <g className="motion-reduce:hidden">
-                {SOURCES.map((s, i) => (
-                  <g key={`pulse-${s.nom}`}>
-                    <circle r="7" fill="var(--brand)" opacity="0.25">
+                {(["left", "right"] as const).map((side) =>
+                  [0, 2, 4].map((idx, i) => (
+                    <circle key={`${side}-p-${idx}`} r="3" fill="var(--brand)">
                       <animateMotion
-                        dur="3.2s"
-                        begin={`${i * 0.5}s`}
+                        dur="4s"
+                        begin={`${i * 1.3 + (side === "right" ? 0.65 : 0)}s`}
                         repeatCount="indefinite"
-                        path={beamPath(s.side, s.slot)}
-                      />
-                    </circle>
-                    <circle r="3" fill="oklch(0.95 0.05 48)">
-                      <animateMotion
-                        dur="3.2s"
-                        begin={`${i * 0.5}s`}
-                        repeatCount="indefinite"
-                        path={beamPath(s.side, s.slot)}
+                        keyPoints="1;0"
+                        keyTimes="0;1"
+                        path={rayPath(side, RAY_ENDS[idx])}
                       />
                       <animate
                         attributeName="opacity"
-                        values="0;1;1;0"
-                        keyTimes="0;0.12;0.85;1"
-                        dur="3.2s"
-                        begin={`${i * 0.5}s`}
+                        values="0;0.8;0.8;0"
+                        keyTimes="0;0.2;0.85;1"
+                        dur="4s"
+                        begin={`${i * 1.3 + (side === "right" ? 0.65 : 0)}s`}
                         repeatCount="indefinite"
                       />
                     </circle>
-                  </g>
-                ))}
+                  )),
+                )}
               </g>
             </svg>
 
@@ -192,72 +149,85 @@ export function KnowledgeGraph() {
               className="absolute z-[1] -translate-x-1/2 -translate-y-1/2"
               style={{ left: "50%", top: "50%" }}
             >
-              <span aria-hidden className="anim-ring absolute inset-0 rounded-full border border-brand/50" />
-              <span aria-hidden className="anim-ring absolute inset-0 rounded-full border border-brand/40 [animation-delay:1.1s]" />
-              <span
-                aria-hidden
-                className="anim-spin-slow absolute -inset-4 rounded-full border border-dashed border-brand/30"
-              />
-              <div className="relative flex size-44 flex-col items-center justify-center rounded-full bg-white/[0.06] p-2 ring-1 ring-white/15">
-                <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-gradient-to-b from-brand to-brand-strong text-brand-foreground shadow-[0_0_70px_-8px_var(--brand)]">
-                  <span className="text-2xl font-bold tracking-tight">
-                    BLEME<span className="opacity-70">.</span>
-                  </span>
-                  <span className="mt-1 text-[10px] font-medium uppercase tracking-[0.2em] opacity-85">
+              <div className="flex size-32 items-center justify-center rounded-full bg-white shadow-xl shadow-brand/20 ring-1 ring-black/5">
+                <div className="flex size-[5.5rem] flex-col items-center justify-center rounded-full bg-gradient-to-b from-brand to-brand-strong text-brand-foreground">
+                  <span className="text-2xl font-bold tracking-tight">B.</span>
+                  <span className="text-[8px] font-medium uppercase tracking-[0.2em] opacity-85">
                     IA juridique
                   </span>
                 </div>
               </div>
             </div>
 
-            {/* Plaques institutions */}
-            {SOURCES.map((s) => (
+            {/* Tuiles-icônes flottantes */}
+            {TILES.map((t) => (
               <div
-                key={s.nom}
-                className="absolute z-[1] -translate-y-1/2"
-                style={{
-                  right: s.side === "left" ? `${((1000 - X.left[s.slot]) / 1000) * 100}%` : undefined,
-                  left: s.side === "right" ? `${(X.right[s.slot] / 1000) * 100}%` : undefined,
-                  top: `${(SLOT_Y[s.slot] / 540) * 100}%`,
-                }}
+                key={t.label}
+                className="anim-load absolute z-[1] -translate-x-1/2 -translate-y-1/2"
+                style={
+                  {
+                    left: `${t.x * 100}%`,
+                    top: `${t.y * 100}%`,
+                    "--delay": `${0.3 + t.delay}s`,
+                  } as React.CSSProperties
+                }
+                title={t.label}
               >
-                <Plaque source={s} />
+                <div className="flex size-16 items-center justify-center rounded-2xl bg-white shadow-lg shadow-zinc-950/[0.1] ring-1 ring-black/5 transition-all duration-500 ease-fluid hover:-translate-y-1 hover:shadow-xl">
+                  <t.icon className="size-7 text-brand-strong" />
+                </div>
+                <span className="sr-only">{t.label}</span>
               </div>
             ))}
           </div>
         </Reveal>
 
-        {/* Version mobile : cœur + plaques empilées */}
+        {/* Version mobile : cœur + tuiles nommées */}
         <div className="mt-12 lg:hidden">
-          <div className="mx-auto w-max">
-            <div className="relative">
-              <span aria-hidden className="anim-ring absolute inset-0 rounded-full border border-brand/50" />
-              <div className="relative flex size-32 flex-col items-center justify-center rounded-full bg-gradient-to-b from-brand to-brand-strong text-brand-foreground shadow-[0_0_50px_-10px_var(--brand)]">
-                <span className="text-xl font-bold tracking-tight">
-                  BLEME<span className="opacity-70">.</span>
-                </span>
-                <span className="mt-0.5 text-[9px] font-medium uppercase tracking-[0.18em] opacity-85">
+          <div className="relative mx-auto w-max">
+            <div aria-hidden className="absolute left-1/2 top-1/2 size-52 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/20 blur-2xl" />
+            <div className="relative flex size-28 items-center justify-center rounded-full bg-white shadow-xl shadow-brand/20 ring-1 ring-black/5">
+              <div className="flex size-20 flex-col items-center justify-center rounded-full bg-gradient-to-b from-brand to-brand-strong text-brand-foreground">
+                <span className="text-xl font-bold tracking-tight">B.</span>
+                <span className="text-[7px] font-medium uppercase tracking-[0.18em] opacity-85">
                   IA juridique
                 </span>
               </div>
             </div>
           </div>
-          <ul className="mt-8 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {SOURCES.map((s) => (
-              <li key={s.nom}>
-                <Plaque source={s} detail />
+          <ul className="mt-10 grid grid-cols-2 gap-3">
+            {TILES.map((t) => (
+              <li
+                key={t.label}
+                className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-black/5"
+              >
+                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
+                  <t.icon className="size-5" />
+                </span>
+                <span className="text-sm font-medium leading-snug">{t.label}</span>
               </li>
             ))}
           </ul>
         </div>
 
+        {/* Wordmarks des institutions */}
         <Reveal delay={0.25}>
-          <div className="mt-10 text-center">
-            <p className="text-sm text-ink-muted">
-              Alimentée par les API publiques officielles : Légifrance (PISTE),
-              Judilibre (Cour de cassation), DILA.
+          <div className="mt-6 text-center lg:mt-0">
+            <p className="text-sm text-muted-foreground">
+              Alimentée par les API publiques officielles :
             </p>
-            <p className="mx-auto mt-3 max-w-xl text-xs leading-relaxed text-ink-muted/70">
+            <ul className="mt-5 flex flex-wrap items-center justify-center gap-x-9 gap-y-4">
+              {WORDMARKS.map((w) => (
+                <li
+                  key={w}
+                  className="flex items-center gap-2 text-[15px] font-semibold tracking-tight text-foreground/60 transition-colors duration-300 hover:text-foreground"
+                >
+                  <FlagGlyph small />
+                  {w}
+                </li>
+              ))}
+            </ul>
+            <p className="mx-auto mt-6 max-w-xl text-xs leading-relaxed text-muted-foreground/80">
               Information générale issue de sources publiques, intégrée aux
               modèles de courriers. Ce n’est pas un conseil juridique
               personnalisé.
