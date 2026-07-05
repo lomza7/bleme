@@ -28,6 +28,7 @@ import json
 import os
 import re
 import shutil
+import subprocess
 import sys
 import time
 import urllib.request
@@ -151,6 +152,92 @@ def _chat_sync(agent: str, model: str, system: str, message: str) -> str:
     if response is None:
         raise RuntimeError("HermesCLI.chat a renvoyé None")
     return str(response).strip()
+
+
+# ── Version et mise à jour de Hermes (checkout dédié BLEME) ──────────────────
+
+ROLLBACK_FILE = Path(HERMES_ROOT) / ".bleme-rollback"
+_VERSION_CACHE: dict = {"at": 0.0, "data": None}
+
+
+def _git(*args: str, timeout: int = 30) -> str:
+    out = subprocess.run(
+        ["git", *args], cwd=HERMES_ROOT, capture_output=True, text=True, timeout=timeout,
+    )
+    if out.returncode != 0:
+        raise RuntimeError(out.stderr.strip()[:200] or f"git {args[0]} a échoué")
+    return out.stdout.strip()
+
+
+def _pip_sync() -> None:
+    pip = Path(HERMES_ROOT) / "venv" / "bin" / "pip"
+    if pip.exists():
+        subprocess.run(
+            [str(pip), "install", "-q", "-e", "."],
+            cwd=HERMES_ROOT, capture_output=True, timeout=600,
+        )
+
+
+def _schedule_restart() -> None:
+    """systemd (Restart=always) relance le service : le nouveau code se charge."""
+    loop = asyncio.get_event_loop()
+    loop.call_later(1.0, os._exit, 0)
+
+
+@app.get("/version", dependencies=[Depends(_auth)])
+def version() -> dict:
+    now = time.time()
+    if _VERSION_CACHE["data"] and now - _VERSION_CACHE["at"] < 900:
+        return _VERSION_CACHE["data"]
+    try:
+        local = _git("rev-parse", "--short", "HEAD")
+        date = _git("log", "-1", "--format=%ci")
+        behind = None
+        with contextlib.suppress(Exception):
+            _git("fetch", "-q", "origin", timeout=25)
+            behind = int(_git("rev-list", "--count", "HEAD..origin/main"))
+        data = {
+            "ok": True,
+            "commit": local,
+            "date": date,
+            "behind": behind,
+            "rollback_available": ROLLBACK_FILE.exists(),
+        }
+        _VERSION_CACHE.update(at=now, data=data)
+        return data
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:200]}
+
+
+@app.post("/update", dependencies=[Depends(_auth)])
+def update() -> dict:
+    try:
+        before = _git("rev-parse", "--short", "HEAD")
+        ROLLBACK_FILE.write_text(before)
+        _git("pull", "--ff-only", "origin", "main", timeout=120)
+        after = _git("rev-parse", "--short", "HEAD")
+        if after != before:
+            _pip_sync()
+        _VERSION_CACHE["data"] = None
+        _schedule_restart()
+        return {"ok": True, "from": before, "to": after, "restarting": True}
+    except Exception as exc:
+        raise HTTPException(502, f"mise à jour échouée : {str(exc)[:200]}")
+
+
+@app.post("/rollback", dependencies=[Depends(_auth)])
+def rollback() -> dict:
+    if not ROLLBACK_FILE.exists():
+        raise HTTPException(404, "aucun point de retour enregistré")
+    target = ROLLBACK_FILE.read_text().strip()
+    try:
+        _git("checkout", "-q", target)
+        _pip_sync()
+        _VERSION_CACHE["data"] = None
+        _schedule_restart()
+        return {"ok": True, "to": target, "restarting": True}
+    except Exception as exc:
+        raise HTTPException(502, f"rollback échoué : {str(exc)[:200]}")
 
 
 def _skill_entry(path: Path, name: str) -> dict:

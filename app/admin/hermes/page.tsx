@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import {
   getHermesOverview,
+  getHermesVersion,
   getRoutines,
   getSkillScopes,
   setRoutineStatus,
@@ -17,6 +18,7 @@ import {
   toggleSkillScope,
   type Skill,
 } from "@/lib/admin/hermes-actions";
+import { HermesUpdateControls } from "@/components/admin/hermes-update";
 import { InstallSkillButton, RemoveSkillButton } from "@/components/admin/skills";
 import { RoutineCreateForm } from "@/components/admin/routines";
 import { createClient } from "@/lib/supabase/server";
@@ -43,11 +45,12 @@ function groupByCategory(skills: Skill[]): Map<string, Skill[]> {
 
 export default async function HermesAdminPage() {
   const supabase = await createClient();
-  const [overview, paperclipUrl, scopes, routinesRes, { data: agentRows }] = await Promise.all([
+  const [overview, paperclipUrl, scopes, routinesRes, version, { data: agentRows }] = await Promise.all([
     getHermesOverview(),
     getSecret("PAPERCLIP_URL"),
     getSkillScopes(),
     getRoutines(),
+    getHermesVersion(),
     supabase.from("agents").select("key, prenom").order("created_at"),
   ]);
   const agents = agentRows ?? [];
@@ -117,7 +120,34 @@ export default async function HermesAdminPage() {
               <dt>Skills installées</dt>
               <dd className="text-foreground">{installed.length}</dd>
             </div>
+            <div className="flex justify-between">
+              <dt>Version Hermes</dt>
+              <dd className="flex items-center gap-2">
+                <code className="font-mono text-foreground">{version.commit ?? "?"}</code>
+                {version.behind === 0 ? (
+                  <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200">
+                    à jour
+                  </span>
+                ) : typeof version.behind === "number" ? (
+                  <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-200">
+                    {version.behind} commits de retard
+                  </span>
+                ) : null}
+              </dd>
+            </div>
+            {version.date ? (
+              <div className="flex justify-between">
+                <dt>Publiée le</dt>
+                <dd className="text-foreground">
+                  {new Date(version.date).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" })}
+                </dd>
+              </div>
+            ) : null}
           </dl>
+          <HermesUpdateControls
+            behind={version.behind ?? null}
+            rollbackAvailable={Boolean(version.rollbackAvailable)}
+          />
         </div>
 
         <div className="rounded-[1.75rem] border bg-card p-6">

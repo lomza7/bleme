@@ -144,6 +144,61 @@ export async function getOpenRouterModels(): Promise<ORModel[]> {
   }
 }
 
+// ── Version de Hermes : suivre le rythme des updates de Nous Research ───────
+
+export type HermesVersion = {
+  ok: boolean;
+  commit?: string;
+  date?: string;
+  behind?: number | null;
+  rollbackAvailable?: boolean;
+  error?: string;
+};
+
+export async function getHermesVersion(): Promise<HermesVersion> {
+  if (!(await requireAdmin())) return { ok: false };
+  try {
+    const v = await bridgeFetch("/version");
+    return {
+      ok: Boolean(v.ok),
+      commit: v.commit,
+      date: v.date,
+      behind: v.behind,
+      rollbackAvailable: v.rollback_available,
+      error: v.error,
+    };
+  } catch {
+    return { ok: false };
+  }
+}
+
+export async function updateHermes(): Promise<HermesState> {
+  if (!(await requireAdmin())) return { error: "Accès réservé aux administrateurs." };
+  try {
+    const r = await bridgeFetch("/update", { method: "POST" });
+    revalidatePath("/admin/hermes");
+    return {
+      success:
+        r.from === r.to
+          ? "Déjà à la dernière version."
+          : `Mise à jour ${r.from} → ${r.to} : le bridge redémarre (~30 s).`,
+    };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Échec de la mise à jour." };
+  }
+}
+
+export async function rollbackHermes(): Promise<HermesState> {
+  if (!(await requireAdmin())) return { error: "Accès réservé aux administrateurs." };
+  try {
+    const r = await bridgeFetch("/rollback", { method: "POST" });
+    revalidatePath("/admin/hermes");
+    return { success: `Retour à ${r.to} : le bridge redémarre (~30 s).` };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Échec du retour arrière." };
+  }
+}
+
 // ── Portée des skills : commune (agent_key null) ou propre à un agent ────────
 
 export type SkillScopes = Record<string, string[]>; // skill → ["commun"|agentKey...]
