@@ -333,6 +333,7 @@ async def _scheduler() -> None:
 @app.on_event("startup")
 async def _start_scheduler() -> None:
     _sp_maybe_refresh()
+    _ta_maybe_refresh()
     asyncio.create_task(_scheduler())
 
 
@@ -1049,6 +1050,39 @@ def _tool_bodacc(action: str, params: dict, _credentials: dict) -> dict:
 def _tool_justice_administrative(action: str, params: dict, credentials: dict) -> dict:
     if action == "rechercher":
         return _legifrance_search("CETAT", str(params.get("mots_cles", "")), credentials)
+    if action == "rechercher_ta":
+        if not TA_DB.exists():
+            return {"erreur": "index des tribunaux administratifs en cours de construction, réessaye plus tard"}
+        mots = str(params.get("mots_cles", ""))[:150]
+        termes = re.findall(r"[\w'àâäéèêëîïôöùûüç-]+", mots.lower())[:8]
+        if not termes:
+            return {"erreur": "paramètre 'mots_cles' vide"}
+        fts = lambda op: op.join(f'"{x}"' for x in termes)  # noqa: E731
+        sql = ("SELECT id, juridiction, date, type_recours, solution, snippet(ta, 8, '', '', '…', 24) "
+               "FROM ta WHERE ta MATCH ? ORDER BY bm25(ta) LIMIT 5")
+        try:
+            db = _ta_db()
+            rows = db.execute(sql, (fts(" "),)).fetchall() or db.execute(sql, (fts(" OR "),)).fetchall()
+            db.close()
+        except Exception as exc:
+            return {"erreur": f"recherche invalide : {str(exc)[:120]}"}
+        return {"resultats": [
+            {"id": r[0], "juridiction": r[1], "date": r[2], "type_recours": r[3],
+             "solution": r[4], "extrait": r[5]} for r in rows]}
+    if action == "consulter_decision_ta":
+        did = str(params.get("id", "")).strip()[:60]
+        if not TA_DB.exists():
+            return {"erreur": "index des tribunaux administratifs en cours de construction"}
+        db = _ta_db()
+        rows = db.execute(
+            "SELECT id, juridiction, numero, date, type_decision, type_recours, solution, texte "
+            "FROM ta WHERE id = ? LIMIT 1", (did,)).fetchall()
+        db.close()
+        if not rows:
+            return {"erreur": f"décision introuvable : {did}"}
+        r = rows[0]
+        return {"id": r[0], "juridiction": r[1], "numero": r[2], "date": r[3],
+                "type_decision": r[4], "type_recours": r[5], "solution": r[6], "texte": r[7][:2800]}
     if action == "consulter_decision":
         did = str(params.get("id", "")).strip()
         if not did.startswith("CETATEXT"):
@@ -1096,6 +1130,148 @@ def _tool_entreprises(action: str, params: dict, _credentials: dict) -> dict:
             ],
         })
     return {"total": payload.get("total_results", len(resultats)), "resultats": resultats}
+
+
+
+# ── Tribunaux administratifs : index local des décisions (open data CE) ──────
+# opendata.justice-administrative.fr ne publie que des dumps XML mensuels
+# (pas d'API de recherche). Fenêtre glissante de TA_MONTHS mois, sync
+# incrémentale par mois, purge des mois sortis de fenêtre. Le fond CETAT
+# (Légifrance) couvre déjà CE + CAA : ici on n'indexe que les TA.
+
+TA_DB = Path(os.getenv("HERMES_HOME", str(Path.home() / ".hermes"))) / "tribunaux-administratifs.db"
+TA_MONTHS = int(os.getenv("BLEME_TA_MONTHS", "24"))
+TA_FLUX = "https://opendata.justice-administrative.fr/DTA/{annee}/{mois:02d}/TA_{annee}{mois:02d}.zip"
+_ta_sync_lock = threading.Lock()
+
+
+def _ta_window() -> list[str]:
+    """Mois YYYYMM de la fenêtre, du plus récent (mois précédent) au plus ancien."""
+    annee, mois = time.gmtime().tm_year, time.gmtime().tm_mon
+    out = []
+    for _ in range(TA_MONTHS):
+        mois -= 1
+        if mois == 0:
+            annee, mois = annee - 1, 12
+        out.append(f"{annee}{mois:02d}")
+    return out
+
+
+def _ta_db(create: bool = False):
+    import sqlite3
+
+    db = sqlite3.connect(TA_DB if create else f"file:{TA_DB}?mode=ro", uri=not create)
+    if create:
+        db.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS ta USING fts5"
+            "(id, juridiction, numero, date, type_decision, type_recours, solution, mois, texte,"
+            " tokenize='unicode61 remove_diacritics 2')"
+        )
+        db.execute("CREATE TABLE IF NOT EXISTS ta_state (mois TEXT PRIMARY KEY, decisions INTEGER, synced_at TEXT)")
+    return db
+
+
+def _ta_sync_month(db, yyyymm: str) -> int:
+    import tempfile
+    import xml.etree.ElementTree as ET
+    import zipfile
+
+    url = TA_FLUX.format(annee=int(yyyymm[:4]), mois=int(yyyymm[4:]))
+    with tempfile.NamedTemporaryFile(suffix=".zip") as tmp:
+        try:
+            with urllib.request.urlopen(url, timeout=600) as resp:
+                shutil.copyfileobj(resp, tmp)
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:  # mois pas encore publié
+                return -1
+            raise
+        tmp.flush()
+        n = 0
+        with zipfile.ZipFile(tmp.name) as z:
+            for name in z.namelist():
+                if not name.endswith(".xml"):
+                    continue
+                with contextlib.suppress(Exception):
+                    root = ET.fromstring(z.read(name))
+                    dossier = root.find("Dossier")
+                    if dossier is None:
+                        continue
+                    g = lambda tag: (dossier.findtext(tag) or "").strip()  # noqa: E731
+                    texte = re.sub(r"\s+", " ", root.findtext("Decision/Texte_Integral") or "").strip()
+                    if not texte:
+                        continue
+                    did = f"{g('Code_Juridiction')}_{g('Numero_Dossier')}_{g('Date_Lecture').replace('-', '')}"
+                    db.execute(
+                        "INSERT INTO ta VALUES (?,?,?,?,?,?,?,?,?)",
+                        (did, g("Nom_Juridiction"), g("Numero_Dossier"), g("Date_Lecture"),
+                         g("Type_Decision"), g("Type_Recours"), g("Solution"), yyyymm, texte[:8000]),
+                    )
+                    n += 1
+        return n
+
+
+def _ta_sync() -> dict:
+    """Synchronise la fenêtre glissante. Long au premier passage (~30 min) : à lancer en thread."""
+    if not _ta_sync_lock.acquire(blocking=False):
+        return {"ok": False, "erreur": "synchronisation déjà en cours"}
+    try:
+        db = _ta_db(create=True)
+        fenetre = _ta_window()
+        connus = {r[0] for r in db.execute("SELECT mois FROM ta_state").fetchall()}
+        ajoutes = 0
+        for yyyymm in sorted(set(fenetre) - connus, reverse=True):
+            n = _ta_sync_month(db, yyyymm)
+            if n < 0:
+                continue
+            db.execute("INSERT OR REPLACE INTO ta_state VALUES (?,?,datetime('now'))", (yyyymm, n))
+            db.commit()
+            ajoutes += n
+            print(f"[bleme-bridge] TA {yyyymm} : {n} décisions indexées")
+        for yyyymm in connus - set(fenetre):
+            db.execute("DELETE FROM ta WHERE mois = ?", (yyyymm,))
+            db.execute("DELETE FROM ta_state WHERE mois = ?", (yyyymm,))
+            db.commit()
+            print(f"[bleme-bridge] TA {yyyymm} : purgé (hors fenêtre)")
+        total = db.execute("SELECT coalesce(sum(decisions), 0) FROM ta_state").fetchone()[0]
+        db.close()
+        print(f"[bleme-bridge] TA sync terminée : {total} décisions au total")
+        return {"ok": True, "decisions_ajoutees": ajoutes, "decisions_total": total}
+    except Exception as exc:
+        return {"ok": False, "erreur": f"{type(exc).__name__}: {str(exc)[:200]}"}
+    finally:
+        _ta_sync_lock.release()
+
+
+def _ta_maybe_refresh() -> None:
+    """Au démarrage : sync en arrière-plan si l'index manque ou si un mois récent manque."""
+    try:
+        db = _ta_db()
+        connus = {r[0] for r in db.execute("SELECT mois FROM ta_state").fetchall()}
+        db.close()
+    except Exception:
+        connus = set()
+    if set(_ta_window()[:2]) - connus:  # les 2 mois les plus récents attendus
+        threading.Thread(target=_ta_sync, daemon=True).start()
+
+
+@app.post("/tools/justice-administrative/sync-ta", dependencies=[Depends(_auth)])
+def justice_administrative_sync_ta() -> dict:
+    if _ta_sync_lock.locked():
+        return {"ok": True, "statut": "synchronisation en cours"}
+    threading.Thread(target=_ta_sync, daemon=True).start()
+    return {"ok": True, "statut": "synchronisation lancée en arrière-plan"}
+
+
+@app.get("/tools/justice-administrative/etat-ta", dependencies=[Depends(_auth)])
+def justice_administrative_etat_ta() -> dict:
+    try:
+        db = _ta_db()
+        rows = db.execute("SELECT mois, decisions FROM ta_state ORDER BY mois DESC").fetchall()
+        db.close()
+        return {"ok": True, "en_cours": _ta_sync_lock.locked(),
+                "mois": len(rows), "decisions": sum(r[1] for r in rows)}
+    except Exception:
+        return {"ok": True, "en_cours": _ta_sync_lock.locked(), "mois": 0, "decisions": 0}
 
 
 
@@ -1276,7 +1452,11 @@ TOOL_APIS = {
             "- justice_administrative.rechercher {\"mots_cles\": \"...\"} : décisions du contentieux "
             "administratif (fiscal, URSSAF public, amendes administratives, recours contre l'administration).\n"
             "- justice_administrative.consulter_decision {\"id\": \"CETATEXT...\"} : texte intégral "
-            "(id obtenu via la recherche)."
+            "(id obtenu via la recherche).\n"
+            "- justice_administrative.rechercher_ta {\"mots_cles\": \"...\"} : décisions des tribunaux "
+            "administratifs (première instance, 24 derniers mois).\n"
+            "- justice_administrative.consulter_decision_ta {\"id\": \"...\"} : texte intégral d'une "
+            "décision TA (id obtenu via rechercher_ta)."
         ),
     },
     "service_public": {

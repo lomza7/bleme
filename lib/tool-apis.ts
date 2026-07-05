@@ -40,10 +40,10 @@ export const TOOL_APIS: ToolApi[] = [
     name: "justice_administrative",
     label: "Justice administrative (PISTE)",
     description:
-      "Jurisprudence du Conseil d'État, des cours administratives d'appel et tribunaux administratifs : fiscal, URSSAF public, amendes administratives, recours contre l'administration. Mêmes clés PISTE que Légifrance.",
+      "Jurisprudence administrative complète : Conseil d'État et CAA via Légifrance (CETAT), tribunaux administratifs via l'index local de l'open data (24 derniers mois). Fiscal, URSSAF public, amendes, recours contre l'administration.",
     secrets: ["PISTE_CLIENT_ID", "PISTE_CLIENT_SECRET"],
     optionalSecrets: ["PISTE_ENV"],
-    actions: ["rechercher", "consulter_decision"],
+    actions: ["rechercher", "consulter_decision", "rechercher_ta", "consulter_decision_ta"],
   },
   {
     name: "service_public",
