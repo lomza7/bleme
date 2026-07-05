@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { parseWhatsAppExport, pickKeyMessages } from "@/lib/whatsapp/parser";
 
 export type DocState = { error?: string; success?: string };
 
@@ -73,6 +74,16 @@ export async function uploadDocument(
     caseId = c.id;
   }
 
+  // Export WhatsApp ? (fichier texte déposé dans un dossier de blème)
+  let whatsapp: ReturnType<typeof parseWhatsAppExport> = null;
+  if (caseId && file.type === "text/plain") {
+    try {
+      whatsapp = parseWhatsAppExport(await file.text());
+    } catch {
+      whatsapp = null;
+    }
+  }
+
   const path = `${orgId}/${caseId ?? "company"}/${crypto.randomUUID()}-${safeName(file.name)}`;
   const { error: upErr } = await supabase.storage
     .from("documents")
@@ -88,10 +99,48 @@ export async function uploadDocument(
     storage_path: path,
     mime_type: file.type,
     size_bytes: file.size,
+    doc_class: whatsapp ? "whatsapp_export" : "other",
   });
   if (dbErr) {
     await supabase.storage.from("documents").remove([path]);
     return { error: "Échec de l’enregistrement. Réessayez." };
+  }
+
+  if (caseId && whatsapp) {
+    const fmt = (d: Date) =>
+      d.toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+    const keys = pickKeyMessages(whatsapp);
+    // PostgREST exige des clés identiques sur toutes les lignes d'un insert groupé.
+    const { error: evErr } = await supabase.from("case_events").insert([
+      {
+        case_id: caseId,
+        organization_id: orgId,
+        event_type: "whatsapp_import",
+        event_date: whatsapp.to.toISOString(),
+        title: `Conversation WhatsApp importée · ${whatsapp.messages.filter((m) => m.author).length} messages`,
+        description: `Échanges avec ${whatsapp.participants.join(", ")} du ${fmt(whatsapp.from)} au ${fmt(whatsapp.to)}.`,
+        source: "user",
+      },
+      ...keys.map((k) => ({
+        case_id: caseId,
+        organization_id: orgId,
+        event_type: "whatsapp_message",
+        event_date: k.date.toISOString(),
+        title: `Message WhatsApp · ${k.author}`,
+        description: `« ${k.text.slice(0, 200)}${k.text.length > 200 ? "…" : ""} »`,
+        source: "ai",
+      })),
+    ]);
+    if (evErr) {
+      return {
+        success: `« ${file.name} » ajouté (conversation reconnue, mais la chronologie n'a pas pu être mise à jour).`,
+      };
+    }
+    revalidatePath("/app/documents", "layout");
+    revalidatePath(`/app/dossiers/${caseId}`);
+    return {
+      success: `Conversation WhatsApp importée : ${whatsapp.messages.filter((m) => m.author).length} messages, ${keys.length} moment${keys.length > 1 ? "s" : ""} clé${keys.length > 1 ? "s" : ""} ajouté${keys.length > 1 ? "s" : ""} à la chronologie.`,
+    };
   }
 
   if (caseId) {

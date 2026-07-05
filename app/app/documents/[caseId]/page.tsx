@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { ArrowLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronRight, MessagesSquare } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { CASE_TYPE_LABEL } from "@/lib/cases/constants";
 import { PageHeader, StatusChip } from "@/components/app/ui";
@@ -65,10 +65,26 @@ export default async function CaseDocsPage({
         <FileList docs={docs ?? []} />
       </div>
 
+      <div className="flex items-start gap-4 rounded-[1.75rem] bg-brand-soft/60 p-6 ring-1 ring-brand/20">
+        <span className="mt-0.5 flex size-10 shrink-0 items-center justify-center rounded-full bg-[#25D366]/15 text-[#128C4B]">
+          <MessagesSquare className="size-4.5" />
+        </span>
+        <div>
+          <p className="font-semibold">Preuves WhatsApp : deux gestes</p>
+          <p className="mt-1 max-w-xl text-sm leading-relaxed text-muted-foreground">
+            Dans WhatsApp, ouvrez la conversation → Plus → <strong>Exporter la
+            discussion</strong> (sans médias) → déposez le fichier .txt
+            ci-dessus. Les messages sont datés, les moments clés (accords,
+            promesses de paiement, montants) rejoignent la chronologie du
+            dossier automatiquement.
+          </p>
+        </div>
+      </div>
+
       <p className="text-xs leading-relaxed text-muted-foreground/80">
         Chaque pièce ajoutée est datée et rejoint la chronologie du dossier.
-        La reconnaissance automatique (montants, dates, classement) arrive
-        très vite.
+        La reconnaissance automatique des autres documents (montants, dates,
+        classement) arrive très vite.
       </p>
     </div>
   );
