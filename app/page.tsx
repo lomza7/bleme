@@ -304,19 +304,14 @@ function IaEtGardeFous() {
 function Pricing() {
   const plans = [
     {
-      nom: "Pro Starter",
-      prix: "49 €",
-      detail: "3 dossiers actifs, cadences automatiques, dashboard",
-    },
-    {
       nom: "Pro Business",
-      prix: "99 €",
+      prix: "49 €",
       detail:
         "10 dossiers actifs, recommandés intégrés, templates personnalisés",
     },
     {
       nom: "Pro Scale",
-      prix: "199 €",
+      prix: "99 €",
       detail: "Dossiers illimités, multi-utilisateurs, intégrations",
     },
   ];
@@ -332,17 +327,17 @@ function Pricing() {
           <RevealItem className="lg:col-span-2">
             <div className="flex h-full flex-col justify-between rounded-[1.75rem] bg-ink p-9 text-ink-foreground">
               <div>
-                <h3 className="font-semibold">Premier dossier</h3>
+                <h3 className="font-semibold">Pro Starter</h3>
                 <p className="mt-3 text-5xl font-bold tracking-tight">
-                  39 €
+                  9 €
                   <span className="ml-2 text-base font-normal text-ink-muted">
-                    tout compris
+                    HT/mois
                   </span>
                 </p>
                 <p className="mt-4 leading-relaxed text-ink-muted">
-                  Dossier complet, relances, mise en demeure, suivi 90 jours et
-                  export. Sans abonnement. Remboursé si aucune relance n’est
-                  générée.
+                  Votre premier dossier tourne pour le prix d’un sandwich :
+                  relances cadencées, mise en demeure, suivi et export. Sans
+                  engagement, remboursé si aucune relance n’est générée.
                 </p>
               </div>
               <PillCta href="/nouveau" className="mt-9 justify-center">
@@ -373,9 +368,10 @@ function Pricing() {
                 </div>
               ))}
               <p className="bg-muted/50 px-8 py-4 text-[13px] leading-relaxed text-muted-foreground">
-                Moins 20 % en facturation annuelle. Recommandés facturés au
-                réel (environ 12 €). Vos données s’exportent à tout moment,
-                même après résiliation.
+                Sans engagement, résiliable en un clic. Moins 20 % en
+                facturation annuelle. Recommandés facturés au réel (environ
+                12 €). Vos données s’exportent à tout moment, même après
+                résiliation.
               </p>
             </div>
           </RevealItem>
@@ -409,7 +405,7 @@ function Faq() {
     },
     {
       q: "Il y a un engagement ?",
-      r: "Non. Premier dossier sans abonnement, abonnements sans engagement, export libre même après départ.",
+      r: "Non. Abonnement sans engagement dès 9 € par mois, résiliable en un clic, export libre même après départ.",
     },
   ];
   return (
@@ -442,7 +438,7 @@ function Faq() {
 
 function FinalCta() {
   const garanties = [
-    "Premier dossier 39 €, remboursé si aucune relance n’est générée",
+    "9 € par mois, remboursé si aucune relance n’est générée",
     "Sans abonnement, sans engagement",
     "Données hébergées en Europe, exportables à tout moment",
   ];

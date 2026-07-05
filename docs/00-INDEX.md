@@ -10,7 +10,7 @@
 3. **Toujours** : courriers signés par l'utilisateur après validation explicite (`approval_logs`), extractions sourcées et corrigeables, export libre même après résiliation.
 4. **V1 sans Gmail OAuth** (audit CASA → V2/V3) : adresse email dédiée par dossier + transfert.
 5. Stack : Next.js + Vercel + Supabase (RLS partout) + Claude API + Deepgram (voix) + Resend (email in/out) + Stripe. Recommandé : PDF prêt à poster en V1, API **Merci Facteur** en V1.5 (décision du 04/07/2026).
-6. Pricing : premier dossier 39 €, à la carte 79 €, abonnements 49/99/199 €/mois, –20 % annuel, frais variables au réel.
+6. Pricing *(révisé le 05/07/2026)* : **Pro Starter à 9 €/mois (1 dossier actif) en produit d'appel**, Business 49 €, Scale 99 €, –20 % annuel, frais variables au réel. Le one-shot « premier dossier 39 € » est abandonné : l'entrée se fait par l'abonnement, la rétention par la valeur accumulée (historique, cadences, adresse par dossier).
 
 ## Documents
 

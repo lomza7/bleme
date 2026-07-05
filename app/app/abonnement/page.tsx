@@ -9,12 +9,12 @@ export const metadata: Metadata = { title: "Mon abonnement" };
 const PLANS = [
   {
     nom: "Pro Starter",
-    prix: "49 €",
-    inclus: ["3 dossiers actifs", "Cadences automatiques", "Dashboard cash", "Exports illimités"],
+    prix: "9 €",
+    inclus: ["1 dossier actif", "Cadences automatiques", "Dashboard cash", "Exports illimités"],
   },
   {
     nom: "Pro Business",
-    prix: "99 €",
+    prix: "49 €",
     populaire: true,
     inclus: [
       "10 dossiers actifs",
@@ -25,7 +25,7 @@ const PLANS = [
   },
   {
     nom: "Pro Scale",
-    prix: "199 €",
+    prix: "99 €",
     inclus: ["Dossiers illimités", "Multi-utilisateurs", "Intégrations compta", "Onboarding dédié"],
   },
 ];
@@ -54,8 +54,8 @@ export default async function AbonnementPage() {
             <p className="font-semibold">Accès de lancement</p>
             <p className="mt-1 max-w-md text-sm leading-relaxed text-ink-muted">
               Vous faites partie des premiers : l’accès est offert pendant la
-              construction. Au lancement, votre premier dossier complet sera à
-              39 €, remboursé si aucune relance n’est générée.
+              construction. Au lancement, l’abonnement démarre à 9 € par mois,
+              remboursé si aucune relance n’est générée.
             </p>
           </div>
         </div>

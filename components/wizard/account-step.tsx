@@ -146,8 +146,9 @@ export function AccountStep({ data }: { data: WizardData }) {
           Créez votre compte pour ouvrir le dossier.
         </p>
         <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">
-          Une minute avec Google ou votre email. Votre premier dossier complet
-          est à 39 €, remboursé si aucune relance n’est générée.
+          Une minute avec Google ou votre email. L’abonnement démarre à 9 €
+          par mois, sans engagement, remboursé si aucune relance n’est
+          générée.
         </p>
         <Link
           href="/signup?next=/app"

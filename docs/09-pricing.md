@@ -1,5 +1,17 @@
 # Étape 9 — Pricing B2B
 
+> **Révision du 05/07/2026 (décision produit)** : le Pro Starter passe à
+> **9 € HT/mois avec 1 dossier actif** et devient LE produit d'appel — on
+> supprime le one-shot « premier dossier 39 € » (redondant face à un
+> abonnement moins cher). Nouvelle grille : Starter 9 € (1 dossier),
+> Business 49 € (10 dossiers, recommandés intégrés), Scale 99 € (illimité,
+> multi-utilisateurs). Logique : signer vite, faire vivre le premier dossier
+> dans l'abonnement, retenir par la valeur accumulée (historique, cadences,
+> adresse email par dossier) — jamais en bloquant les données. Vigilance
+> unit economics : à 9 €, la marge sur un dossier actif gourmand en IA est
+> mince (~3 € de coût IA) ; le modèle repose sur l'upsell Business dès le
+> 2e dossier simultané.
+
 ## Logique d'ensemble
 
 1. **Le premier dossier est le produit d'appel** : prix d'un resto, ROI potentiel de plusieurs milliers d'euros. Il doit être un non-sujet à l'achat.
