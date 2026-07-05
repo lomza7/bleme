@@ -1,7 +1,9 @@
 import {
+  Camera,
   FileText,
   Image as ImageIcon,
   MessagesSquare,
+  Mic,
   UploadCloud,
 } from "lucide-react";
 import { siGmail, siWhatsapp } from "simple-icons";
@@ -58,17 +60,134 @@ export function EvidenceSources() {
               Les preuves viennent à vous.
             </h2>
             <p className="mt-4 text-lg text-muted-foreground">
-              Emails, WhatsApp, SMS, documents : BLEME rassemble le contexte là
-              où il vit, et le transforme en preuves datées.
+              La voix, les photos, WhatsApp, les emails : BLEME rassemble le
+              contexte là où il vit, et le transforme en preuves datées.
             </p>
           </div>
         </Reveal>
 
         <RevealStagger className="mx-auto mt-16 grid max-w-4xl grid-cols-1 gap-x-10 gap-y-16 md:grid-cols-2">
-          {/* Emails */}
+          {/* Voix */}
           <RevealItem>
             <div className="relative">
               <BrandTile className="-left-3 -top-5 -rotate-6 lg:-left-6">
+                <Mic className="size-7 text-brand-strong" />
+              </BrandTile>
+              <CardShell>
+                <div className="flex items-center justify-between">
+                  <span className="flex items-center gap-2.5">
+                    <span className="relative flex size-2.5">
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-60 motion-reduce:hidden" />
+                      <span className="relative inline-flex size-2.5 rounded-full bg-brand" />
+                    </span>
+                    <span className="font-mono text-lg font-semibold tabular-nums">3:24</span>
+                  </span>
+                  <span className={chip}>zone idéale atteinte</span>
+                </div>
+                <div className="mt-4 flex h-11 items-center gap-[3px]">
+                  {[35, 60, 85, 50, 95, 70, 100, 65, 45, 90, 55, 80, 60, 40, 75, 52, 88, 47, 68, 38].map((h, i) => (
+                    <span
+                      key={i}
+                      className="w-full rounded-full bg-brand/60"
+                      style={{ height: `${h}%` }}
+                    />
+                  ))}
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3">
+                  <p className="text-xs text-muted-foreground">Récit analysé</p>
+                  <span className={chip}>faits, dates et montants extraits</span>
+                </div>
+              </CardShell>
+            </div>
+            <h3 className="mt-6 text-lg font-semibold">Racontez, c’est tout</h3>
+            <p className="mt-1.5 max-w-[46ch] text-sm leading-relaxed text-muted-foreground">
+              Deux à cinq minutes à l’oral, comme à un ami : l’IA en tire les
+              faits, les dates et les montants. Le dossier se monte pendant que
+              vous parlez.
+            </p>
+          </RevealItem>
+
+          {/* Photos */}
+          <RevealItem>
+            <div className="relative">
+              <BrandTile className="-right-3 -top-5 rotate-6 lg:-right-6">
+                <Camera className="size-7 text-brand-strong" />
+              </BrandTile>
+              <CardShell>
+                <div className="flex items-center gap-2.5 border-b pb-3">
+                  <span className="flex size-8 items-center justify-center rounded-lg bg-brand-soft">
+                    <Camera className="size-4 text-brand-strong" />
+                  </span>
+                  <p className="text-sm font-semibold">Pellicule du chantier</p>
+                </div>
+                <div className="flex items-center justify-between gap-3 py-3.5">
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="truncate text-[13px] font-medium">IMG_2841.heic</span>
+                  </span>
+                  <span className={chip}>fin de chantier · 28 mai</span>
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t py-3.5 pb-1">
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
+                    <span className="truncate text-[13px] font-medium">IMG_2843.heic</span>
+                  </span>
+                  <span className={chip}>reprise des joints · 12 juin</span>
+                </div>
+              </CardShell>
+            </div>
+            <h3 className="mt-6 text-lg font-semibold">Photos du chantier</h3>
+            <p className="mt-1.5 max-w-[46ch] text-sm leading-relaxed text-muted-foreground">
+              Votre pellicule est pleine de preuves : envoyez-les, elles sont
+              datées, décrites et versées au dossier.
+            </p>
+          </RevealItem>
+
+          {/* WhatsApp */}
+          <RevealItem>
+            <div className="relative">
+              <BrandTile className="-left-3 -top-5 -rotate-6 lg:-left-6">
+                <SimpleIcon path={siWhatsapp.path} hex={siWhatsapp.hex} title="WhatsApp" />
+              </BrandTile>
+              <CardShell>
+                <div className="space-y-2.5 py-1">
+                  <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-muted px-3.5 py-2.5">
+                    <p className="text-[13px]">
+                      Le devis est bon pour moi, vous pouvez lancer.
+                    </p>
+                    <p className="mt-0.5 text-right text-[10px] text-muted-foreground">
+                      14:02
+                    </p>
+                  </div>
+                  <div className="ml-auto max-w-[85%] rounded-2xl rounded-tr-md bg-[#D9FDD3] px-3.5 py-2.5">
+                    <p className="text-[13px] text-zinc-800">
+                      Parfait, début des travaux lundi.
+                    </p>
+                    <p className="mt-0.5 text-right text-[10px] text-zinc-500">
+                      14:05
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3">
+                  <p className="text-xs text-muted-foreground">
+                    Conversation exportée
+                  </p>
+                  <span className={chip}>12 messages datés</span>
+                </div>
+              </CardShell>
+            </div>
+            <h3 className="mt-6 text-lg font-semibold">WhatsApp</h3>
+            <p className="mt-1.5 max-w-[46ch] text-sm leading-relaxed text-muted-foreground">
+              Exportez la conversation en deux gestes : les accords donnés par
+              message deviennent des preuves datées, à leur place dans la
+              chronologie.
+            </p>
+          </RevealItem>
+
+          {/* Emails */}
+          <RevealItem>
+            <div className="relative">
+              <BrandTile className="-right-3 -top-5 rotate-6 lg:-right-6">
                 <SimpleIcon path={siGmail.path} hex={siGmail.hex} title="Gmail" />
               </BrandTile>
               <CardShell>
@@ -117,47 +236,6 @@ export function EvidenceSources() {
             <p className="mt-1.5 max-w-[46ch] text-sm leading-relaxed text-muted-foreground">
               Transférez les échanges, ou connectez votre boîte : chaque email
               est daté, classé et versé au dossier avec ses pièces jointes.
-            </p>
-          </RevealItem>
-
-          {/* WhatsApp */}
-          <RevealItem>
-            <div className="relative">
-              <BrandTile className="-right-3 -top-5 rotate-6 lg:-right-6">
-                <SimpleIcon path={siWhatsapp.path} hex={siWhatsapp.hex} title="WhatsApp" />
-              </BrandTile>
-              <CardShell>
-                <div className="space-y-2.5 py-1">
-                  <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-muted px-3.5 py-2.5">
-                    <p className="text-[13px]">
-                      Le devis est bon pour moi, vous pouvez lancer.
-                    </p>
-                    <p className="mt-0.5 text-right text-[10px] text-muted-foreground">
-                      14:02
-                    </p>
-                  </div>
-                  <div className="ml-auto max-w-[85%] rounded-2xl rounded-tr-md bg-[#D9FDD3] px-3.5 py-2.5">
-                    <p className="text-[13px] text-zinc-800">
-                      Parfait, début des travaux lundi.
-                    </p>
-                    <p className="mt-0.5 text-right text-[10px] text-zinc-500">
-                      14:05
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-3 flex items-center justify-between gap-3 border-t pt-3">
-                  <p className="text-xs text-muted-foreground">
-                    Conversation exportée
-                  </p>
-                  <span className={chip}>12 messages datés</span>
-                </div>
-              </CardShell>
-            </div>
-            <h3 className="mt-6 text-lg font-semibold">WhatsApp</h3>
-            <p className="mt-1.5 max-w-[46ch] text-sm leading-relaxed text-muted-foreground">
-              Exportez la conversation en deux gestes : les accords donnés par
-              message deviennent des preuves datées, à leur place dans la
-              chronologie.
             </p>
           </RevealItem>
 
