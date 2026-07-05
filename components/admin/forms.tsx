@@ -9,6 +9,7 @@ import {
   type AdminState,
 } from "@/lib/admin/actions";
 import type { ORModel } from "@/lib/admin/hermes-actions";
+import { ModelPicker } from "@/components/admin/model-picker";
 
 const INITIAL: AdminState = {};
 
@@ -56,31 +57,14 @@ export function AgentSettingsForm({
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <label className="flex flex-col gap-1.5 text-sm font-medium">
           Modèle (OpenRouter)
-          <input
+          <ModelPicker
             name="hermesModel"
             defaultValue={agent.hermes_model}
-            list="openrouter-modeles"
-            className={`${inputCls} font-mono text-xs`}
-            placeholder="fournisseur/modele"
+            models={models}
           />
-          <datalist id="openrouter-modeles">
-            {models.length > 0 ? (
-              models.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {`${m.name}${m.tools ? " · outils ✓" : ""}`}
-                </option>
-              ))
-            ) : (
-              <>
-                <option value="nousresearch/hermes-4-70b" />
-                <option value="moonshotai/kimi-k2.6" />
-                <option value="anthropic/claude-sonnet-4.5" />
-              </>
-            )}
-          </datalist>
           <span className="text-[11px] font-normal text-muted-foreground">
             {models.length > 0
-              ? `${models.length} modèles, liste mise à jour automatiquement depuis OpenRouter · « outils ✓ » = tool use routé (requis pour les skills à outils)`
+              ? `${models.length} modèles, liste vivante OpenRouter · badge « outils » = compatible skills à outils`
               : "Tout slug OpenRouter est accepté ; le run de test valide le choix."}
           </span>
         </label>
