@@ -46,7 +46,20 @@ function dayKey(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-export default async function AdminOverview() {
+const PERIODES = [
+  { jours: 7, label: "7 jours" },
+  { jours: 30, label: "30 jours" },
+  { jours: 90, label: "90 jours" },
+  { jours: 365, label: "12 mois" },
+] as const;
+
+export default async function AdminOverview({
+  searchParams,
+}: {
+  searchParams: Promise<{ periode?: string }>;
+}) {
+  const { periode: periodeParam } = await searchParams;
+  const periode = PERIODES.find((p) => String(p.jours) === periodeParam)?.jours ?? 30;
   // Double garde (le layout redirige déjà les non-admins).
   const userClient = await createClient();
   const {
@@ -63,6 +76,9 @@ export default async function AdminOverview() {
   const d7 = new Date(now - 7 * 24 * 3600 * 1000);
   const d14 = new Date(now - 14 * 24 * 3600 * 1000);
   const d30 = new Date(now - 30 * 24 * 3600 * 1000).toISOString();
+  // On charge au moins 30 j (tuiles fixes) et jusqu'à la période choisie.
+  const fetchDays = Math.max(periode, 30);
+  const dPeriode = new Date(now - periode * 24 * 3600 * 1000).toISOString();
   const monthStart = new Date(now);
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);
@@ -87,7 +103,7 @@ export default async function AdminOverview() {
     service
       .from("agent_runs")
       .select("agent_key, status, model, input_tokens, output_tokens, cost_microcents, created_at")
-      .gte("created_at", d30),
+      .gte("created_at", new Date(now - fetchDays * 24 * 3600 * 1000).toISOString()),
   ]);
 
   // ── Utilisateurs ────────────────────────────────────────────────────────────
@@ -145,22 +161,58 @@ export default async function AdminOverview() {
   const bySource = new Map<string, number>();
   for (const i of inbox) bySource.set(i.source, (bySource.get(i.source) ?? 0) + 1);
 
-  const runs30 = runs ?? [];
-  const monthRuns = runs30.filter((r) => r.created_at >= monthStart.toISOString());
+  const allRuns = runs ?? [];
+  const runs30 = allRuns.filter((r) => r.created_at >= d30);
+  const monthRuns = allRuns.filter((r) => r.created_at >= monthStart.toISOString());
   const aiCost = monthRuns.reduce((s, r) => s + Number(r.cost_microcents), 0);
   const aiErrors = runs30.filter((r) => r.status === "error").length;
 
-  // Consommation IA sur 30 jours : tokens par jour, par modèle, par agent
+  // Consommation IA sur la période choisie : granularité adaptée
+  // (jour ≤ 30 j, semaine à 90 j, mois à 12 mois).
+  const runsPeriode = allRuns.filter((r) => r.created_at >= dPeriode);
   const tokensOf = (r: { input_tokens: number; output_tokens: number }) =>
     Number(r.input_tokens) + Number(r.output_tokens);
-  const totalTokens30 = runs30.reduce((s, r) => s + tokensOf(r), 0);
-  const totalCost30 = runs30.reduce((s, r) => s + Number(r.cost_microcents), 0);
-  const tokensByDay = new Map<string, number>();
+  const totalTokensP = runsPeriode.reduce((s, r) => s + tokensOf(r), 0);
+  const totalCostP = runsPeriode.reduce((s, r) => s + Number(r.cost_microcents), 0);
+
+  const granularite = periode <= 30 ? "jour" : periode <= 90 ? "semaine" : "mois";
+  const bucketKey = (d: Date): string => {
+    if (granularite === "jour") return dayKey(d);
+    if (granularite === "semaine") {
+      const monday = new Date(d);
+      monday.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7));
+      return dayKey(monday);
+    }
+    return d.toISOString().slice(0, 7);
+  };
+  const bucketLabel = (key: string): string => {
+    if (granularite === "mois") {
+      return new Date(`${key}-01T00:00:00Z`).toLocaleDateString("fr-FR", { month: "short", year: "2-digit" });
+    }
+    const d = new Date(`${key}T00:00:00Z`);
+    return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
+  };
+  // Buckets couvrant toute la période, dans l'ordre.
+  const buckets: string[] = [];
+  {
+    const seen = new Set<string>();
+    const step = granularite === "jour" ? 1 : granularite === "semaine" ? 7 : 28;
+    for (let i = periode; i >= 0; i -= step) {
+      const k = bucketKey(new Date(now - i * 24 * 3600 * 1000));
+      if (!seen.has(k)) {
+        seen.add(k);
+        buckets.push(k);
+      }
+    }
+    const today = bucketKey(new Date(now));
+    if (!seen.has(today)) buckets.push(today);
+  }
+  const tokensByBucket = new Map<string, number>();
   const byModel = new Map<string, { tokens: number; cost: number }>();
   const byAgent = new Map<string, { tokens: number; cost: number }>();
-  for (const r of runs30) {
-    const k = dayKey(new Date(r.created_at));
-    tokensByDay.set(k, (tokensByDay.get(k) ?? 0) + tokensOf(r));
+  for (const r of runsPeriode) {
+    const k = bucketKey(new Date(r.created_at));
+    tokensByBucket.set(k, (tokensByBucket.get(k) ?? 0) + tokensOf(r));
     const model = r.model ?? "?";
     const m = byModel.get(model) ?? { tokens: 0, cost: 0 };
     m.tokens += tokensOf(r);
@@ -269,22 +321,40 @@ export default async function AdminOverview() {
 
       {/* Consommation IA : tokens, coûts, par modèle et par agent */}
       <section>
-        <h2 className="px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          Consommation IA · 30 jours
-        </h2>
+        <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+          <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+            Consommation IA · {PERIODES.find((p) => p.jours === periode)?.label}
+          </h2>
+          <div className="flex gap-1">
+            {PERIODES.map((p) => (
+              <Link
+                key={p.jours}
+                href={p.jours === 30 ? "/admin" : `/admin?periode=${p.jours}`}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  p.jours === periode
+                    ? "bg-ink text-white"
+                    : "bg-muted text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {p.label}
+              </Link>
+            ))}
+          </div>
+        </div>
         <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
           <div className="rounded-[1.75rem] border bg-card p-6">
             <p className="text-2xl font-bold tabular-nums tracking-tight">
-              {totalTokens30.toLocaleString("fr-FR")}
+              {totalTokensP.toLocaleString("fr-FR")}
               <span className="ml-1.5 text-sm font-normal text-muted-foreground">tokens</span>
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {euros(totalCost30)} estimés · {runs30.length.toLocaleString("fr-FR")} runs
+              {euros(totalCostP)} estimés · {runsPeriode.length.toLocaleString("fr-FR")} runs ·
+              par {granularite}
             </p>
             <div className="mt-4">
               <BarChart
-                ariaLabel="Tokens consommés par jour sur 30 jours"
-                points={days.map((d) => ({ label: d.label, value: tokensByDay.get(d.key) ?? 0 }))}
+                ariaLabel={`Tokens consommés par ${granularite}`}
+                points={buckets.map((k) => ({ label: bucketLabel(k), value: tokensByBucket.get(k) ?? 0 }))}
               />
             </div>
           </div>
