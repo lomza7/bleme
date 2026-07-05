@@ -18,9 +18,10 @@ export default async function AppLayout({
   if (!user) redirect("/login");
 
   const [{ data: profile }, { data: org }] = await Promise.all([
-    supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle(),
+    supabase.from("profiles").select("full_name, is_admin").eq("id", user.id).maybeSingle(),
     supabase.from("organizations").select("name").limit(1).maybeSingle(),
   ]);
+  const isAdmin = Boolean(profile?.is_admin);
 
   const name = profile?.full_name ?? user.email ?? "";
   const initials = name
@@ -56,9 +57,9 @@ export default async function AppLayout({
   return (
     <div className="min-h-dvh bg-muted/40 text-foreground">
       <div className="flex">
-        <SidebarNav userCard={userCard} />
+        <SidebarNav userCard={userCard} isAdmin={isAdmin} />
         <div className="min-w-0 flex-1">
-          <MobileTopBar userCard={userCard} />
+          <MobileTopBar userCard={userCard} isAdmin={isAdmin} />
           <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-10 lg:py-10">
             {children}
           </main>

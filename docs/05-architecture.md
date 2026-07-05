@@ -97,3 +97,31 @@ Règle absolue : **aucun envoi sortant (email de relance, MED, recommandé) sans
 ## Observabilité
 
 Sentry (front + API), logs structurés (pino) avec `case_id`/`org_id`, table `agent_runs` pour tracer chaque appel IA (prompt version, tokens, coût, durée, sortie) → indispensable pour piloter le coût IA par dossier (< 3 € cible).
+
+## Couche d'orchestration des agents (décision du 05/07/2026)
+
+Deux couches complémentaires, pas une :
+
+1. **Runtime produit (`lib/ai/client.ts`)** — les appels IA synchrones des
+   parcours clients (intake, extraction, courriers). Piloté par la console
+   `/admin` (réservée aux profils `is_admin`) : table `agents` (modèle,
+   statut actif/pause, budget mensuel, prompt système versionné dans
+   `agent_prompt_versions`), chaque appel tracé dans `agent_runs` (tokens,
+   coût en microcentimes, durée, statut, simulé ou non). Un agent en pause
+   ou à court de budget **refuse l'appel** ; sans clé API réelle, mode
+   simulation explicite (trace `simulated = true`). Ces chemins restent
+   in-process : latence utilisateur, RLS, `approval_logs`.
+
+2. **Ops et travaux de fond : Paperclip (paperclip.ing, MIT, auto-hébergé)**
+   — gouvernance type « entreprise d'agents » : tickets/jobs, planification,
+   heartbeats de workers, budgets d'équipe, audit. S'installe en local
+   (`npx paperclipai onboard --yes`, serveur sur :3100, Postgres embarqué) ;
+   déploiement VPS quand les workers de fond arrivent (Phase 5 vigie,
+   batchs). Les tickets référencent des `case_id`, jamais le contenu des
+   dossiers clients : les données restent dans Supabase sous RLS.
+
+Écarté : Paperclip comme runtime des appels synchrones (boucle de tickets
+inadaptée à un utilisateur qui attend, données clients hors RLS). Différé :
+modèles Hermes (Nous Research) pour les tâches de volume à faible enjeu
+(classification d'emails, doc_class) — le wrapper est agnostique du
+fournisseur, ce sera un changement de config, pas un refactor.

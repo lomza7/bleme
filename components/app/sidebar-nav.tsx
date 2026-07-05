@@ -13,6 +13,7 @@ import {
   Menu,
   Plus,
   Settings,
+  ShieldCheck,
   Users,
   X,
 } from "lucide-react";
@@ -38,11 +39,23 @@ const SECTIONS = [
   },
 ];
 
-function NavItems({ onNavigate }: { onNavigate?: () => void }) {
+function NavItems({ onNavigate, isAdmin }: { onNavigate?: () => void; isAdmin?: boolean }) {
   const pathname = usePathname();
+  const sections = isAdmin
+    ? [
+        ...SECTIONS.slice(0, -1),
+        {
+          ...SECTIONS[SECTIONS.length - 1],
+          items: [
+            ...SECTIONS[SECTIONS.length - 1].items,
+            { href: "/admin", label: "Administration", icon: ShieldCheck },
+          ],
+        },
+      ]
+    : SECTIONS;
   return (
     <nav className="flex flex-1 flex-col gap-6">
-      {SECTIONS.map((section) => (
+      {sections.map((section) => (
         <div key={section.titre}>
           <p className="px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/70">
             {section.titre}
@@ -90,20 +103,20 @@ function NewCaseButton({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export function SidebarNav({ userCard }: { userCard: React.ReactNode }) {
+export function SidebarNav({ userCard, isAdmin }: { userCard: React.ReactNode; isAdmin?: boolean }) {
   return (
     <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col gap-6 border-r bg-background px-4 py-6 lg:flex">
       <Link href="/app" className="px-3 text-xl font-bold tracking-tight">
         BLEME<span className="text-brand">.</span>
       </Link>
       <NewCaseButton />
-      <NavItems />
+      <NavItems isAdmin={isAdmin} />
       {userCard}
     </aside>
   );
 }
 
-export function MobileTopBar({ userCard }: { userCard: React.ReactNode }) {
+export function MobileTopBar({ userCard, isAdmin }: { userCard: React.ReactNode; isAdmin?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -153,7 +166,7 @@ export function MobileTopBar({ userCard }: { userCard: React.ReactNode }) {
               </button>
             </div>
             <NewCaseButton onNavigate={() => setOpen(false)} />
-            <NavItems onNavigate={() => setOpen(false)} />
+            <NavItems onNavigate={() => setOpen(false)} isAdmin={isAdmin} />
             {userCard}
           </div>
         </div>
