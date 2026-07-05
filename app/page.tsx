@@ -131,12 +131,19 @@ function Nav() {
             FAQ
           </a>
         </nav>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-0.5 sm:gap-1.5">
+          <Link
+            href="/tarifs"
+            className="rounded-full px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors duration-300 hover:text-foreground md:hidden"
+          >
+            Tarifs
+          </Link>
           <Link
             href="/login"
-            className="rounded-full px-3 py-2 text-sm font-medium text-muted-foreground transition-colors duration-300 hover:text-foreground"
+            className="whitespace-nowrap rounded-full px-2.5 py-2 text-sm font-medium text-muted-foreground transition-colors duration-300 hover:text-foreground sm:px-3"
           >
-            Se connecter
+            <span className="sm:hidden">Connexion</span>
+            <span className="hidden sm:inline">Se connecter</span>
           </Link>
           <Link
             href="/nouveau"
