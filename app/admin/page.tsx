@@ -1,169 +1,355 @@
+import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, Pause, Play } from "lucide-react";
-import { createClient } from "@/lib/supabase/server";
-import { toggleAgentStatus } from "@/lib/admin/actions";
+import { ArrowRight } from "lucide-react";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { BarChart, Donut, Funnel, HBars } from "@/components/admin/charts";
 import { SpriteAvatar } from "@/components/landing/sprite-avatar";
 
+export const metadata: Metadata = { title: "Vue d’ensemble" };
+
 /*
- * Vue d'ensemble du parc d'agents : réglages effectifs (le moteur lib/ai
- * lit cette config à chaque appel), consommation du mois vs budget,
- * activité récente. Le détail par agent vit dans /admin/agents/[key].
+ * Vue d'ensemble plateforme : utilisateurs, dossiers, montants, activité,
+ * boîte de réception, stockage, agents. Lecture via client service-role
+ * (stats trans-organisations) : la garde admin est assurée par le layout
+ * et revérifiée ici. Les dossiers d'exemple (is_sample) sont exclus des
+ * métriques métier et comptés à part.
  */
 
-function euros(microcents: number): string {
-  return `${(microcents / 1_000_000).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
+const STATUS_LABELS: Record<string, string> = {
+  draft: "Brouillon",
+  active: "En cours",
+  awaiting_user: "Attend l’utilisateur",
+  awaiting_debtor: "Attend le débiteur",
+  escalated: "Escaladé",
+  resolved: "Résolu",
+  closed: "Clôturé",
+};
+
+const TYPE_LABELS: Record<string, string> = {
+  unpaid_invoice: "Impayés",
+  client_dispute: "Litiges clients",
+  admin_request: "Démarches admin",
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  email: "Emails",
+  whatsapp: "WhatsApp",
+  fichier: "Fichiers",
+  note: "Notes",
+};
+
+function euros(cents: number): string {
+  return `${Math.round(cents / 100).toLocaleString("fr-FR")} €`;
 }
 
-export default async function AdminHome() {
-  const supabase = await createClient();
-  const monthStart = new Date();
+function dayKey(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+export default async function AdminOverview() {
+  // Double garde (le layout redirige déjà les non-admins).
+  const userClient = await createClient();
+  const {
+    data: { user },
+  } = await userClient.auth.getUser();
+  const { data: me } = user
+    ? await userClient.from("profiles").select("is_admin").eq("id", user.id).maybeSingle()
+    : { data: null };
+  if (!me?.is_admin) return null;
+
+  const service = createServiceClient();
+  // eslint-disable-next-line react-hooks/purity -- bornes temporelles du reporting, recalculées à chaque requête
+  const now = Date.now();
+  const d7 = new Date(now - 7 * 24 * 3600 * 1000);
+  const d14 = new Date(now - 14 * 24 * 3600 * 1000);
+  const monthStart = new Date(now);
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);
-  // eslint-disable-next-line react-hooks/purity -- bornes temporelles du reporting, recalculées à chaque requête
-  const d30 = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString();
 
-  const [{ data: agents }, { data: runs }] = await Promise.all([
-    supabase.from("agents").select("*").order("created_at"),
-    supabase
+  const [
+    usersRes,
+    { count: orgCount },
+    { data: cases },
+    { data: docs },
+    { data: inboxItems },
+    { data: runs },
+  ] = await Promise.all([
+    service.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+    service.from("organizations").select("id", { count: "exact", head: true }),
+    service
+      .from("cases")
+      .select(
+        "id, organization_id, case_type, status, stage, amount_claimed_cents, amount_recovered_cents, is_sample, created_at",
+      ),
+    service.from("documents").select("id, size_bytes, doc_class"),
+    service.from("inbox_items").select("id, source, is_read, is_archived, is_sample"),
+    service
       .from("agent_runs")
-      .select("agent_key, status, simulated, cost_microcents, created_at")
-      .gte("created_at", d30)
-      .order("created_at", { ascending: false }),
+      .select("agent_key, status, cost_microcents, created_at")
+      .gte("created_at", monthStart.toISOString()),
   ]);
 
-  const all = runs ?? [];
-  const monthRuns = all.filter((r) => r.created_at >= monthStart.toISOString());
-  const spendByAgent = new Map<string, number>();
-  const lastRunByAgent = new Map<string, string>();
-  for (const r of monthRuns) {
-    spendByAgent.set(r.agent_key, (spendByAgent.get(r.agent_key) ?? 0) + Number(r.cost_microcents));
+  // ── Utilisateurs ────────────────────────────────────────────────────────────
+  const users = usersRes.data?.users ?? [];
+  const new7 = users.filter((u) => new Date(u.created_at) >= d7).length;
+  const prev7 = users.filter(
+    (u) => new Date(u.created_at) >= d14 && new Date(u.created_at) < d7,
+  ).length;
+  const actifs7 = users.filter(
+    (u) => u.last_sign_in_at && new Date(u.last_sign_in_at) >= d7,
+  ).length;
+  const derniers = [...users]
+    .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
+    .slice(0, 6);
+
+  // ── Dossiers (réels vs exemples) ────────────────────────────────────────────
+  const allCases = cases ?? [];
+  const reels = allCases.filter((c) => !c.is_sample);
+  const samples = allCases.length - reels.length;
+  const claimed = reels.reduce((s, c) => s + Number(c.amount_claimed_cents), 0);
+  const recovered = reels.reduce((s, c) => s + Number(c.amount_recovered_cents), 0);
+  const resolus = reels.filter((c) => c.status === "resolved").length;
+
+  const byStatus = new Map<string, number>();
+  const byType = new Map<string, number>();
+  for (const c of reels) {
+    byStatus.set(c.status, (byStatus.get(c.status) ?? 0) + 1);
+    byType.set(c.case_type, (byType.get(c.case_type) ?? 0) + 1);
   }
-  for (const r of all) {
-    if (!lastRunByAgent.has(r.agent_key)) lastRunByAgent.set(r.agent_key, r.created_at);
+
+  // ── Séries sur 30 jours ─────────────────────────────────────────────────────
+  const days: { key: string; label: string }[] = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(now - i * 24 * 3600 * 1000);
+    days.push({
+      key: dayKey(d),
+      label: d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" }),
+    });
   }
-  const totalSpend = monthRuns.reduce((s, r) => s + Number(r.cost_microcents), 0);
-  const errors30 = all.filter((r) => r.status === "error").length;
-  const actifs = (agents ?? []).filter((a) => a.status === "active").length;
+  const signupsByDay = new Map<string, number>();
+  for (const u of users) {
+    const k = dayKey(new Date(u.created_at));
+    signupsByDay.set(k, (signupsByDay.get(k) ?? 0) + 1);
+  }
+  const casesByDay = new Map<string, number>();
+  for (const c of reels) {
+    const k = dayKey(new Date(c.created_at));
+    casesByDay.set(k, (casesByDay.get(k) ?? 0) + 1);
+  }
+
+  // ── Documents, boîte, agents ────────────────────────────────────────────────
+  const allDocs = docs ?? [];
+  const storageBytes = allDocs.reduce((s, d) => s + Number(d.size_bytes), 0);
+  const inbox = (inboxItems ?? []).filter((i) => !i.is_sample);
+  const bySource = new Map<string, number>();
+  for (const i of inbox) bySource.set(i.source, (bySource.get(i.source) ?? 0) + 1);
+
+  const monthRuns = runs ?? [];
+  const aiCost = monthRuns.reduce((s, r) => s + Number(r.cost_microcents), 0);
+  const aiErrors = monthRuns.filter((r) => r.status === "error").length;
+
+  // ── Funnel d'activation ─────────────────────────────────────────────────────
+  const orgsAvecDossier = new Set(reels.map((c) => c.organization_id)).size;
+  const orgsAvecPaiement = new Set(
+    reels.filter((c) => Number(c.amount_recovered_cents) > 0).map((c) => c.organization_id),
+  ).size;
 
   const TILES = [
-    { label: "Runs sur 30 jours", valeur: all.length.toLocaleString("fr-FR") },
-    { label: "Coût du mois (estimation)", valeur: euros(totalSpend) },
-    { label: "Erreurs sur 30 jours", valeur: errors30.toLocaleString("fr-FR") },
-    { label: "Agents en service", valeur: `${actifs} / ${(agents ?? []).length}` },
+    {
+      label: "Utilisateurs inscrits",
+      valeur: users.length.toLocaleString("fr-FR"),
+      detail: `+${new7} sur 7 j ${prev7 > 0 ? `(vs ${prev7} la semaine d'avant)` : ""}`,
+    },
+    {
+      label: "Actifs sur 7 jours",
+      valeur: actifs7.toLocaleString("fr-FR"),
+      detail: `${users.length > 0 ? Math.round((actifs7 / users.length) * 100) : 0} % des inscrits`,
+    },
+    {
+      label: "Dossiers réels",
+      valeur: reels.length.toLocaleString("fr-FR"),
+      detail: `${resolus} résolu${resolus > 1 ? "s" : ""} · ${samples} exemple${samples > 1 ? "s" : ""}`,
+    },
+    {
+      label: "Organisations",
+      valeur: (orgCount ?? 0).toLocaleString("fr-FR"),
+      detail: `${orgsAvecDossier} avec au moins un dossier`,
+    },
+    {
+      label: "Montants suivis",
+      valeur: euros(claimed),
+      detail: "réclamés sur les dossiers réels",
+    },
+    {
+      label: "Montants récupérés",
+      valeur: euros(recovered),
+      detail: claimed > 0 ? `${Math.round((recovered / claimed) * 100)} % du réclamé` : "en attente de dossiers",
+    },
+    {
+      label: "Coût IA du mois",
+      valeur: `${(aiCost / 1_000_000).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €`,
+      detail: `${monthRuns.length} run${monthRuns.length > 1 ? "s" : ""} · ${aiErrors} erreur${aiErrors > 1 ? "s" : ""}`,
+    },
+    {
+      label: "Stockage documents",
+      valeur: `${(storageBytes / 1024 / 1024).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Mo`,
+      detail: `${allDocs.length} pièce${allDocs.length > 1 ? "s" : ""}`,
+    },
   ];
 
   return (
     <div className="flex flex-col gap-8">
       <div>
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
-          Le parc d’agents
+          Vue d’ensemble
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Cette console pilote le moteur en production : modèle, prompt,
-          budget et pause s’appliquent à l’appel suivant.
+          Toute la plateforme d’un coup d’œil : utilisateurs, dossiers,
+          montants, activité. Les dossiers d’exemple sont exclus des
+          métriques métier.
         </p>
       </div>
 
+      {/* Tuiles clés */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {TILES.map((t) => (
           <div key={t.label} className="rounded-[1.5rem] border bg-card p-5">
             <p className="text-2xl font-bold tabular-nums tracking-tight">{t.valeur}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{t.label}</p>
+            <p className="mt-1 text-xs font-medium">{t.label}</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">{t.detail}</p>
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {(agents ?? []).map((agent) => {
-          const spend = spendByAgent.get(agent.key) ?? 0;
-          const budget = agent.monthly_budget_cents * 10_000;
-          const pct = budget > 0 ? Math.min(100, (spend / budget) * 100) : 0;
-          const last = lastRunByAgent.get(agent.key);
-          const active = agent.status === "active";
-          return (
-            <div key={agent.key} className="flex flex-col rounded-[1.75rem] border bg-card p-6">
-              <div className="flex items-start justify-between gap-3">
-                <span className="flex size-12 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-brand-soft to-brand/15 ring-1 ring-brand/20">
-                  <SpriteAvatar src={`/agents/${agent.key}.webp`} alt="" className="h-10" />
-                </span>
-                <form action={toggleAgentStatus}>
-                  <input type="hidden" name="key" value={agent.key} />
-                  <input type="hidden" name="to" value={active ? "paused" : "active"} />
-                  <button
-                    type="submit"
-                    className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 transition-colors ${
-                      active
-                        ? "bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100"
-                        : "bg-amber-50 text-amber-700 ring-amber-200 hover:bg-amber-100"
-                    }`}
-                    title={active ? "Mettre en pause" : "Remettre en service"}
-                  >
-                    {active ? <Pause className="size-3" /> : <Play className="size-3" />}
-                    {active ? "En service" : "En pause"}
-                  </button>
-                </form>
-              </div>
-
-              <h2 className="mt-3 font-bold tracking-tight">{agent.prenom}</h2>
-              <p className="text-[13px] font-medium text-brand-strong">{agent.role}</p>
-              <p className="mt-1.5 flex-1 text-xs leading-relaxed text-muted-foreground">
-                {agent.description}
-              </p>
-
-              <div className="mt-4 space-y-1.5 border-t pt-3.5 text-xs text-muted-foreground">
-                <p className="flex justify-between">
-                  <span>Modèle</span>
-                  <span className="font-mono text-foreground">{agent.model}</span>
-                </p>
-                <p className="flex justify-between">
-                  <span>Prompt</span>
-                  <span className="text-foreground">v{agent.prompt_version}</span>
-                </p>
-                <p className="flex justify-between">
-                  <span>Dernier run</span>
-                  <span className="text-foreground">
-                    {last
-                      ? new Date(last).toLocaleDateString("fr-FR", { day: "numeric", month: "short" }) +
-                        " · " +
-                        new Date(last).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })
-                      : "Jamais"}
-                  </span>
-                </p>
-              </div>
-
-              <div className="mt-3">
-                <p className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Budget du mois</span>
-                  <span className="tabular-nums">
-                    {euros(spend)} / {(agent.monthly_budget_cents / 100).toLocaleString("fr-FR")} €
-                  </span>
-                </p>
-                <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
-                  <div
-                    className={`h-full rounded-full ${pct > 85 ? "bg-red-500" : "bg-brand"}`}
-                    style={{ width: `${Math.max(pct, spend > 0 ? 2 : 0)}%` }}
-                  />
-                </div>
-              </div>
-
-              <Link
-                href={`/admin/agents/${agent.key}`}
-                className="group mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-brand-strong"
-              >
-                Régler et suivre
-                <ArrowRight className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />
-              </Link>
-            </div>
-          );
-        })}
+      {/* Courbes 30 jours */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <div className="rounded-[1.75rem] border bg-card p-6">
+          <h2 className="text-sm font-semibold">Inscriptions · 30 jours</h2>
+          <div className="mt-4">
+            <BarChart
+              ariaLabel="Inscriptions par jour sur 30 jours"
+              points={days.map((d) => ({ label: d.label, value: signupsByDay.get(d.key) ?? 0 }))}
+            />
+          </div>
+        </div>
+        <div className="rounded-[1.75rem] border bg-card p-6">
+          <h2 className="text-sm font-semibold">Dossiers créés · 30 jours</h2>
+          <div className="mt-4">
+            <BarChart
+              ariaLabel="Dossiers créés par jour sur 30 jours"
+              points={days.map((d) => ({ label: d.label, value: casesByDay.get(d.key) ?? 0 }))}
+            />
+          </div>
+        </div>
       </div>
 
-      <p className="text-xs leading-relaxed text-muted-foreground/80">
-        Coûts estimés d’après les tarifs publics des modèles, tracés par run
-        dans agent_runs. Un agent en pause ou à court de budget refuse
-        l’appel : les parcours produit affichent alors un repli explicite,
-        jamais une réponse inventée.
-      </p>
+      {/* Répartitions */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="rounded-[1.75rem] border bg-card p-6">
+          <h2 className="text-sm font-semibold">Dossiers par statut</h2>
+          <div className="mt-5">
+            <Donut
+              centre={reels.length.toLocaleString("fr-FR")}
+              sousCentre="dossiers réels"
+              segments={[...byStatus.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .map(([k, v]) => ({ label: STATUS_LABELS[k] ?? k, value: v }))}
+            />
+          </div>
+        </div>
+        <div className="rounded-[1.75rem] border bg-card p-6">
+          <h2 className="text-sm font-semibold">Par type de blème</h2>
+          <div className="mt-5">
+            <HBars
+              rows={[...byType.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .map(([k, v]) => ({ label: TYPE_LABELS[k] ?? k, value: v }))}
+            />
+          </div>
+          <h2 className="mt-7 text-sm font-semibold">Boîte de réception</h2>
+          <div className="mt-4">
+            <HBars
+              rows={[...bySource.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .map(([k, v]) => ({ label: SOURCE_LABELS[k] ?? k, value: v }))}
+            />
+            {inbox.length === 0 ? (
+              <p className="text-xs text-muted-foreground">Aucun élément réel pour l’instant.</p>
+            ) : null}
+          </div>
+        </div>
+        <div className="rounded-[1.75rem] border bg-card p-6">
+          <h2 className="text-sm font-semibold">Funnel d’activation</h2>
+          <div className="mt-5">
+            <Funnel
+              steps={[
+                { label: "Organisations inscrites", value: orgCount ?? 0 },
+                { label: "Avec au moins un dossier réel", value: orgsAvecDossier },
+                { label: "Avec un paiement récupéré", value: orgsAvecPaiement },
+              ]}
+            />
+          </div>
+          <p className="mt-4 text-[11px] leading-relaxed text-muted-foreground">
+            Le passage « inscrit → premier dossier » est la marche qui compte :
+            c’est elle que le parcours gratuit doit faire franchir.
+          </p>
+        </div>
+      </div>
+
+      {/* Dernières inscriptions */}
+      <section>
+        <h2 className="px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          Dernières inscriptions
+        </h2>
+        <div className="mt-3 overflow-hidden rounded-[1.75rem] border bg-card">
+          {derniers.map((u, i) => (
+            <div
+              key={u.id}
+              className={`flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-5 py-3.5 ${i > 0 ? "border-t" : ""}`}
+            >
+              <span className="min-w-0 truncate text-sm font-medium">{u.email}</span>
+              <span className="text-xs tabular-nums text-muted-foreground">
+                inscrit le{" "}
+                {new Date(u.created_at).toLocaleDateString("fr-FR", {
+                  day: "numeric",
+                  month: "short",
+                  year: "numeric",
+                })}
+                {u.last_sign_in_at
+                  ? ` · vu le ${new Date(u.last_sign_in_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}`
+                  : " · jamais connecté"}
+              </span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Raccourci agents */}
+      <Link
+        href="/admin/agents"
+        className="group flex items-center justify-between gap-4 rounded-[1.75rem] border bg-card p-6 transition-all duration-500 ease-fluid hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-lg hover:shadow-brand/[0.06]"
+      >
+        <div className="flex items-center gap-4">
+          <span className="flex -space-x-3">
+            {["marius", "lena", "nora"].map((k, i) => (
+              <span
+                key={k}
+                className="flex size-10 items-center justify-center overflow-hidden rounded-full bg-gradient-to-b from-brand-soft to-brand/15 ring-2 ring-card"
+                style={{ zIndex: 3 - i }}
+              >
+                <SpriteAvatar src={`/agents/${k}.webp`} alt="" className="h-8" />
+              </span>
+            ))}
+          </span>
+          <div>
+            <p className="font-semibold">Le parc d’agents</p>
+            <p className="text-sm text-muted-foreground">
+              Réglages, prompts versionnés, budgets et traces d’exécution.
+            </p>
+          </div>
+        </div>
+        <ArrowRight className="size-5 shrink-0 text-brand-strong transition-transform duration-300 group-hover:translate-x-1" />
+      </Link>
     </div>
   );
 }

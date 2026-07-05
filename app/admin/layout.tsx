@@ -50,7 +50,29 @@ export default async function AdminLayout({
           </Link>
         </div>
       </header>
+      <AdminTabs />
       <main className="mx-auto max-w-6xl px-6 py-10">{children}</main>
     </div>
+  );
+}
+
+function AdminTabs() {
+  return (
+    <nav aria-label="Sections d’administration" className="border-b bg-muted/40">
+      <div className="mx-auto flex max-w-6xl gap-1 px-6 py-2">
+        {[
+          { href: "/admin", label: "Vue d’ensemble" },
+          { href: "/admin/agents", label: "Agents" },
+        ].map((t) => (
+          <Link
+            key={t.href}
+            href={t.href}
+            className="rounded-full px-4 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-white hover:text-foreground"
+          >
+            {t.label}
+          </Link>
+        ))}
+      </div>
+    </nav>
   );
 }
