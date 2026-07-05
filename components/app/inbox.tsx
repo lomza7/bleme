@@ -20,16 +20,9 @@ import {
   setItemLabel,
   type InboxState,
 } from "@/lib/inbox/actions";
+import { LABEL_COLORS } from "@/lib/inbox/label-colors";
 
 const INITIAL: InboxState = {};
-
-export const LABEL_COLORS: Record<string, { dot: string; chip: string }> = {
-  sable: { dot: "bg-amber-400", chip: "bg-amber-100 text-amber-800" },
-  terracotta: { dot: "bg-brand", chip: "bg-brand-soft text-brand-strong" },
-  olive: { dot: "bg-lime-500", chip: "bg-lime-100 text-lime-800" },
-  ardoise: { dot: "bg-slate-400", chip: "bg-slate-200 text-slate-700" },
-  prune: { dot: "bg-purple-400", chip: "bg-purple-100 text-purple-800" },
-};
 
 function Feedback({ state }: { state: InboxState }) {
   if (state.error) {

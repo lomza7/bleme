@@ -24,10 +24,10 @@ import {
   CopyAddress,
   InboxUploader,
   ItemActions,
-  LABEL_COLORS,
   NewLabelForm,
   PasteEmailForm,
 } from "@/components/app/inbox";
+import { LABEL_COLORS } from "@/lib/inbox/label-colors";
 import { OPEN_STATUSES, PageHeader } from "@/components/app/ui";
 
 export const metadata: Metadata = { title: "Boîte de réception" };
