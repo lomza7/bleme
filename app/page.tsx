@@ -3,6 +3,7 @@ import { ArrowRight, Check, X } from "lucide-react";
 import { HeroPreview } from "@/components/landing/hero-preview";
 import { Marquee } from "@/components/landing/marquee";
 import { Reveal, RevealItem, RevealStagger } from "@/components/landing/reveal";
+import { JsonLd, ORG_JSONLD } from "@/components/seo/json-ld";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { KnowledgeGraph } from "@/components/landing/knowledge-graph";
 import { EvidenceSources } from "@/components/landing/evidence-sources";
@@ -19,6 +20,44 @@ const CTA_LABEL = "Créer mon premier dossier";
 export default function Home() {
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
+      <JsonLd data={ORG_JSONLD} />
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "WebSite",
+          name: "BLEME",
+          url: "https://bleme-two.vercel.app",
+          inLanguage: "fr-FR",
+        }}
+      />
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "SoftwareApplication",
+          name: "BLEME",
+          applicationCategory: "BusinessApplication",
+          operatingSystem: "Web",
+          description:
+            "Assistant IA des artisans, freelances et TPE : impayés, litiges clients et démarches suivis en dossiers, avec relances cadencées et mise en demeure prête à valider.",
+          inLanguage: "fr-FR",
+          offers: [
+            { "@type": "Offer", name: "Pro Starter", price: "9", priceCurrency: "EUR", description: "1 dossier actif, cadences automatiques, exports illimités. Par mois, HT, sans engagement." },
+            { "@type": "Offer", name: "Pro Business", price: "49", priceCurrency: "EUR", description: "10 dossiers actifs, recommandés intégrés, templates personnalisés. Par mois, HT." },
+            { "@type": "Offer", name: "Pro Scale", price: "99", priceCurrency: "EUR", description: "Dossiers illimités, multi-utilisateurs, intégrations. Par mois, HT." },
+          ],
+        }}
+      />
+      <JsonLd
+        data={{
+          "@context": "https://schema.org",
+          "@type": "FAQPage",
+          mainEntity: FAQ_ITEMS.map((f) => ({
+            "@type": "Question",
+            name: f.q,
+            acceptedAnswer: { "@type": "Answer", text: f.r },
+          })),
+        }}
+      />
       <Nav />
       <main className="flex-1">
         <Hero />
@@ -381,8 +420,7 @@ function Pricing() {
   );
 }
 
-function Faq() {
-  const questions = [
+const FAQ_ITEMS = [
     {
       q: "Est-ce que BLEME est un avocat ?",
       r: "Non. BLEME organise, rédige des brouillons et suit vos démarches. Pour un conseil juridique personnalisé, consultez un avocat. Le jour venu, votre dossier BLEME lui fera gagner un temps précieux.",
@@ -407,7 +445,10 @@ function Faq() {
       q: "Il y a un engagement ?",
       r: "Non. Abonnement sans engagement dès 9 € par mois, résiliable en un clic, export libre même après départ.",
     },
-  ];
+];
+
+function Faq() {
+  const questions = FAQ_ITEMS;
   return (
     <section id="faq" className="mx-auto max-w-3xl scroll-mt-24 px-6 py-24 lg:py-32">
       <Reveal>
@@ -502,6 +543,14 @@ function Footer() {
               <li><a href="#suivi" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Suivi des dossiers</a></li>
               <li><a href="#tarifs" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Tarifs</a></li>
               <li><a href="#faq" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">FAQ</a></li>
+            </ul>
+            <p className="mt-6 text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">
+              Guides
+            </p>
+            <ul className="mt-4 space-y-2.5 text-sm">
+              <li><Link href="/guides/facture-impayee-que-faire" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Facture impayée : que faire</Link></li>
+              <li><Link href="/guides/mise-en-demeure-de-payer" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Mise en demeure de payer</Link></li>
+              <li><Link href="/guides/indemnite-forfaitaire-40-euros" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">L’indemnité de 40 €</Link></li>
             </ul>
           </nav>
           <nav className="md:col-span-3">

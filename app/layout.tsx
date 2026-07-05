@@ -13,12 +13,45 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://bleme-two.vercel.app"),
   title: {
-    default: "BLEME. On vous doit de l’argent, BLEME s’occupe du dossier.",
+    default: "BLEME · L’IA qui s’occupe de vos impayés, litiges et démarches",
     template: "%s · BLEME",
   },
   description:
-    "Impayés, litiges clients, démarches : racontez votre blème à voix haute, l'IA monte le dossier, prépare les relances et suit les réponses. Vous validez, ça avance.",
+    "BLEME est l’assistant IA des artisans, freelances et TPE pour récupérer les factures impayées, gérer les litiges clients et suivre les démarches : relances cadencées, mise en demeure, dossier prêt pour un professionnel. Dès 9 €/mois, sans engagement.",
+  keywords: [
+    "facture impayée",
+    "relance client",
+    "mise en demeure",
+    "recouvrement artisan",
+    "litige client",
+    "indemnité forfaitaire 40 euros",
+    "IA juridique",
+  ],
+  alternates: { canonical: "/" },
+  openGraph: {
+    type: "website",
+    locale: "fr_FR",
+    url: "/",
+    siteName: "BLEME",
+    title: "BLEME · L’IA qui s’occupe de vos impayés, litiges et démarches",
+    description:
+      "Racontez votre blème à voix haute : l’IA monte le dossier, prépare les courriers et suit chaque étape jusqu’au paiement. Vous validez, ça avance.",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "BLEME, l’IA qui s’occupe de vos problèmes" }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "BLEME · L’IA qui s’occupe de vos impayés, litiges et démarches",
+    description:
+      "Impayés, litiges, démarches : l’IA qui s’occupe de vos problèmes. Dès 9 €/mois, sans engagement.",
+    images: ["/og.png"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-image-preview": "large", "max-snippet": -1 },
+  },
 };
 
 export default function RootLayout({

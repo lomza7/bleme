@@ -271,3 +271,64 @@
     scroll-behavior: auto;
   }
 }
+/* Typographie des guides (contenu long). */
+.prose-bleme > h2 {
+  margin-top: 2.5rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.prose-bleme > h3 {
+  margin-top: 1.75rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.prose-bleme > p,
+.prose-bleme > ul,
+.prose-bleme > ol {
+  margin-top: 1rem;
+  line-height: 1.75;
+  color: var(--muted-foreground);
+}
+.prose-bleme > p strong,
+.prose-bleme li strong {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.prose-bleme > ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+.prose-bleme > ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+.prose-bleme li {
+  margin-top: 0.5rem;
+  padding-left: 0.25rem;
+}
+.prose-bleme a {
+  color: var(--brand-strong);
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.prose-bleme table {
+  margin-top: 1.25rem;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.925rem;
+}
+.prose-bleme th {
+  text-align: left;
+  font-weight: 600;
+  padding: 0.625rem 0.75rem;
+  border-bottom: 2px solid var(--border);
+}
+.prose-bleme td {
+  padding: 0.625rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+}
+
+/* guides */
