@@ -1,35 +1,15 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { ArrowRight, BookOpenText } from "lucide-react";
+import { GUIDE_CATEGORIES } from "@/lib/guides";
 import { JsonLd } from "@/components/seo/json-ld";
 
 export const metadata: Metadata = {
-  title: "Guides pratiques : impayés, relances, mise en demeure",
+  title: "Guides pratiques : impayés, relances, litiges, recouvrement",
   description:
-    "Guides pratiques BLEME pour les pros : traiter une facture impayée étape par étape, rédiger une mise en demeure, réclamer l'indemnité forfaitaire de 40 €. Information claire, sources officielles.",
+    "13 guides pratiques BLEME pour les pros : traiter une facture impayée, relancer, mettre en demeure, calculer les pénalités, choisir son recours, gérer un client qui conteste. Information claire, sources officielles.",
   alternates: { canonical: "/guides" },
 };
-
-const GUIDES = [
-  {
-    slug: "facture-impayee-que-faire",
-    titre: "Facture impayée : que faire, étape par étape",
-    resume:
-      "Relance amiable, relance ferme, mise en demeure, recours : le calendrier complet, les délais légaux et les erreurs qui coûtent cher.",
-  },
-  {
-    slug: "mise-en-demeure-de-payer",
-    titre: "Mise en demeure de payer : mentions, envoi, effets",
-    resume:
-      "Les mentions indispensables, pourquoi le recommandé n'est pas un détail, et ce que la mise en demeure change juridiquement.",
-  },
-  {
-    slug: "indemnite-forfaitaire-40-euros",
-    titre: "Indemnité forfaitaire de 40 € : la pénalité automatique",
-    resume:
-      "Due de plein droit pour chaque facture en retard entre pros. Qui peut la réclamer, comment la chiffrer, et ses limites.",
-  },
-];
 
 export default function GuidesPage() {
   return (
@@ -40,11 +20,13 @@ export default function GuidesPage() {
           "@type": "CollectionPage",
           name: "Guides pratiques BLEME",
           url: "https://bleme-two.vercel.app/guides",
-          hasPart: GUIDES.map((g) => ({
-            "@type": "Article",
-            headline: g.titre,
-            url: `https://bleme-two.vercel.app/guides/${g.slug}`,
-          })),
+          hasPart: GUIDE_CATEGORIES.flatMap((c) =>
+            c.guides.map((g) => ({
+              "@type": "Article",
+              headline: g.titre,
+              url: `https://bleme-two.vercel.app/guides/${g.slug}`,
+            })),
+          ),
         }}
       />
       <header className="border-b">
@@ -69,28 +51,38 @@ export default function GuidesPage() {
           Guides pratiques
         </h1>
         <p className="mt-3 max-w-xl text-lg text-muted-foreground">
-          Impayés, relances, mise en demeure : l’essentiel du droit utile aux
-          pros, en clair et sourcé. Sans jargon, sans conseil personnalisé.
+          Impayés, relances, litiges, recours : l’essentiel du droit utile
+          aux pros, en clair et sourcé. Sans jargon, sans conseil
+          personnalisé.
         </p>
 
-        <div className="mt-10 flex flex-col gap-4">
-          {GUIDES.map((g) => (
-            <Link
-              key={g.slug}
-              href={`/guides/${g.slug}`}
-              className="group rounded-[1.75rem] border bg-card p-7 transition-all duration-500 ease-fluid hover:-translate-y-0.5 hover:shadow-lg hover:shadow-zinc-950/[0.05]"
-            >
-              <h2 className="text-lg font-semibold leading-snug">{g.titre}</h2>
-              <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                {g.resume}
-              </p>
-              <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-brand-strong">
-                Lire le guide
-                <ArrowRight className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />
-              </span>
-            </Link>
-          ))}
-        </div>
+        {GUIDE_CATEGORIES.map((categorie) => (
+          <section key={categorie.titre} className="mt-12">
+            <h2 className="text-xs font-semibold uppercase tracking-[0.14em] text-brand-strong">
+              {categorie.titre}
+            </h2>
+            <div className="mt-4 flex flex-col gap-4">
+              {categorie.guides.map((g) => (
+                <Link
+                  key={g.slug}
+                  href={`/guides/${g.slug}`}
+                  className="group rounded-[1.75rem] border bg-card p-7 transition-all duration-500 ease-fluid hover:-translate-y-0.5 hover:shadow-lg hover:shadow-zinc-950/[0.05]"
+                >
+                  <h3 className="text-lg font-semibold leading-snug">
+                    {g.titre}
+                  </h3>
+                  <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                    {g.resume}
+                  </p>
+                  <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-medium text-brand-strong">
+                    Lire le guide
+                    <ArrowRight className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </section>
+        ))}
       </main>
 
       <footer className="border-t">

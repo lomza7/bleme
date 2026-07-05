@@ -17,8 +17,18 @@
 ## Guides pratiques (information juridique générale, sourcée)
 
 - [Facture impayée : que faire, étape par étape](https://bleme-two.vercel.app/guides/facture-impayee-que-faire) : relance amiable, relance ferme, mise en demeure, recours, délais et prescription
+- [Relancer une facture impayée](https://bleme-two.vercel.app/guides/relance-facture-impayee) : méthode, ton gradué (cordial, ferme, formel), contenu type et calendrier J0/J+7/J+15
 - [Mise en demeure de payer](https://bleme-two.vercel.app/guides/mise-en-demeure-de-payer) : mentions obligatoires, envoi en recommandé, effets juridiques
+- [Pénalités de retard entre professionnels](https://bleme-two.vercel.app/guides/penalites-de-retard) : dues sans rappel dès le lendemain de l'échéance, taux minimum 3× l'intérêt légal, BCE + 10 points à défaut de clause
 - [Indemnité forfaitaire de 40 €](https://bleme-two.vercel.app/guides/indemnite-forfaitaire-40-euros) : la pénalité de retard automatique entre professionnels (articles L441-10 et D441-5 du Code de commerce)
+- [Délais de paiement entre professionnels](https://bleme-two.vercel.app/guides/delais-de-paiement-entre-professionnels) : 30 jours par défaut, plafonds de 60 jours date de facture ou 45 jours fin de mois, sanctions DGCCRF
+- [Injonction de payer](https://bleme-two.vercel.app/guides/injonction-de-payer) : procédure judiciaire rapide (~35 € au tribunal de commerce, sans avocat), requête, signification, opposition, titre exécutoire
+- [Créance de moins de 5 000 € : procédure simplifiée](https://bleme-two.vercel.app/guides/recouvrement-creance-moins-5000-euros) : titre exécutoire par commissaire de justice sans juge (article L125-1 CPCE)
+- [Prescription d'une facture impayée](https://bleme-two.vercel.app/guides/prescription-facture-impayee) : 5 ans entre professionnels, 2 ans face à un particulier ; ce qui interrompt le délai et ce qui ne l'interrompt pas
+- [Client qui conteste travaux ou facture](https://bleme-two.vercel.app/guides/client-conteste-travaux-facture) : réponse point par point, partie non contestée, expertise amiable, escalade maîtrisée
+- [Emails, WhatsApp, photos : quelles preuves comptent](https://bleme-two.vercel.app/guides/preuves-impaye-litige) : liberté de preuve entre professionnels (L110-3), écrit exigé au-delà de 1 500 € face à un particulier
+- [Devis signé : valeur juridique](https://bleme-two.vercel.app/guides/devis-signe-valeur-juridique) : ce qu'il engage, mentions qui protègent, travaux supplémentaires et avenants
+- [Facture impayée par un particulier](https://bleme-two.vercel.app/guides/facture-impayee-client-particulier) : prescription de 2 ans, pas d'indemnité de 40 €, écrit exigé au-delà de 1 500 €
 
 ## Faits clés
 

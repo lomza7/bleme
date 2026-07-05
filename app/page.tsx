@@ -553,6 +553,8 @@ function Footer() {
               <li><Link href="/guides/facture-impayee-que-faire" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Facture impayée : que faire</Link></li>
               <li><Link href="/guides/mise-en-demeure-de-payer" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Mise en demeure de payer</Link></li>
               <li><Link href="/guides/indemnite-forfaitaire-40-euros" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">L’indemnité de 40 €</Link></li>
+              <li><Link href="/guides/injonction-de-payer" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">L’injonction de payer</Link></li>
+              <li><Link href="/guides" className="font-medium text-ink-foreground transition-colors duration-300 hover:text-brand">Tous les guides</Link></li>
             </ul>
           </nav>
           <nav className="md:col-span-3">

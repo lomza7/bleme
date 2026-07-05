@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { AGENTS } from "@/lib/agents/data";
+import { GUIDES } from "@/lib/guides";
 
 const BASE = "https://bleme-two.vercel.app";
 
@@ -15,8 +16,11 @@ export default function sitemap(): MetadataRoute.Sitemap {
     })),
     { url: `${BASE}/nouveau`, lastModified, changeFrequency: "monthly", priority: 0.8 },
     { url: `${BASE}/guides`, lastModified, changeFrequency: "weekly", priority: 0.9 },
-    { url: `${BASE}/guides/facture-impayee-que-faire`, lastModified, changeFrequency: "monthly", priority: 0.9 },
-    { url: `${BASE}/guides/mise-en-demeure-de-payer`, lastModified, changeFrequency: "monthly", priority: 0.9 },
-    { url: `${BASE}/guides/indemnite-forfaitaire-40-euros`, lastModified, changeFrequency: "monthly", priority: 0.9 },
+    ...GUIDES.map((g) => ({
+      url: `${BASE}/guides/${g.slug}`,
+      lastModified,
+      changeFrequency: "monthly" as const,
+      priority: 0.9,
+    })),
   ];
 }
