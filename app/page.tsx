@@ -204,10 +204,15 @@ function Piliers() {
           Chaque année, les entrepreneurs laissent filer de l’argent. Sur trois
           fronts.
         </h2>
+        <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
+          15 milliards d’euros de trésorerie s’évaporent chaque année dans les
+          retards de paiement des TPE et PME, selon l’Observatoire des délais
+          de paiement. BLEME tient les trois lignes de front.
+        </p>
       </Reveal>
       <RevealStagger className="mt-14 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <RevealItem className="lg:col-span-2">
-          <div className="grid grid-cols-1 gap-10 rounded-[1.75rem] bg-ink p-9 text-ink-foreground sm:p-12 lg:grid-cols-2">
+          <div className="grid grid-cols-1 items-center gap-10 rounded-[1.75rem] bg-ink p-9 text-ink-foreground sm:p-12 lg:grid-cols-2">
             <div>
               <p className="text-sm font-medium uppercase tracking-[0.16em] text-brand">
                 Impayés
@@ -220,26 +225,72 @@ function Piliers() {
                 Une cadence qui ne lâche rien, des courriers prêts au bon
                 moment, et un dossier béton si ça doit aller plus loin.
               </p>
+              <p className="mt-6 flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-white/10 pt-5">
+                <span className="text-3xl font-bold tabular-nums tracking-tight text-brand">
+                  86 %
+                </span>
+                <span className="max-w-[34ch] text-sm leading-snug text-ink-muted">
+                  des entreprises françaises ont subi des retards de paiement
+                  cette année (Coface, 2025)
+                </span>
+              </p>
             </div>
-            <ul className="flex flex-col justify-center gap-3">
-              {[
-                "Relances cadencées, envoyées après votre validation",
-                "Mise en demeure conforme aux usages, prête pour recommandé",
-                "Export complet pour avocat ou commissaire de justice",
-              ].map((item) => (
-                <li
-                  key={item}
-                  className="flex items-start gap-3 rounded-2xl bg-white/[0.06] px-5 py-4 text-[15px] ring-1 ring-white/10"
-                >
-                  <Check className="mt-0.5 size-4 shrink-0 text-brand" />
-                  <span className="text-ink-foreground/85">{item}</span>
+
+            {/* Mini-UI : la cadence en action */}
+            <div className="rounded-2xl bg-white p-5 text-foreground shadow-2xl shadow-black/30 sm:p-6">
+              <div className="flex items-center justify-between gap-3 border-b pb-3.5">
+                <p className="min-w-0">
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    Facture F-2026-042
+                  </span>
+                  <span className="text-xl font-bold tabular-nums tracking-tight">
+                    2 400,00 €
+                  </span>
+                </p>
+                <span className="shrink-0 rounded-full bg-brand-soft px-2.5 py-1 text-[11px] font-medium text-brand-strong">
+                  J+47
+                </span>
+              </div>
+              <ul className="mt-4 space-y-3">
+                <li className="flex items-center gap-3">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+                    <Check className="size-3 text-emerald-600" />
+                  </span>
+                  <span className="flex-1 text-[13px]">Relance cordiale envoyée</span>
+                  <span className="text-[11px] tabular-nums text-muted-foreground">J+1</span>
                 </li>
-              ))}
-            </ul>
+                <li className="flex items-center gap-3">
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+                    <Check className="size-3 text-emerald-600" />
+                  </span>
+                  <span className="flex-1 text-[13px]">
+                    Relance ferme <span className="text-muted-foreground">· lue par le client</span>
+                  </span>
+                  <span className="text-[11px] tabular-nums text-muted-foreground">J+7</span>
+                </li>
+                <li className="flex items-center gap-3">
+                  <span className="relative flex size-5 shrink-0 items-center justify-center">
+                    <span className="absolute inline-flex size-4 animate-ping rounded-full bg-brand/50 motion-reduce:hidden" />
+                    <span className="relative inline-flex size-2.5 rounded-full bg-brand" />
+                  </span>
+                  <span className="flex-1 text-[13px] font-semibold">
+                    Mise en demeure prête
+                  </span>
+                  <span className="rounded-full bg-brand px-2 py-0.5 text-[10px] font-medium text-brand-foreground">
+                    À valider
+                  </span>
+                </li>
+              </ul>
+              <p className="mt-4 flex items-center justify-between gap-3 border-t pt-3.5 text-[11px] text-muted-foreground">
+                + 40 € d’indemnité légale chiffrée
+                <span className="text-right">Export prêt pour avocat</span>
+              </p>
+            </div>
           </div>
         </RevealItem>
+
         <RevealItem>
-          <div className="flex h-full flex-col rounded-[1.75rem] border bg-card p-9 transition-all duration-500 ease-fluid hover:-translate-y-1 hover:shadow-xl hover:shadow-zinc-950/[0.06]">
+          <div className="group flex h-full flex-col rounded-[1.75rem] border bg-card p-9 transition-all duration-500 ease-fluid hover:-translate-y-1 hover:shadow-xl hover:shadow-zinc-950/[0.06]">
             <p className="text-sm font-medium uppercase tracking-[0.16em] text-brand">
               Litiges clients
             </p>
@@ -247,12 +298,39 @@ function Piliers() {
               Les conflits où le client a gain de cause faute de preuves.
             </h3>
             <p className="mt-4 leading-relaxed text-muted-foreground">
-              Prestation contestée, devis remis en cause, livraison refusée : BLEME
-              classe vos preuves, reconstitue la chronologie et prépare une
-              réponse circonstanciée. Votre dossier tient debout.
+              Prestation contestée, devis remis en cause, livraison refusée :
+              BLEME classe vos preuves, reconstitue la chronologie et prépare
+              une réponse circonstanciée. Votre dossier tient debout.
             </p>
+
+            {/* Mini-UI : la pile de preuves */}
+            <div className="mt-7 space-y-2">
+              {[
+                { nom: "Devis signé · 12 avril", piece: "pièce n° 1" },
+                { nom: "WhatsApp : « c’est bon pour moi, lancez »", piece: "pièce n° 2" },
+                { nom: "Photo de réception, datée", piece: "pièce n° 3" },
+              ].map((p, i) => (
+                <div
+                  key={p.nom}
+                  className="flex items-center gap-3 rounded-xl bg-muted px-4 py-3 ring-1 ring-black/5 transition-transform duration-500 ease-fluid group-hover:translate-x-1"
+                  style={{ transitionDelay: `${i * 60}ms` }}
+                >
+                  <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-emerald-100">
+                    <Check className="size-3 text-emerald-600" />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-[13px]">{p.nom}</span>
+                  <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {p.piece}
+                  </span>
+                </div>
+              ))}
+              <p className="pt-1.5 text-[13px] font-medium text-brand-strong">
+                Réponse point par point prête, chaque grief adossé à sa pièce.
+              </p>
+            </div>
           </div>
         </RevealItem>
+
         <RevealItem>
           <div className="flex h-full flex-col rounded-[1.75rem] bg-brand-soft p-9 transition-all duration-500 ease-fluid hover:-translate-y-1 hover:shadow-xl hover:shadow-zinc-950/[0.06]">
             <div className="flex items-center gap-3">
@@ -270,6 +348,15 @@ function Piliers() {
               Beaucoup d’amendes professionnelles peuvent être contestées ou
               faire l’objet d’une demande gracieuse. BLEME préparera le
               recours et suivra la réponse de l’administration.
+            </p>
+            <p className="mt-auto flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-brand/20 pt-5">
+              <span className="text-4xl font-bold tracking-tight text-brand-strong">
+                2 sur 3
+              </span>
+              <span className="max-w-[30ch] text-sm leading-snug text-muted-foreground">
+                des demandes de remise gracieuse aboutissent à une remise
+                partielle ou totale (DGFiP)
+              </span>
             </p>
           </div>
         </RevealItem>
