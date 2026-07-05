@@ -8,6 +8,7 @@ import {
   Download,
   FileText,
   FolderOpen,
+  Inbox,
   LayoutDashboard,
   Menu,
   Plus,
@@ -21,6 +22,7 @@ const SECTIONS = [
     titre: "Pilotage",
     items: [
       { href: "/app", label: "Tableau de bord", icon: LayoutDashboard, exact: true },
+      { href: "/app/inbox", label: "Boîte de réception", icon: Inbox },
       { href: "/app/dossiers", label: "Mes dossiers", icon: FolderOpen },
       { href: "/app/documents", label: "Mes documents", icon: FileText },
     ],
