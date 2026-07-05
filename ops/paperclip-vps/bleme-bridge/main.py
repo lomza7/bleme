@@ -55,7 +55,7 @@ def _auth(creds: HTTPAuthorizationCredentials | None = Depends(security)) -> Non
         raise HTTPException(401, "unauthorized")
 
 
-def _new_cli():
+def _new_cli(model: str):
     if HERMES_ROOT not in sys.path:
         sys.path.insert(0, HERMES_ROOT)
     sink = io.StringIO()
@@ -70,15 +70,16 @@ def _new_cli():
         # toolsets=["__aucun__"] : toolset inexistant → get_tool_definitions
         # filtre tout → aucun outil envoyé à l'API (requis : les endpoints
         # OpenRouter des modèles Hermes 4 ne routent pas le tool use).
-        return cli_module.HermesCLI(model=MODEL, provider=PROVIDER, toolsets=["__aucun__"])
+        return cli_module.HermesCLI(model=model, provider=PROVIDER, toolsets=["__aucun__"])
 
 
-def _get_cli(agent: str):
-    if agent not in _instances:
+def _get_cli(agent: str, model: str):
+    key = f"{agent}:{model}"
+    if key not in _instances:
         t0 = time.perf_counter()
-        _instances[agent] = _new_cli()
-        print(f"[bleme-bridge] HermesCLI({agent}) chargé en {time.perf_counter() - t0:.2f}s")
-    return _instances[agent]
+        _instances[key] = _new_cli(model)
+        print(f"[bleme-bridge] HermesCLI({key}) chargé en {time.perf_counter() - t0:.2f}s")
+    return _instances[key]
 
 
 def _clear_history(cli) -> None:
@@ -114,8 +115,8 @@ def _seed_system(cli, system: str) -> bool:
     return False
 
 
-def _chat_sync(agent: str, system: str, message: str) -> str:
-    cli = _get_cli(agent)
+def _chat_sync(agent: str, model: str, system: str, message: str) -> str:
+    cli = _get_cli(agent, model)
     _disarm_tools(cli)
     if not _seed_system(cli, system):
         message = f"[RÔLE — à respecter strictement]\n{system}\n\n{message}"
@@ -125,7 +126,7 @@ def _chat_sync(agent: str, system: str, message: str) -> str:
             response = cli.chat(message)
     except BaseException as exc:
         # Instance potentiellement corrompue : on la jette, elle sera recréée.
-        _instances.pop(agent, None)
+        _instances.pop(f"{agent}:{model}", None)
         raise RuntimeError(f"HermesCLI.chat a échoué: {exc!r}") from exc
     finally:
         with contextlib.suppress(Exception):
@@ -139,6 +140,7 @@ class RunRequest(BaseModel):
     agent: str
     system: str
     input: str
+    model: str | None = None
     timeout_s: int | None = None
 
 
@@ -159,6 +161,7 @@ async def run(req: RunRequest) -> dict:
     agent = req.agent.strip().lower()
     if agent not in AGENTS:
         raise HTTPException(400, f"agent inconnu: {agent}")
+    model = (req.model or MODEL).strip()
 
     message = (
         f"{req.input}\n\n"
@@ -169,7 +172,7 @@ async def run(req: RunRequest) -> dict:
     async with _locks[agent]:
         try:
             text = await asyncio.wait_for(
-                loop.run_in_executor(None, _chat_sync, agent, req.system, message),
+                loop.run_in_executor(None, _chat_sync, agent, model, req.system, message),
                 timeout=req.timeout_s or CHAT_TIMEOUT,
             )
         except asyncio.TimeoutError:
@@ -180,7 +183,7 @@ async def run(req: RunRequest) -> dict:
     _load_errors.pop(agent, None)
     return {
         "agent": agent,
-        "model": MODEL,
+        "model": model,
         "text": text,
         "duration_ms": int((time.perf_counter() - t0) * 1000),
     }

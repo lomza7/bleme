@@ -40,6 +40,7 @@ export function AgentSettingsForm({
   agent: {
     key: string;
     model: string;
+    hermes_model: string;
     runtime: string;
     status: string;
     monthly_budget_cents: number;
@@ -49,7 +50,7 @@ export function AgentSettingsForm({
   return (
     <form action={action} className="flex flex-col gap-4">
       <input type="hidden" name="key" value={agent.key} />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <label className="flex flex-col gap-1.5 text-sm font-medium">
           Runtime
           <select name="runtime" defaultValue={agent.runtime} className={inputCls}>
@@ -64,6 +65,23 @@ export function AgentSettingsForm({
             <option value="claude-haiku-4-5">Haiku 4.5 (rapide)</option>
             <option value="claude-opus-4-8">Opus 4.8 (fort)</option>
           </select>
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm font-medium">
+          Modèle (runtime Hermes)
+          <input
+            name="hermesModel"
+            defaultValue={agent.hermes_model}
+            list="openrouter-modeles"
+            className={`${inputCls} font-mono text-xs`}
+            placeholder="fournisseur/modele"
+          />
+          <datalist id="openrouter-modeles">
+            <option value="nousresearch/hermes-4-70b" />
+            <option value="nousresearch/hermes-4-405b" />
+            <option value="moonshotai/kimi-k2.6" />
+            <option value="deepseek/deepseek-chat" />
+            <option value="qwen/qwen3-235b-a22b" />
+          </datalist>
         </label>
         <label className="flex flex-col gap-1.5 text-sm font-medium">
           Statut

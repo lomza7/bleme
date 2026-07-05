@@ -119,8 +119,8 @@ export default async function AdminHome() {
                 </p>
                 <p className="flex justify-between">
                   <span>Modèle</span>
-                  <span className="font-mono text-foreground">
-                    {agent.runtime === "hermes" ? "hermes-4 (bridge)" : agent.model}
+                  <span className="max-w-40 truncate font-mono text-foreground" title={agent.runtime === "hermes" ? agent.hermes_model : agent.model}>
+                    {agent.runtime === "hermes" ? agent.hermes_model : agent.model}
                   </span>
                 </p>
                 <p className="flex justify-between">

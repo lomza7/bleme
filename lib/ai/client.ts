@@ -18,6 +18,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 type AgentConfig = {
   key: string;
   model: string;
+  hermes_model: string;
   runtime: "claude" | "hermes";
   status: "active" | "paused";
   monthly_budget_cents: number;
@@ -50,7 +51,7 @@ async function loadAgent(key: string): Promise<AgentConfig | null> {
   const supabase = createServiceClient();
   const { data } = await supabase
     .from("agents")
-    .select("key, model, runtime, status, monthly_budget_cents, system_prompt, prompt_version")
+    .select("key, model, hermes_model, runtime, status, monthly_budget_cents, system_prompt, prompt_version")
     .eq("key", key)
     .maybeSingle();
   return (data as AgentConfig | null) ?? null;
@@ -158,6 +159,7 @@ export async function runAgent<T>(opts: {
           agent: agent.key,
           system: agent.system_prompt,
           input: JSON.stringify(opts.input),
+          model: agent.hermes_model,
         }),
       });
       if (!response.ok) {
