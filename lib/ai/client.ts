@@ -1,6 +1,6 @@
 import "server-only";
 import { z } from "zod";
-import { serverEnv } from "@/lib/env";
+import { getSecret } from "@/lib/secrets";
 import { createServiceClient } from "@/lib/supabase/server";
 
 /*
@@ -124,7 +124,8 @@ export async function runAgent<T>(opts: {
     );
   }
 
-  const apiKey = serverEnv().ANTHROPIC_API_KEY;
+  // Coffre de la console d'abord (effet immédiat), variable d'ENV en repli.
+  const apiKey = await getSecret("ANTHROPIC_API_KEY");
   const started = Date.now();
 
   // Bêta sans clé réelle : simulation tracée, jamais silencieuse.

@@ -63,6 +63,7 @@ function AdminTabs() {
         {[
           { href: "/admin", label: "Vue d’ensemble" },
           { href: "/admin/agents", label: "Agents" },
+          { href: "/admin/cles", label: "Clés & API" },
         ].map((t) => (
           <Link
             key={t.href}
