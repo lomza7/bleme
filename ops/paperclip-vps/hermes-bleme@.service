@@ -1,0 +1,20 @@
+# /etc/systemd/system/hermes-bleme@.service
+# Template : une instance Hermes par agent BLEME (marius, lena, jeanne,
+# nora, sacha, basile). Chaque instance tourne sous son utilisateur Unix
+# (agent-%i) avec son ~/.hermes isolé et sa propre identité de heartbeat
+# Paperclip. Activer : systemctl enable --now hermes-bleme@marius
+[Unit]
+Description=Hermes Agent BLEME (%i)
+After=network-online.target paperclip.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agent-%i
+WorkingDirectory=/home/agent-%i
+ExecStart=/home/agent-%i/.local/bin/hermes gateway start
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
