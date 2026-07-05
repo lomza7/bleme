@@ -99,16 +99,18 @@ const AGENTS: Agent[] = [
 
 function SkillBar({ skill }: { skill: Skill }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-xs text-ink-muted">{skill.label}</span>
+    <div className="flex items-center justify-between gap-2">
+      <span className="truncate text-[11px] text-muted-foreground sm:text-xs">
+        {skill.label}
+      </span>
       <span className="flex shrink-0 gap-1" aria-label={`${skill.label} : niveau ${skill.niveau} sur 5`}>
         {Array.from({ length: 5 }, (_, i) => (
           <span
             key={i}
             className={
               i < skill.niveau
-                ? "h-1.5 w-4 rounded-full bg-brand"
-                : "h-1.5 w-4 rounded-full bg-white/10"
+                ? "h-1.5 w-2.5 rounded-full bg-brand sm:w-3.5"
+                : "h-1.5 w-2.5 rounded-full bg-muted sm:w-3.5"
             }
           />
         ))}
@@ -117,58 +119,71 @@ function SkillBar({ skill }: { skill: Skill }) {
   );
 }
 
-function AgentCard({ agent }: { agent: Agent }) {
+function AgentCard({ agent, index }: { agent: Agent; index: number }) {
   return (
-    <div className="group flex h-full flex-col rounded-[1.75rem] bg-ink p-7 text-ink-foreground transition-all duration-500 ease-fluid hover:-translate-y-1 hover:shadow-xl hover:shadow-zinc-950/[0.25]">
-      <div className="flex items-start justify-between">
-        <span className="flex size-[4.5rem] items-center justify-center overflow-hidden rounded-2xl bg-white/[0.06] ring-1 ring-white/10 transition-transform duration-500 ease-fluid group-hover:-rotate-3 group-hover:scale-105">
+    <div className="group relative flex h-full flex-col overflow-hidden rounded-[1.75rem] border bg-card p-4 transition-all duration-500 ease-fluid hover:-translate-y-1 hover:border-brand/40 hover:shadow-xl hover:shadow-brand/[0.08] sm:p-6">
+      {/* Halo discret qui s'allume au survol */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-10 -top-10 size-36 rounded-full bg-brand/10 opacity-0 blur-2xl transition-opacity duration-700 group-hover:opacity-100"
+      />
+
+      <div className="relative flex items-start justify-between gap-2">
+        <span
+          className="anim-bob flex size-14 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-brand-soft to-brand/15 ring-1 ring-brand/20 transition-transform duration-500 ease-fluid group-hover:-rotate-3 group-hover:scale-110 sm:size-[4.5rem]"
+          style={{ "--delay": `${index * 0.4}s` } as React.CSSProperties}
+        >
           <img
             src={agent.avatar}
             alt={`Avatar pixel art de ${agent.prenom}, ${agent.role}`}
             width={64}
             height={64}
-            className="size-16 [image-rendering:pixelated]"
+            className="size-12 [image-rendering:pixelated] sm:size-16"
           />
         </span>
         {agent.soon ? (
-          <span className="rounded-full bg-brand px-2.5 py-1 text-[11px] font-medium text-brand-foreground">
+          <span className="rounded-full bg-brand px-2 py-0.5 text-[10px] font-medium text-brand-foreground sm:px-2.5 sm:py-1 sm:text-[11px]">
             Bientôt
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.07] px-2.5 py-1 text-[11px] font-medium text-ink-foreground/80 ring-1 ring-white/10">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200 sm:px-2.5 sm:py-1 sm:text-[11px]">
             <span className="relative flex size-1.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400/70 motion-reduce:hidden" />
-              <span className="relative inline-flex size-1.5 rounded-full bg-emerald-400" />
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60 motion-reduce:hidden" />
+              <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
             </span>
             En service
           </span>
         )}
       </div>
 
-      <h3 className="mt-4 text-xl font-bold tracking-tight">{agent.prenom}</h3>
-      <p className="mt-0.5 text-sm font-semibold text-brand">{agent.role}</p>
-      <p className="mt-3 flex-1 text-sm leading-relaxed text-ink-muted">
+      <h3 className="relative mt-3 text-lg font-bold tracking-tight sm:mt-4 sm:text-xl">
+        {agent.prenom}
+      </h3>
+      <p className="relative mt-0.5 text-[13px] font-semibold text-brand-strong sm:text-sm">
+        {agent.role}
+      </p>
+      <p className="relative mt-2.5 hidden flex-1 text-sm leading-relaxed text-muted-foreground sm:block">
         {agent.expertise}
       </p>
 
       {/* Niveaux de maîtrise */}
-      <div className="mt-5 space-y-2 border-t border-white/10 pt-4">
+      <div className="relative mt-3 flex-1 space-y-1.5 border-t pt-3 sm:mt-5 sm:flex-none sm:space-y-2 sm:pt-4">
         {agent.skills.map((s) => (
           <SkillBar key={s.label} skill={s} />
         ))}
       </div>
 
       {/* Sources connectées */}
-      <div className="mt-4 border-t border-white/10 pt-4">
-        <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">
-          <Database className="size-3" />
+      <div className="relative mt-3 border-t pt-3 sm:mt-4 sm:pt-4">
+        <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground sm:text-[11px]">
+          <Database className="size-3 text-brand-strong" />
           Branché sur
         </p>
-        <div className="mt-2.5 flex flex-wrap gap-1.5">
-          {agent.sources.map((src) => (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {agent.sources.map((src, i) => (
             <span
               key={src}
-              className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] text-ink-foreground/75 ring-1 ring-white/10"
+              className={`rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground ring-1 ring-black/5 sm:px-2.5 sm:py-1 sm:text-[11px] ${i > 1 ? "hidden sm:inline" : ""}`}
             >
               {src}
             </span>
@@ -195,10 +210,10 @@ export function AgentsTeam() {
         </div>
       </Reveal>
 
-      <RevealStagger className="mt-14 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {AGENTS.map((agent) => (
+      <RevealStagger className="mt-14 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
+        {AGENTS.map((agent, i) => (
           <RevealItem key={agent.prenom}>
-            <AgentCard agent={agent} />
+            <AgentCard agent={agent} index={i} />
           </RevealItem>
         ))}
       </RevealStagger>
