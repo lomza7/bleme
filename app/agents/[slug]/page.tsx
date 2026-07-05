@@ -19,6 +19,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { AGENTS, getAgent, type AgentStat, type SavoirIcone } from "@/lib/agents/data";
+import { AgentsHub } from "@/components/agents/agents-hub";
 import { AgentStatusBadge, SkillBar } from "@/components/landing/agents";
 import { CountUp } from "@/components/landing/count-up";
 import { Reveal, RevealItem, RevealStagger } from "@/components/landing/reveal";
@@ -126,6 +127,9 @@ export default async function AgentPage({
           </Link>
         </div>
       </header>
+
+      {/* Chapeau : toute l'équipe converge dans BLEME */}
+      <AgentsHub />
 
       {/* Bandeau équipe : les 6 agents, l'actif en évidence */}
       <nav aria-label="Choisir un agent" className="border-b bg-muted/40">
