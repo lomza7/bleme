@@ -23,7 +23,7 @@ import { JsonLd } from "@/components/seo/json-ld";
 
 const TITLE = "Tarifs : gratuit pour préparer, payez quand ça part";
 const DESCRIPTION =
-  "BLEME est gratuit pour monter votre dossier : récit vocal, preuves, brouillons. Vous payez au dossier (39 € HT, ou 19 € HT avec l'abonnement Pro à 9 € HT/mois) quand les courriers partent. Envois au réel : recommandé avec AR 12 € HT. Jamais de commission sur les sommes récupérées.";
+  "BLEME est gratuit pour monter votre dossier : récit vocal, preuves, brouillons. Vous payez au dossier (39 € HT, ou 19 € HT avec l'abonnement Pro à 9 € HT/mois) quand les courriers partent. Envois au réel : recommandé avec AR 10 € HT. Jamais de commission sur les sommes récupérées.";
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -55,7 +55,7 @@ const FAQ = [
   },
   {
     q: "Combien coûte un impayé type, au total ?",
-    r: "Pour une facture impayée classique : 39 € HT d'ouverture de dossier + 12 € HT de recommandé avec accusé de réception pour la mise en demeure, soit 51 € HT au total (31 € HT pour un abonné Pro). En comparaison, une mise en demeure rédigée par un avocat se facture généralement 90 à 300 €, et une société de recouvrement prendrait 240 à 480 € de commission sur une facture de 2 400 €.",
+    r: "Pour une facture impayée classique : 39 € HT d'ouverture de dossier + 10 € HT de recommandé avec accusé de réception pour la mise en demeure, soit 49 € HT au total (29 € HT pour un abonné Pro). En comparaison, une mise en demeure rédigée par un avocat se facture généralement 90 à 300 €, et une société de recouvrement prendrait 240 à 480 € de commission sur une facture de 2 400 €.",
   },
 ];
 
@@ -77,7 +77,7 @@ const ENVOIS = [
   {
     icon: MailCheck,
     nom: "Recommandé papier avec AR",
-    prix: "12 € HT",
+    prix: "10 € HT",
     detail: "L'envoi qui compte pour la mise en demeure : dépôt, distribution et accusé versés à la chronologie.",
     badge: null,
   },
@@ -346,9 +346,9 @@ export default function TarifsPage() {
             <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="rounded-2xl bg-white/10 p-6 ring-1 ring-white/10">
                 <p className="text-sm text-ink-muted">Avec BLEME</p>
-                <p className="mt-2 text-3xl font-bold tracking-tight">51 € HT</p>
+                <p className="mt-2 text-3xl font-bold tracking-tight">49 € HT</p>
                 <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">
-                  Dossier 39 € + recommandé AR 12 €. Et 31 € HT pour un abonné
+                  Dossier 39 € + recommandé AR 10 €. Et 29 € HT pour un abonné
                   Pro.
                 </p>
               </div>

@@ -410,7 +410,7 @@ function Pricing() {
             Le dossier : <strong className="text-foreground">39 € HT</strong>{" "}
             payé une fois, suivi jusqu’à résolution (19 € HT avec Pro).
             Envois au réel, validés par vous : relances email incluses,
-            recommandé avec AR 12 € HT.{" "}
+            recommandé avec AR 10 € HT.{" "}
             <Link href="/tarifs" className="font-medium text-brand-strong underline-offset-4 hover:underline">
               Tous les tarifs en détail
             </Link>
@@ -445,7 +445,7 @@ const FAQ_ITEMS = [
     },
     {
       q: "Combien ça coûte, et il y a un engagement ?",
-      r: "Préparer un dossier est gratuit : récit, preuves, brouillons. Vous payez le dossier (39 € HT, ou 19 € HT avec l'abonnement Pro à 9 € HT/mois) quand les courriers partent, plus les envois au réel (recommandé avec AR 12 € HT). Sans engagement, jamais de commission sur les sommes récupérées, export libre même après départ.",
+      r: "Préparer un dossier est gratuit : récit, preuves, brouillons. Vous payez le dossier (39 € HT, ou 19 € HT avec l'abonnement Pro à 9 € HT/mois) quand les courriers partent, plus les envois au réel (recommandé avec AR 10 € HT). Sans engagement, jamais de commission sur les sommes récupérées, export libre même après départ.",
     },
 ];
 

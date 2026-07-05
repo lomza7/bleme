@@ -145,7 +145,7 @@ export default async function AbonnementPage() {
       <p className="text-xs leading-relaxed text-muted-foreground/80">
         Pro en annuel : 90 € HT (2 mois offerts). Envois au réel, validés
         avant chaque paiement : relances email incluses, lettre suivie
-        5 € HT, recommandé papier avec AR 12 € HT, recommandé électronique
+        5 € HT, recommandé papier avec AR 10 € HT, recommandé électronique
         8 € HT (bientôt). Jamais de commission sur les sommes récupérées ;
         vos dossiers clôturés restent consultables et exportables sans
         limite.

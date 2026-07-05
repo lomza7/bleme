@@ -35,5 +35,5 @@
 
 - Cible : artisans, freelances, TPE en France (B2B)
 - Cas couverts : factures impayées, litiges clients ; amendes et demandes gracieuses aux impôts à venir
-- Tarifs : gratuit pour préparer le dossier (récit, preuves, brouillons) ; 39 € HT par dossier quand les courriers partent (19 € HT avec l'abonnement Pro à 9 € HT/mois, sans engagement) ; envois au réel (recommandé AR 12 € HT) ; jamais de commission sur les sommes récupérées
+- Tarifs : gratuit pour préparer le dossier (récit, preuves, brouillons) ; 39 € HT par dossier quand les courriers partent (19 € HT avec l'abonnement Pro à 9 € HT/mois, sans engagement) ; envois au réel (recommandé AR 10 € HT) ; jamais de commission sur les sommes récupérées
 - Garde-fous : validation humaine de chaque envoi, pas de conseil juridique personnalisé, données hébergées en Europe, export libre à tout moment

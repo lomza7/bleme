@@ -18,7 +18,7 @@
 >   le tarif dossier réduit. L'occasionnel le rentabilise dès le 1er
 >   dossier de l'année.
 > - **Envois refacturés, prix affichés avant validation** : email inclus ·
->   lettre suivie 5 € HT · recommandé papier AR 12 € HT · LRE qualifiée
+>   lettre suivie 5 € HT · recommandé papier AR 10 € HT · LRE qualifiée
 >   8 € HT (V2).
 > - Business/Scale (équipes, volume) : parqués pour la V2, hors grille
 >   publique.
@@ -27,7 +27,7 @@
 > requalification en recouvrement réglementé), export libre à vie, pas de
 > frais de sortie. Ancre concurrentielle : MED par avocat 90-300 €,
 > recouvreurs 10-20 % du recouvré — un dossier BLEME complet avec un
-> recommandé = 51 € HT.
+> recommandé = 49 € HT.
 >
 > *(Révision v1 du 05/07/2026, remplacée : Starter 9 €/1 dossier actif,
 > Business 49 €, Scale 99 €. Les sections ci-dessous datent des grilles
