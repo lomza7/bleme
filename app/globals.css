@@ -204,9 +204,29 @@
   }
 }
 
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -128;
+  }
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .anim-ring {
     animation: ring-pulse 3.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  }
+
+  .anim-dash {
+    animation: dash-flow 2.4s linear infinite;
+  }
+
+  .anim-spin-slow {
+    animation: spin-slow 28s linear infinite;
   }
 
   .anim-load {
