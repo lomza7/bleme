@@ -1,106 +1,17 @@
-import { Armchair, Check, Database } from "lucide-react";
+import Link from "next/link";
+import { Armchair, ArrowRight, Check, Database } from "lucide-react";
+import { AGENTS, type Agent, type AgentSkill } from "@/lib/agents/data";
 import { Reveal, RevealItem, RevealStagger } from "@/components/landing/reveal";
+import { SpriteAvatar } from "@/components/landing/sprite-avatar";
 
 /*
  * « Votre équipe IA, au complet » : fiches de personnage des agents
- * spécialisés — avatar pixel art animé (bande idle 6 frames, .anim-sprite),
- * jauges de maîtrise, sources de données connectées. Chaque agent correspond
- * à un module réel du pipeline (docs/07-agents-ia.md).
- *
- * Avatars : sprites Petdex (petdex.dev, repo MIT crafter-station/petdex).
- * Marius=bateman, Léna=exec, Jeanne=liang, Nora=ostrom, Sacha=scoutlet,
- * Basile=al-khwarizmi. Rangée idle extraite en bande 6×128×139.
+ * spécialisés — avatar Petdex animé, jauges de maîtrise, sources de
+ * données connectées. Chaque carte mène à la fiche /agents/[slug].
+ * Données partagées : lib/agents/data.ts.
  */
 
-type Skill = { label: string; niveau: 4 | 5 };
-
-type Agent = {
-  prenom: string;
-  role: string;
-  avatar: string;
-  expertise: string;
-  skills: Skill[];
-  sources: string[];
-  soon?: boolean;
-};
-
-const AGENTS: Agent[] = [
-  {
-    prenom: "Marius",
-    role: "Agent Impayés",
-    avatar: "/agents/marius.webp",
-    expertise:
-      "Expert du recouvrement amiable. Il cadence les relances, chiffre indemnités et intérêts, et tient la mise en demeure prête au bon moment.",
-    skills: [
-      { label: "Recouvrement amiable", niveau: 5 },
-      { label: "Délais et pénalités légales", niveau: 5 },
-    ],
-    sources: ["Légifrance · Code de commerce", "Taux et indemnités légaux", "Modèles éprouvés BLEME"],
-  },
-  {
-    prenom: "Léna",
-    role: "Agente Litiges",
-    avatar: "/agents/lena.webp",
-    expertise:
-      "Experte de la contestation client. Elle reconstitue la chronologie, répond point par point et rend le dossier inattaquable.",
-    skills: [
-      { label: "Droit des contrats", niveau: 5 },
-      { label: "Argumentation documentée", niveau: 4 },
-    ],
-    sources: ["Judilibre · Cour de cassation", "Légifrance · Code civil", "Dossiers types litiges"],
-  },
-  {
-    prenom: "Jeanne",
-    role: "Agente Avocat du diable",
-    avatar: "/agents/jeanne.webp",
-    expertise:
-      "Experte du contre-argument. Elle cherche ce que l’autre partie pourrait répondre et pointe les faiblesses avant qu’elles ne coûtent.",
-    skills: [
-      { label: "Analyse contradictoire", niveau: 5 },
-      { label: "Détection des angles morts", niveau: 5 },
-    ],
-    sources: ["Jurisprudence contradictoire", "Moyens de défense recensés", "Récits des deux parties"],
-  },
-  {
-    prenom: "Nora",
-    role: "Agente Preuves",
-    avatar: "/agents/nora.webp",
-    expertise:
-      "Experte du classement. Elle lit factures, emails, WhatsApp et photos, en extrait montants et dates, et repère ce qui manque au dossier.",
-    skills: [
-      { label: "Lecture multi-format", niveau: 5 },
-      { label: "Extraction montants et dates", niveau: 4 },
-    ],
-    sources: ["Vision + OCR multi-format", "Exports WhatsApp et emails", "Référentiel de pièces BLEME"],
-  },
-  {
-    prenom: "Sacha",
-    role: "Agent Vigie",
-    avatar: "/agents/sacha.webp",
-    expertise:
-      "Expert du suivi. Il surveille échéances et réponses adverses, réveille les dossiers qui s’endorment et prépare la prochaine action.",
-    skills: [
-      { label: "Délais et prescription", niveau: 5 },
-      { label: "Cadences de relance", niveau: 5 },
-    ],
-    sources: ["Prescription et délais légaux", "Suivi recommandés et AR", "Cadences éprouvées BLEME"],
-  },
-  {
-    prenom: "Basile",
-    role: "Agent Impôts & démarches",
-    avatar: "/agents/basile.webp",
-    expertise:
-      "Expert du dialogue avec l’administration. Il identifie les motifs de contestation ou de remise gracieuse, rédige le courrier motivé et relance si le silence dure.",
-    skills: [
-      { label: "Doctrine fiscale", niveau: 4 },
-      { label: "Procédures administratives", niveau: 4 },
-    ],
-    sources: ["BOFiP · doctrine fiscale", "Code général des impôts", "Livre des procédures fiscales"],
-    soon: true,
-  },
-];
-
-function SkillBar({ skill }: { skill: Skill }) {
+export function SkillBar({ skill }: { skill: AgentSkill }) {
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="truncate text-[11px] text-muted-foreground sm:text-xs">
@@ -122,9 +33,31 @@ function SkillBar({ skill }: { skill: Skill }) {
   );
 }
 
+export function AgentStatusBadge({ soon, compact }: { soon?: boolean; compact?: boolean }) {
+  if (soon) {
+    return (
+      <span className={`rounded-full bg-brand font-medium text-brand-foreground ${compact ? "px-2 py-0.5 text-[10px] sm:px-2.5 sm:py-1 sm:text-[11px]" : "px-2.5 py-1 text-[11px]"}`}>
+        Bientôt
+      </span>
+    );
+  }
+  return (
+    <span className={`inline-flex items-center gap-1.5 rounded-full bg-emerald-50 font-medium text-emerald-700 ring-1 ring-emerald-200 ${compact ? "px-2 py-0.5 text-[10px] sm:px-2.5 sm:py-1 sm:text-[11px]" : "px-2.5 py-1 text-[11px]"}`}>
+      <span className="relative flex size-1.5">
+        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60 motion-reduce:hidden" />
+        <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
+      </span>
+      En service
+    </span>
+  );
+}
+
 function AgentCard({ agent, index }: { agent: Agent; index: number }) {
   return (
-    <div className="group relative flex h-full flex-col overflow-hidden rounded-[1.75rem] border bg-card p-4 transition-all duration-500 ease-fluid hover:-translate-y-1 hover:border-brand/40 hover:shadow-xl hover:shadow-brand/[0.08] sm:p-6">
+    <Link
+      href={`/agents/${agent.slug}`}
+      className="group relative flex h-full flex-col overflow-hidden rounded-[1.75rem] border bg-card p-4 transition-all duration-500 ease-fluid hover:-translate-y-1 hover:border-brand/40 hover:shadow-xl hover:shadow-brand/[0.08] sm:p-6"
+    >
       {/* Halo discret qui s'allume au survol */}
       <div
         aria-hidden
@@ -136,31 +69,14 @@ function AgentCard({ agent, index }: { agent: Agent; index: number }) {
           className="anim-bob flex size-14 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-brand-soft to-brand/15 ring-1 ring-brand/20 transition-transform duration-500 ease-fluid group-hover:-rotate-3 group-hover:scale-110 sm:size-[4.5rem]"
           style={{ "--delay": `${index * 0.4}s` } as React.CSSProperties}
         >
-          <span
-            role="img"
-            aria-label={`Avatar pixel art de ${agent.prenom}, ${agent.role}`}
-            className="anim-sprite h-12 w-[2.76rem] bg-no-repeat [background-size:600%_100%] sm:h-16 sm:w-[3.68rem]"
-            style={
-              {
-                backgroundImage: `url(${agent.avatar})`,
-                "--delay": `${index * -0.45}s`,
-              } as React.CSSProperties
-            }
+          <SpriteAvatar
+            src={agent.avatar}
+            alt={`Avatar pixel art de ${agent.prenom}, ${agent.role}`}
+            className="h-12 sm:h-16"
+            delay={index * -0.45}
           />
         </span>
-        {agent.soon ? (
-          <span className="rounded-full bg-brand px-2 py-0.5 text-[10px] font-medium text-brand-foreground sm:px-2.5 sm:py-1 sm:text-[11px]">
-            Bientôt
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200 sm:px-2.5 sm:py-1 sm:text-[11px]">
-            <span className="relative flex size-1.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500/60 motion-reduce:hidden" />
-              <span className="relative inline-flex size-1.5 rounded-full bg-emerald-500" />
-            </span>
-            En service
-          </span>
-        )}
+        <AgentStatusBadge soon={agent.soon} compact />
       </div>
 
       <h3 className="relative mt-3 text-lg font-bold tracking-tight sm:mt-4 sm:text-xl">
@@ -197,13 +113,19 @@ function AgentCard({ agent, index }: { agent: Agent; index: number }) {
           ))}
         </div>
       </div>
-    </div>
+
+      {/* Lien vers la fiche */}
+      <p className="relative mt-3 flex items-center gap-1.5 border-t pt-3 text-[13px] font-medium text-brand-strong sm:mt-4 sm:pt-4 sm:text-sm">
+        Voir sa fiche<span className="hidden sm:inline"> complète</span>
+        <ArrowRight className="size-3.5 transition-transform duration-300 group-hover:translate-x-1 sm:size-4" />
+      </p>
+    </Link>
   );
 }
 
 export function AgentsTeam() {
   return (
-    <section className="mx-auto max-w-6xl px-6 py-24 lg:py-32">
+    <section id="equipe" className="mx-auto max-w-6xl px-6 py-24 lg:py-32">
       <Reveal>
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">

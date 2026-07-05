@@ -152,6 +152,14 @@
   transition-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
+/* Rangée défilante sans barre de scroll visible (bandeau d'agents). */
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 /* Grille fine du hero sombre. */
 @utility bg-hero-grid {
   background-image:
