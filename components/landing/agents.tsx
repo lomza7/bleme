@@ -1,12 +1,11 @@
-/* eslint-disable @next/next/no-img-element */
 import { Armchair, Check, Database } from "lucide-react";
 import { Reveal, RevealItem, RevealStagger } from "@/components/landing/reveal";
 
 /*
  * « Votre équipe IA, au complet » : fiches de personnage des agents
- * spécialisés — avatar pixel art, jauges de maîtrise, sources de données
- * connectées. Chaque agent correspond à un module réel du pipeline
- * (docs/07-agents-ia.md).
+ * spécialisés — avatar pixel art animé (spritesheet 2 frames, .anim-sprite),
+ * jauges de maîtrise, sources de données connectées. Chaque agent correspond
+ * à un module réel du pipeline (docs/07-agents-ia.md).
  */
 
 type Skill = { label: string; niveau: 4 | 5 };
@@ -133,12 +132,16 @@ function AgentCard({ agent, index }: { agent: Agent; index: number }) {
           className="anim-bob flex size-14 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-brand-soft to-brand/15 ring-1 ring-brand/20 transition-transform duration-500 ease-fluid group-hover:-rotate-3 group-hover:scale-110 sm:size-[4.5rem]"
           style={{ "--delay": `${index * 0.4}s` } as React.CSSProperties}
         >
-          <img
-            src={agent.avatar}
-            alt={`Avatar pixel art de ${agent.prenom}, ${agent.role}`}
-            width={64}
-            height={64}
-            className="size-12 [image-rendering:pixelated] sm:size-16"
+          <span
+            role="img"
+            aria-label={`Avatar pixel art de ${agent.prenom}, ${agent.role}`}
+            className="anim-sprite h-12 w-9 bg-no-repeat [background-size:200%_100%] [image-rendering:pixelated] sm:h-16 sm:w-12"
+            style={
+              {
+                backgroundImage: `url(${agent.avatar})`,
+                "--delay": `${index * 0.55}s`,
+              } as React.CSSProperties
+            }
           />
         </span>
         {agent.soon ? (

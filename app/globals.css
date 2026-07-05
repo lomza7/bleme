@@ -226,6 +226,18 @@
   }
 }
 
+/* Spritesheet 2 frames côte à côte : bascule sèche entre les deux
+   (respiration pixel art, façon jeu rétro). */
+@keyframes sprite-flip {
+  0%,
+  100% {
+    background-position: 0 0;
+  }
+  50% {
+    background-position: 100% 0;
+  }
+}
+
 @media (prefers-reduced-motion: no-preference) {
   .anim-ring {
     animation: ring-pulse 3.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
@@ -241,6 +253,11 @@
 
   .anim-bob {
     animation: bob 3.2s ease-in-out infinite;
+    animation-delay: var(--delay, 0s);
+  }
+
+  .anim-sprite {
+    animation: sprite-flip 1.1s steps(1) infinite;
     animation-delay: var(--delay, 0s);
   }
 
