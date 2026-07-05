@@ -3,9 +3,13 @@ import { Reveal, RevealItem, RevealStagger } from "@/components/landing/reveal";
 
 /*
  * « Votre équipe IA, au complet » : fiches de personnage des agents
- * spécialisés — avatar pixel art animé (spritesheet 2 frames, .anim-sprite),
+ * spécialisés — avatar pixel art animé (bande idle 6 frames, .anim-sprite),
  * jauges de maîtrise, sources de données connectées. Chaque agent correspond
  * à un module réel du pipeline (docs/07-agents-ia.md).
+ *
+ * Avatars : sprites Petdex (petdex.dev, repo MIT crafter-station/petdex).
+ * Marius=bateman, Léna=exec, Jeanne=liang, Nora=ostrom, Sacha=scoutlet,
+ * Basile=al-khwarizmi. Rangée idle extraite en bande 6×128×139.
  */
 
 type Skill = { label: string; niveau: 4 | 5 };
@@ -24,7 +28,7 @@ const AGENTS: Agent[] = [
   {
     prenom: "Marius",
     role: "Agent Impayés",
-    avatar: "/agents/marius.png",
+    avatar: "/agents/marius.webp",
     expertise:
       "Expert du recouvrement amiable. Il cadence les relances, chiffre indemnités et intérêts, et tient la mise en demeure prête au bon moment.",
     skills: [
@@ -36,7 +40,7 @@ const AGENTS: Agent[] = [
   {
     prenom: "Léna",
     role: "Agente Litiges",
-    avatar: "/agents/lena.png",
+    avatar: "/agents/lena.webp",
     expertise:
       "Experte de la contestation client. Elle reconstitue la chronologie, répond point par point et rend le dossier inattaquable.",
     skills: [
@@ -48,7 +52,7 @@ const AGENTS: Agent[] = [
   {
     prenom: "Jeanne",
     role: "Agente Avocat du diable",
-    avatar: "/agents/jeanne.png",
+    avatar: "/agents/jeanne.webp",
     expertise:
       "Experte du contre-argument. Elle cherche ce que l’autre partie pourrait répondre et pointe les faiblesses avant qu’elles ne coûtent.",
     skills: [
@@ -60,7 +64,7 @@ const AGENTS: Agent[] = [
   {
     prenom: "Nora",
     role: "Agente Preuves",
-    avatar: "/agents/nora.png",
+    avatar: "/agents/nora.webp",
     expertise:
       "Experte du classement. Elle lit factures, emails, WhatsApp et photos, en extrait montants et dates, et repère ce qui manque au dossier.",
     skills: [
@@ -72,7 +76,7 @@ const AGENTS: Agent[] = [
   {
     prenom: "Sacha",
     role: "Agent Vigie",
-    avatar: "/agents/sacha.png",
+    avatar: "/agents/sacha.webp",
     expertise:
       "Expert du suivi. Il surveille échéances et réponses adverses, réveille les dossiers qui s’endorment et prépare la prochaine action.",
     skills: [
@@ -84,7 +88,7 @@ const AGENTS: Agent[] = [
   {
     prenom: "Basile",
     role: "Agent Impôts & démarches",
-    avatar: "/agents/basile.png",
+    avatar: "/agents/basile.webp",
     expertise:
       "Expert du dialogue avec l’administration. Il identifie les motifs de contestation ou de remise gracieuse, rédige le courrier motivé et relance si le silence dure.",
     skills: [
@@ -135,11 +139,11 @@ function AgentCard({ agent, index }: { agent: Agent; index: number }) {
           <span
             role="img"
             aria-label={`Avatar pixel art de ${agent.prenom}, ${agent.role}`}
-            className="anim-sprite h-12 w-9 bg-no-repeat [background-size:200%_100%] [image-rendering:pixelated] sm:h-16 sm:w-12"
+            className="anim-sprite h-12 w-[2.76rem] bg-no-repeat [background-size:600%_100%] sm:h-16 sm:w-[3.68rem]"
             style={
               {
                 backgroundImage: `url(${agent.avatar})`,
-                "--delay": `${index * 0.55}s`,
+                "--delay": `${index * -0.45}s`,
               } as React.CSSProperties
             }
           />

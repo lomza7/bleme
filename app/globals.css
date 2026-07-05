@@ -226,15 +226,11 @@
   }
 }
 
-/* Spritesheet 2 frames côte à côte : bascule sèche entre les deux
-   (respiration pixel art, façon jeu rétro). */
-@keyframes sprite-flip {
-  0%,
-  100% {
-    background-position: 0 0;
-  }
-  50% {
-    background-position: 100% 0;
+/* Bande de 6 frames côte à côte (background-size: 600%) : steps(6) sur
+   0 → 120% fait défiler chaque frame exactement une fois par boucle. */
+@keyframes sprite-cycle {
+  to {
+    background-position: 120% 0;
   }
 }
 
@@ -257,7 +253,7 @@
   }
 
   .anim-sprite {
-    animation: sprite-flip 1.1s steps(1) infinite;
+    animation: sprite-cycle 1.6s steps(6) infinite;
     animation-delay: var(--delay, 0s);
   }
 
