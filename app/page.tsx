@@ -206,7 +206,7 @@ function Piliers() {
               Les conflits où le client a gain de cause faute de preuves.
             </h3>
             <p className="mt-4 leading-relaxed text-muted-foreground">
-              Malfaçons alléguées, devis contesté, réception refusée : BLEME
+              Prestation contestée, devis remis en cause, livraison refusée : BLEME
               classe vos preuves, reconstitue la chronologie et prépare une
               réponse circonstanciée. Votre dossier tient debout.
             </p>

@@ -58,7 +58,7 @@ export function StoryStep({
               rows={7}
               value={data.storyText}
               onChange={(e) => patch({ storyText: e.target.value })}
-              placeholder="Racontez comme vous le raconteriez à un ami : le chantier ou la mission, ce qui était convenu, ce qui s’est passé, où ça bloque…"
+              placeholder="Racontez comme vous le raconteriez à un ami : la mission ou le chantier, ce qui était convenu, ce qui s’est passé, où ça bloque…"
               className="w-full rounded-[1.75rem] bg-white/[0.06] px-6 py-5 text-[15px] leading-relaxed text-ink-foreground ring-1 ring-white/10 transition-all duration-300 placeholder:text-ink-muted/60 focus:outline-none focus:ring-2 focus:ring-brand"
             />
             <div className="mt-2 flex items-center justify-between gap-4">

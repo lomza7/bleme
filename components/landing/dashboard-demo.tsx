@@ -42,8 +42,8 @@ const DOSSIERS = [
     tone: "amber",
     type: "Litige",
     initiales: "DR",
-    titre: "Litige réception · Dubois Rénovation",
-    action: "Ajouter le PV de réception · dans 2 j",
+    titre: "Litige livraison · Dubois Rénovation",
+    action: "Ajouter la preuve de livraison · dans 2 j",
     montant: "3 200 €",
     etape: 1,
   },
@@ -61,7 +61,7 @@ const DOSSIERS = [
 
 const AGENDA = [
   { quand: "demain", quoi: "Valider la mise en demeure", qui: "SARL Bâti Concept" },
-  { quand: "dans 2 j", quoi: "Ajouter le PV de réception", qui: "Dubois Rénovation" },
+  { quand: "dans 2 j", quoi: "Ajouter la preuve de livraison", qui: "Dubois Rénovation" },
   { quand: "dans 4 j", quoi: "Relance ferme programmée", qui: "Menuiserie Roux" },
 ] as const;
 
@@ -91,7 +91,7 @@ export function DashboardDemo() {
         <Reveal>
           <div className="mx-auto max-w-2xl text-center">
             <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              Vous pilotez vos chantiers. Pilotez aussi votre argent dehors.
+              Vous pilotez votre activité. Pilotez aussi votre argent dehors.
             </h2>
             <p className="mt-4 text-lg text-ink-muted">
               Un écran, tous vos blèmes : ce qui est en jeu, ce qui est rentré,

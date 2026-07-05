@@ -151,9 +151,9 @@ export function DetailsStep({
             <Field label="À propos de quoi ?">
               <PillChoice
                 options={[
-                  "Malfaçons alléguées",
+                  "Qualité contestée",
                   "Devis ou montant contesté",
-                  "Réception refusée",
+                  "Livraison refusée",
                   "Remboursement exigé",
                   "Autre",
                 ]}

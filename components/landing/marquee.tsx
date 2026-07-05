@@ -1,11 +1,11 @@
 const ITEMS = [
   "Facture impayée",
-  "Litige travaux",
+  "Litige client",
   "Mise en demeure",
   "Amende contestée",
   "Demande gracieuse",
   "Relance client",
-  "Retenue de garantie",
+  "Solde bloqué",
   "Devis contesté",
 ];
 

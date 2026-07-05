@@ -150,7 +150,7 @@ function VisuelPreuves() {
   const docs = [
     { icon: FileText, nom: "Facture F-2026-042.pdf", chip: "2 400 € · reconnue" },
     { icon: FileCheck2, nom: "Devis signé.pdf", chip: "classé" },
-    { icon: ImageIcon, nom: "Fin de chantier.heic", chip: "datée 28 mai" },
+    { icon: ImageIcon, nom: "Livraison.heic", chip: "datée 28 mai" },
   ];
   return (
     <div className="flex flex-col gap-3">

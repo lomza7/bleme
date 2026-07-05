@@ -118,25 +118,25 @@ export function EvidenceSources() {
                   <span className="flex size-8 items-center justify-center rounded-lg bg-brand-soft">
                     <Camera className="size-4 text-brand-strong" />
                   </span>
-                  <p className="text-sm font-semibold">Pellicule du chantier</p>
+                  <p className="text-sm font-semibold">Pellicule du téléphone</p>
                 </div>
                 <div className="flex items-center justify-between gap-3 py-3.5">
                   <span className="flex min-w-0 items-center gap-2.5">
                     <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
                     <span className="truncate text-[13px] font-medium">IMG_2841.heic</span>
                   </span>
-                  <span className={chip}>fin de chantier · 28 mai</span>
+                  <span className={chip}>prestation livrée · 28 mai</span>
                 </div>
                 <div className="flex items-center justify-between gap-3 border-t py-3.5 pb-1">
                   <span className="flex min-w-0 items-center gap-2.5">
                     <ImageIcon className="size-4 shrink-0 text-muted-foreground" />
                     <span className="truncate text-[13px] font-medium">IMG_2843.heic</span>
                   </span>
-                  <span className={chip}>reprise des joints · 12 juin</span>
+                  <span className={chip}>corrections faites · 12 juin</span>
                 </div>
               </CardShell>
             </div>
-            <h3 className="mt-6 text-lg font-semibold">Photos du chantier</h3>
+            <h3 className="mt-6 text-lg font-semibold">Photos et captures</h3>
             <p className="mt-1.5 max-w-[46ch] text-sm leading-relaxed text-muted-foreground">
               Votre pellicule est pleine de preuves : envoyez-les, elles sont
               datées, décrites et versées au dossier.
@@ -161,7 +161,7 @@ export function EvidenceSources() {
                   </div>
                   <div className="ml-auto max-w-[85%] rounded-2xl rounded-tr-md bg-[#D9FDD3] px-3.5 py-2.5">
                     <p className="text-[13px] text-zinc-800">
-                      Parfait, début des travaux lundi.
+                      Parfait, je commence lundi.
                     </p>
                     <p className="mt-0.5 text-right text-[10px] text-zinc-500">
                       14:05
@@ -251,12 +251,12 @@ export function EvidenceSources() {
                 <div className="space-y-2.5 py-1">
                   <div className="max-w-[85%] rounded-2xl rounded-tl-md bg-muted px-3.5 py-2.5">
                     <p className="text-[13px]">
-                      Je passe mardi matin pour la reprise des joints.
+                      Je passe mardi matin pour les dernières corrections.
                     </p>
                   </div>
                   <div className="ml-auto max-w-[85%] rounded-2xl rounded-tr-md bg-[#DCE9FF] px-3.5 py-2.5">
                     <p className="text-[13px] text-zinc-800">
-                      Ok. Le solde reste dû à la fin des reprises.
+                      Ok. Le solde reste dû après les corrections.
                     </p>
                   </div>
                 </div>
@@ -291,7 +291,7 @@ export function EvidenceSources() {
                     Glissez vos fichiers ici
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    ou prenez-les en photo depuis le chantier
+                    ou prenez-les en photo, où que vous soyez
                   </p>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-3 border-t pr-10 pt-3">
