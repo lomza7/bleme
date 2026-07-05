@@ -10,10 +10,8 @@ import {
   ShieldQuestion,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { isSupabaseConfigured } from "@/lib/env";
 import { dateFr, dateLongFr, euros, relativeDays } from "@/lib/format";
 import { CASE_TYPE_LABEL, STATUS_META } from "@/lib/cases/constants";
-import { AppHeader } from "@/components/app/header";
 import { RecordPayment } from "@/components/app/record-payment";
 
 export const metadata: Metadata = { title: "Dossier" };
@@ -23,7 +21,6 @@ export default async function CaseDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  if (!isSupabaseConfigured()) redirect("/login");
   const { id } = await params;
   const supabase = await createClient();
   const {
@@ -31,14 +28,13 @@ export default async function CaseDetailPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [{ data: c }, { data: events }, { data: org }] = await Promise.all([
+  const [{ data: c }, { data: events }] = await Promise.all([
     supabase.from("cases").select("*").eq("id", id).maybeSingle(),
     supabase
       .from("case_events")
       .select("id, event_date, event_type, title, description, source")
       .eq("case_id", id)
       .order("event_date", { ascending: false }),
-    supabase.from("organizations").select("name").limit(1).maybeSingle(),
   ]);
   if (!c) notFound();
 
@@ -46,10 +42,7 @@ export default async function CaseDetailPage({
   const remaining = c.amount_claimed_cents - c.amount_recovered_cents;
 
   return (
-    <div className="min-h-dvh bg-muted/40 text-foreground">
-      <AppHeader orgName={org?.name} />
-
-      <main className="mx-auto max-w-6xl px-6 py-10">
+    <div>
         <Link
           href="/app"
           className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors duration-300 hover:text-foreground"
@@ -209,7 +202,6 @@ export default async function CaseDetailPage({
             </section>
           </aside>
         </div>
-      </main>
     </div>
   );
 }

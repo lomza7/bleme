@@ -200,9 +200,9 @@ export async function createSampleCases(): Promise<void> {
       next_action_at: days(1),
       expected_recovery_at: days(18),
       summary_md:
-        "Chantier de rénovation livré le 28 mai, facture émise le 30 mai, échéance dépassée de 47 jours. Deux relances envoyées, la seconde lue sans réponse.",
+        "Prestation livrée le 28 mai, facture émise le 30 mai, échéance dépassée de 47 jours. Deux relances envoyées, la seconde lue sans réponse.",
       weak_points_md:
-        "Le client a évoqué oralement un retard de chantier : rassembler les échanges prouvant que le report avait été accepté.",
+        "Le client a évoqué oralement un retard de livraison : rassembler les échanges prouvant que le report avait été accepté.",
       events: [
         { at: -25, type: "created", title: "Dossier créé depuis votre récit vocal", source: "user" },
         { at: -25, type: "documents", title: "4 preuves classées, devis signé retrouvé", source: "ai" },
@@ -222,7 +222,7 @@ export async function createSampleCases(): Promise<void> {
       next_action_at: days(4),
       expected_recovery_at: days(32),
       summary_md:
-        "Pose de menuiseries sur un programme neuf. Facture de solde impayée depuis 3 semaines, le gérant promet un règlement « à la fin du mois » depuis deux mois.",
+        "Fourniture et pose sur un programme neuf. Facture de solde impayée depuis 3 semaines, le gérant promet un règlement « à la fin du mois » depuis deux mois.",
       weak_points_md: null,
       events: [
         { at: -9, type: "created", title: "Dossier créé", source: "user" },
@@ -232,18 +232,18 @@ export async function createSampleCases(): Promise<void> {
     },
     {
       case_type: "client_dispute",
-      title: "Litige réception · Dubois Rénovation",
+      title: "Litige livraison · Dubois Rénovation",
       status: "awaiting_user",
       debtor_name: "Dubois Rénovation",
       amount_claimed_cents: 320000,
       stage: 1,
-      next_action_label: "Ajouter le PV de réception et les photos de fin de chantier",
+      next_action_label: "Ajouter la preuve de livraison et les photos",
       next_action_at: days(2),
       expected_recovery_at: null,
       summary_md:
-        "Le client refuse de signer la réception et bloque le solde en invoquant des finitions non conformes. Les reprises demandées ont été réalisées la semaine 26.",
+        "Le client refuse de valider la livraison et bloque le solde en invoquant des finitions non conformes. Les corrections demandées ont été faites la semaine 26.",
       weak_points_md:
-        "Deux réserves mineures restaient ouvertes au 15 juin : documenter leur levée (photos datées, échange de confirmation).",
+        "Deux points mineurs restaient ouverts au 15 juin : documenter leur résolution (photos datées, échange de confirmation).",
       events: [
         { at: -6, type: "created", title: "Dossier créé depuis votre récit vocal", source: "user" },
         { at: -6, type: "risk_noted", title: "Points de vigilance notés", source: "ai" },
@@ -262,7 +262,7 @@ export async function createSampleCases(): Promise<void> {
       next_action_at: null,
       expected_recovery_at: null,
       summary_md:
-        "Mission de plomberie sur un local professionnel. Payée intégralement après la relance ferme.",
+        "Intervention sur un local professionnel. Payée intégralement après la relance ferme.",
       weak_points_md: null,
       events: [
         { at: -34, type: "created", title: "Dossier créé", source: "user" },
