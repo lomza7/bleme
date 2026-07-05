@@ -38,7 +38,7 @@ export function HowItWorks() {
             <VisuelRecit />
           </StepCard>
 
-          <StepCard index={1} skin="light" titre="Ajoutez vos preuves" texte="Photos, PDF, emails transférés : tout est reconnu, daté, classé. Chaque dossier a sa propre adresse email, transférez-y n’importe quel échange, il se range tout seul.">
+          <StepCard index={1} skin="light" titre="Ajoutez vos preuves" texte="Photos, PDF, emails, WhatsApp, SMS : tout est reconnu, daté, classé. Chaque dossier a sa propre adresse email, transférez-y n’importe quel échange, il se range tout seul.">
             <VisuelPreuves />
           </StepCard>
 

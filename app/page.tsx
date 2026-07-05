@@ -5,6 +5,7 @@ import { Marquee } from "@/components/landing/marquee";
 import { Reveal, RevealItem, RevealStagger } from "@/components/landing/reveal";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { KnowledgeGraph } from "@/components/landing/knowledge-graph";
+import { EvidenceSources } from "@/components/landing/evidence-sources";
 import { CaseTimeline } from "@/components/landing/case-timeline";
 import { DashboardDemo } from "@/components/landing/dashboard-demo";
 
@@ -23,6 +24,7 @@ export default function Home() {
         <Hero />
         <Marquee />
         <Piliers />
+        <EvidenceSources />
         <KnowledgeGraph />
         <HowItWorks />
         <CaseTimeline />
@@ -129,8 +131,8 @@ function Hero() {
           </Reveal>
           <Reveal onLoad delay={0.12}>
             <p className="mt-6 max-w-md text-lg leading-relaxed text-ink-muted">
-              Racontez votre blème à voix haute. L’IA monte le dossier, prépare
-              les courriers et suit chaque étape jusqu’au paiement.
+              Racontez votre blème à voix haute. L’IA rassemble emails,
+              WhatsApp et documents, prépare les courriers, suit chaque étape.
             </p>
           </Reveal>
           <Reveal onLoad delay={0.22}>
@@ -238,7 +240,7 @@ function Piliers() {
 function IaEtGardeFous() {
   const fait = [
     "Écoute votre récit et en fait un dossier structuré",
-    "Lit vos documents, en sort montants, dates et échéances, avec la source",
+    "Lit vos documents, emails, WhatsApp et SMS, en sort montants, dates et échéances, avec la source",
     "Rédige des brouillons appuyés sur les textes et barèmes en vigueur",
     "Anticipe ce que l’autre partie pourrait répondre",
     "Suit les réponses et prépare la suite au bon moment",
