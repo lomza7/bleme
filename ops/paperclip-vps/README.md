@@ -1,5 +1,16 @@
 # Paperclip + Hermes Agents sur le VPS Hostinger
 
+> **État déployé le 05/07/2026** : Paperclip tourne sur le VPS
+> (srv1561319, 72.62.190.28) en service systemd `paperclip`, Postgres
+> embarqué, loopback :3100. Accès via le tailnet uniquement :
+> **http://100.75.206.110:3300** (relais systemd `paperclip-tailnet`,
+> socat borné à l'interface Tailscale ; `allowedHostnames` de Paperclip
+> inclut cette IP ; trafic chiffré WireGuard, rien d'exposé au public).
+> Reste à faire côté Louis : dérouler l'assistant premier lancement
+> (company BLEME, mission, provider LLM = clé Nous), et plus tard
+> l'option domaine `ops.1010101.online` (ajouter l'enregistrement A →
+> 72.62.190.28 puis le bloc Caddy avec basic_auth).
+
 Objectif : la structure complète de Paperclip (tickets, budgets, gouvernance,
 org chart) tournant sur ton VPS, avec des **agents Hermes de Nous Research**
 comme workers, et reliée à BLEME (onglet « Ops » de la console admin).

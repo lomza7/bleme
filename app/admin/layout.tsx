@@ -76,7 +76,8 @@ async function AdminTabs() {
             {t.label}
           </Link>
         ))}
-        {paperclipUrl?.startsWith("https://") ? (
+        {/* https public, ou http sur le tailnet (chiffré WireGuard) */}
+        {paperclipUrl && /^(https:\/\/|http:\/\/100\.)/.test(paperclipUrl) ? (
           <a
             href={paperclipUrl}
             target="_blank"
