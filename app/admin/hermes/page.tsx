@@ -11,12 +11,17 @@ import {
 import {
   getHermesOverview,
   getHermesVersion,
+  getPaperclipAgents,
+  getPaperclipIssues,
   getRoutines,
   getSkillScopes,
   setRoutineStatus,
+  setTicketStatus,
   toggleSkillScope,
   type Skill,
 } from "@/lib/admin/hermes-actions";
+import { TicketCreateForm } from "@/components/admin/tickets";
+import { SpriteAvatar } from "@/components/landing/sprite-avatar";
 import { HermesUpdateControls } from "@/components/admin/hermes-update";
 import { InstallSkillButton, RemoveSkillButton } from "@/components/admin/skills";
 import { RoutineCreateForm } from "@/components/admin/routines";
@@ -45,12 +50,14 @@ function groupByCategory(skills: Skill[]): Map<string, Skill[]> {
 
 export default async function HermesAdminPage() {
   const supabase = await createClient();
-  const [overview, paperclipUrl, scopes, routinesRes, version, { data: agentRows }] = await Promise.all([
+  const [overview, paperclipUrl, scopes, routinesRes, version, pcAgents, pcIssues, { data: agentRows }] = await Promise.all([
     getHermesOverview(),
     getSecret("PAPERCLIP_URL"),
     getSkillScopes(),
     getRoutines(),
     getHermesVersion(),
+    getPaperclipAgents(),
+    getPaperclipIssues(),
     supabase.from("agents").select("key, prenom").order("created_at"),
   ]);
   const agents = agentRows ?? [];
@@ -295,6 +302,134 @@ export default async function HermesAdminPage() {
               </div>
             </details>
           ))}
+        </div>
+      </section>
+
+      {/* Organigramme Paperclip, mis à jour en direct */}
+      <section>
+        <h2 className="px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          Organigramme · {pcAgents.length} agents Paperclip
+        </h2>
+        {pcAgents.length === 0 ? (
+          <p className="mt-3 rounded-[1.75rem] border border-dashed px-6 py-6 text-center text-sm text-muted-foreground">
+            Aucun agent dans l’organisation Paperclip.
+          </p>
+        ) : (
+          <div className="mt-3 rounded-[1.75rem] border bg-card p-6">
+            <div className="flex flex-col items-center">
+              <span className="rounded-full bg-ink px-4 py-1.5 text-xs font-medium text-white">
+                Board · BLEME
+              </span>
+              <span className="my-2 h-5 w-px bg-border" aria-hidden />
+            </div>
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              {pcAgents.map((a) => {
+                const persona = a.name.toLowerCase();
+                const known = ["marius", "lena", "jeanne", "nora", "sacha", "basile"].includes(persona);
+                return (
+                  <div key={a.id} className="flex flex-col items-center rounded-2xl border bg-background p-3 text-center">
+                    {known ? (
+                      <span className="flex size-11 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b from-brand-soft to-brand/15 ring-1 ring-brand/20">
+                        <SpriteAvatar src={`/agents/${persona}.webp`} alt="" className="h-9" />
+                      </span>
+                    ) : (
+                      <span className="flex size-11 items-center justify-center rounded-xl bg-muted text-sm font-bold">
+                        {a.name[0]}
+                      </span>
+                    )}
+                    <p className="mt-2 text-sm font-semibold">{a.name}</p>
+                    <p className="text-[10px] leading-tight text-muted-foreground">{a.title ?? "—"}</p>
+                    <span
+                      className={`mt-1.5 rounded-full px-2 py-0.5 text-[9px] font-medium ring-1 ${
+                        a.status === "error"
+                          ? "bg-red-50 text-red-700 ring-red-200"
+                          : a.status === "idle"
+                            ? "bg-muted text-muted-foreground ring-black/5"
+                            : "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                      }`}
+                    >
+                      {a.status === "idle" ? "en attente" : a.status}
+                    </span>
+                    {a.spentMonthlyCents > 0 || a.budgetMonthlyCents > 0 ? (
+                      <p className="mt-1 text-[9px] tabular-nums text-muted-foreground">
+                        {(a.spentMonthlyCents / 100).toLocaleString("fr-FR")} €
+                        {a.budgetMonthlyCents > 0 ? ` / ${(a.budgetMonthlyCents / 100).toLocaleString("fr-FR")} €` : ""}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </section>
+
+      {/* Ticketing Paperclip */}
+      <section>
+        <h2 className="px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          Tickets · {pcIssues.filter((i) => i.status !== "done").length} ouverts
+        </h2>
+        <div className="mt-3 flex flex-col gap-3">
+          {pcIssues.length > 0 ? (
+            <div className="overflow-hidden rounded-[1.75rem] border bg-card">
+              {pcIssues.slice(0, 12).map((issue, i) => {
+                const assignee = pcAgents.find((a) => a.id === issue.assigneeAgentId);
+                const persona = assignee?.name.toLowerCase();
+                return (
+                  <div
+                    key={issue.id}
+                    className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-4 ${i > 0 ? "border-t" : ""}`}
+                  >
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ${
+                        issue.status === "done"
+                          ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                          : issue.status === "in_progress"
+                            ? "bg-sky-50 text-sky-700 ring-sky-200"
+                            : "bg-amber-50 text-amber-700 ring-amber-200"
+                      }`}
+                    >
+                      {issue.status === "done" ? "clos" : issue.status === "in_progress" ? "en cours" : "ouvert"}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{issue.title}</span>
+                      {issue.description ? (
+                        <span className="block truncate text-[11px] text-muted-foreground">
+                          {issue.description}
+                        </span>
+                      ) : null}
+                    </span>
+                    {persona ? (
+                      <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-medium capitalize text-brand-strong">
+                        {persona}
+                      </span>
+                    ) : null}
+                    <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                      {new Date(issue.createdAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}
+                    </span>
+                    {issue.status !== "done" ? (
+                      <form action={setTicketStatus}>
+                        <input type="hidden" name="id" value={issue.id} />
+                        <input type="hidden" name="status" value="done" />
+                        <button
+                          type="submit"
+                          className="rounded-full border px-3 py-1.5 text-[11px] text-muted-foreground transition-colors hover:border-emerald-300 hover:text-emerald-700"
+                        >
+                          Clore
+                        </button>
+                      </form>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="rounded-[1.75rem] border border-dashed px-6 py-6 text-center text-sm text-muted-foreground">
+              Aucun ticket : les rapports de routines et vos tickets manuels
+              apparaîtront ici.
+            </p>
+          )}
+          <TicketCreateForm agents={agents} />
         </div>
       </section>
 

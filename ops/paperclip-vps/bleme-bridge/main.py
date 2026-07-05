@@ -133,11 +133,23 @@ def _seed_system(cli, system: str) -> bool:
     return False
 
 
-def _chat_sync(agent: str, model: str, system: str, message: str) -> str:
+def _session_tokens(cli) -> tuple[int, int]:
+    holder = getattr(cli, "agent", None)
+    if holder is None:
+        return (0, 0)
+    return (
+        int(getattr(holder, "session_prompt_tokens", 0) or 0),
+        int(getattr(holder, "session_completion_tokens", 0) or 0),
+    )
+
+
+def _chat_sync(agent: str, model: str, system: str, message: str) -> tuple[str, int, int]:
+    """Retourne (texte, tokens_entrée, tokens_sortie) — delta des compteurs de session."""
     cli = _get_cli(agent, model)
     _disarm_tools(cli)
     if not _seed_system(cli, system):
         message = f"[RÔLE — à respecter strictement]\n{system}\n\n{message}"
+    before_in, before_out = _session_tokens(cli)
     sink = io.StringIO()
     try:
         with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
@@ -151,7 +163,12 @@ def _chat_sync(agent: str, model: str, system: str, message: str) -> str:
             _clear_history(cli)
     if response is None:
         raise RuntimeError("HermesCLI.chat a renvoyé None")
-    return str(response).strip()
+    after_in, after_out = _session_tokens(cli)
+    return (
+        str(response).strip(),
+        max(0, after_in - before_in),
+        max(0, after_out - before_out),
+    )
 
 
 # ── Routines liées : chaque cron appartient à un agent, avec ses skills ──────
@@ -235,7 +252,7 @@ async def _execute_routine(routine_id: str, title: str) -> str:
     )
     loop = asyncio.get_running_loop()
     async with _locks[agent]:
-        text = await asyncio.wait_for(
+        text, _tok_in, _tok_out = await asyncio.wait_for(
             loop.run_in_executor(None, _chat_sync, agent, MODEL, system, message),
             timeout=CHAT_TIMEOUT,
         )
@@ -573,6 +590,55 @@ def paperclip_routine_create(req: RoutineCreate) -> dict:
     return {"ok": True, "routine": routine}
 
 
+@app.get("/paperclip/agents", dependencies=[Depends(_auth)])
+def paperclip_agents() -> dict:
+    try:
+        cid = _pc_company_id()
+        agents = _pc("GET", f"/companies/{cid}/agents")
+        return {"ok": True, "agents": agents}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:200], "agents": []}
+
+
+@app.get("/paperclip/issues", dependencies=[Depends(_auth)])
+def paperclip_issues() -> dict:
+    try:
+        cid = _pc_company_id()
+        issues = _pc("GET", f"/companies/{cid}/issues")
+        return {"ok": True, "issues": issues}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:200], "issues": []}
+
+
+class IssueCreate(BaseModel):
+    title: str
+    description: str | None = None
+    agent: str | None = None
+
+
+@app.post("/paperclip/issues", dependencies=[Depends(_auth)])
+def paperclip_issue_create(req: IssueCreate) -> dict:
+    cid = _pc_company_id()
+    assignee = _pc_agent_id(req.agent) if req.agent else None
+    issue = _pc("POST", f"/companies/{cid}/issues", {
+        "title": req.title,
+        **({"description": req.description} if req.description else {}),
+        **({"assigneeAgentId": assignee} if assignee else {}),
+    })
+    return {"ok": True, "issue": issue}
+
+
+class IssueStatus(BaseModel):
+    id: str
+    status: str
+
+
+@app.post("/paperclip/issues/status", dependencies=[Depends(_auth)])
+def paperclip_issue_status(req: IssueStatus) -> dict:
+    issue = _pc("PATCH", f"/issues/{req.id}", {"status": req.status})
+    return {"ok": True, "issue": issue}
+
+
 class RoutineStatus(BaseModel):
     id: str
     status: str
@@ -665,7 +731,7 @@ async def run(req: RunRequest) -> dict:
     t0 = time.perf_counter()
     async with _locks[agent]:
         try:
-            text = await asyncio.wait_for(
+            text, tokens_in, tokens_out = await asyncio.wait_for(
                 loop.run_in_executor(None, _chat_sync, agent, model, system, message),
                 timeout=req.timeout_s or CHAT_TIMEOUT,
             )
@@ -679,5 +745,7 @@ async def run(req: RunRequest) -> dict:
         "agent": agent,
         "model": model,
         "text": text,
+        "input_tokens": tokens_in,
+        "output_tokens": tokens_out,
         "duration_ms": int((time.perf_counter() - t0) * 1000),
     }

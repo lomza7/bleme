@@ -33,6 +33,31 @@ const RATES: Record<string, { input: number; output: number }> = {
   "claude-opus-4-8": { input: 15, output: 75 },
 };
 
+// Tarifs OpenRouter (USD/token ≈ €/token), rafraîchis toutes les heures.
+let pricingCache: { at: number; map: Map<string, { inMc: number; outMc: number }> } | null = null;
+
+async function modelPricingMicrocents(model: string): Promise<{ inMc: number; outMc: number } | null> {
+  if (!pricingCache || Date.now() - pricingCache.at > 3_600_000) {
+    const map = new Map<string, { inMc: number; outMc: number }>();
+    try {
+      const res = await fetch("https://openrouter.ai/api/v1/models", {
+        next: { revalidate: 3600 },
+      });
+      const payload = await res.json();
+      for (const m of payload.data ?? []) {
+        map.set(m.id, {
+          inMc: parseFloat(m.pricing?.prompt ?? "0") * 1_000_000,
+          outMc: parseFloat(m.pricing?.completion ?? "0") * 1_000_000,
+        });
+      }
+    } catch {
+      /* garde le cache vide : coût 0 plutôt qu'un échec du run */
+    }
+    pricingCache = { at: Date.now(), map };
+  }
+  return pricingCache.map.get(model) ?? null;
+}
+
 export class AgentUnavailableError extends Error {
   constructor(
     public reason: "paused" | "budget" | "unknown_agent",
@@ -181,11 +206,19 @@ export async function runAgent<T>(opts: {
       const text: string = payload.text ?? "";
       const jsonText = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
       const data = opts.schema.parse(JSON.parse(jsonText));
+      const inputTokens: number = payload.input_tokens ?? 0;
+      const outputTokens: number = payload.output_tokens ?? 0;
+      const pricing = await modelPricingMicrocents(payload.model ?? agent.hermes_model);
+      const cost = pricing
+        ? Math.round(inputTokens * pricing.inMc + outputTokens * pricing.outMc)
+        : 0;
       await logRun({
         ...base,
         model: `hermes:${payload.model ?? "?"}`,
         status: "ok",
-        // Coût facturé côté OpenRouter (compte VPS), non tracé ici.
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        cost_microcents: cost,
         duration_ms: Date.now() - started,
       });
       return { data, simulated: false };

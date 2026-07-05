@@ -249,6 +249,113 @@ export async function toggleSkillScope(formData: FormData): Promise<void> {
   revalidatePath("/admin/hermes");
 }
 
+// ── Organigramme et ticketing Paperclip ──────────────────────────────────────
+
+export type PcAgent = {
+  id: string;
+  name: string;
+  title: string | null;
+  status: string;
+  reportsTo: string | null;
+  budgetMonthlyCents: number;
+  spentMonthlyCents: number;
+};
+
+export async function getPaperclipAgents(): Promise<PcAgent[]> {
+  if (!(await requireAdmin())) return [];
+  try {
+    const payload = await bridgeFetch("/paperclip/agents");
+    return (payload.agents ?? []).map((a: Record<string, unknown>) => ({
+      id: a.id,
+      name: a.name,
+      title: a.title ?? null,
+      status: a.status ?? "idle",
+      reportsTo: a.reportsTo ?? null,
+      budgetMonthlyCents: a.budgetMonthlyCents ?? 0,
+      spentMonthlyCents: a.spentMonthlyCents ?? 0,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export type PcIssue = {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  assigneeAgentId: string | null;
+  createdAt: string;
+};
+
+export async function getPaperclipIssues(): Promise<PcIssue[]> {
+  if (!(await requireAdmin())) return [];
+  try {
+    const payload = await bridgeFetch("/paperclip/issues");
+    return (payload.issues ?? [])
+      .map((i: Record<string, unknown>) => ({
+        id: i.id,
+        title: i.title,
+        description: (typeof i.description === "string" ? i.description.slice(0, 240) : null),
+        status: i.status ?? "open",
+        assigneeAgentId: i.assigneeAgentId ?? null,
+        createdAt: i.createdAt,
+      }))
+      .sort((a: PcIssue, b: PcIssue) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  } catch {
+    return [];
+  }
+}
+
+const ticketSchema = z.object({
+  title: z.string().trim().min(3, "Titre trop court.").max(160),
+  description: z.string().trim().max(4000).optional().default(""),
+  agent: z.string().regex(/^[a-z]*$/).optional().default(""),
+});
+
+export async function createTicket(
+  _prev: HermesState,
+  formData: FormData,
+): Promise<HermesState> {
+  if (!(await requireAdmin())) return { error: "Accès réservé aux administrateurs." };
+  const parsed = ticketSchema.safeParse({
+    title: formData.get("title"),
+    description: formData.get("description") ?? "",
+    agent: formData.get("agent") ?? "",
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Ticket invalide." };
+  try {
+    await bridgeFetch("/paperclip/issues", {
+      method: "POST",
+      body: JSON.stringify({
+        title: parsed.data.title,
+        description: parsed.data.description || null,
+        agent: parsed.data.agent || null,
+      }),
+    });
+    revalidatePath("/admin/hermes");
+    return { success: `Ticket « ${parsed.data.title} » créé.` };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Échec de la création." };
+  }
+}
+
+export async function setTicketStatus(formData: FormData): Promise<void> {
+  if (!(await requireAdmin())) return;
+  const id = z.string().uuid().safeParse(formData.get("id"));
+  const status = z.enum(["open", "in_progress", "done"]).safeParse(formData.get("status"));
+  if (!id.success || !status.success) return;
+  try {
+    await bridgeFetch("/paperclip/issues/status", {
+      method: "POST",
+      body: JSON.stringify({ id: id.data, status: status.data }),
+    });
+  } catch {
+    /* le rafraîchissement montrera l'état réel */
+  }
+  revalidatePath("/admin/hermes");
+}
+
 // ── Routines Paperclip (les crons des agents), pilotées dans les 2 sens ─────
 
 export type Routine = {

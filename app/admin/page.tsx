@@ -62,6 +62,7 @@ export default async function AdminOverview() {
   const now = Date.now();
   const d7 = new Date(now - 7 * 24 * 3600 * 1000);
   const d14 = new Date(now - 14 * 24 * 3600 * 1000);
+  const d30 = new Date(now - 30 * 24 * 3600 * 1000).toISOString();
   const monthStart = new Date(now);
   monthStart.setUTCDate(1);
   monthStart.setUTCHours(0, 0, 0, 0);
@@ -85,8 +86,8 @@ export default async function AdminOverview() {
     service.from("inbox_items").select("id, source, is_read, is_archived, is_sample"),
     service
       .from("agent_runs")
-      .select("agent_key, status, cost_microcents, created_at")
-      .gte("created_at", monthStart.toISOString()),
+      .select("agent_key, status, model, input_tokens, output_tokens, cost_microcents, created_at")
+      .gte("created_at", d30),
   ]);
 
   // ── Utilisateurs ────────────────────────────────────────────────────────────
@@ -144,9 +145,32 @@ export default async function AdminOverview() {
   const bySource = new Map<string, number>();
   for (const i of inbox) bySource.set(i.source, (bySource.get(i.source) ?? 0) + 1);
 
-  const monthRuns = runs ?? [];
+  const runs30 = runs ?? [];
+  const monthRuns = runs30.filter((r) => r.created_at >= monthStart.toISOString());
   const aiCost = monthRuns.reduce((s, r) => s + Number(r.cost_microcents), 0);
-  const aiErrors = monthRuns.filter((r) => r.status === "error").length;
+  const aiErrors = runs30.filter((r) => r.status === "error").length;
+
+  // Consommation IA sur 30 jours : tokens par jour, par modèle, par agent
+  const tokensOf = (r: { input_tokens: number; output_tokens: number }) =>
+    Number(r.input_tokens) + Number(r.output_tokens);
+  const totalTokens30 = runs30.reduce((s, r) => s + tokensOf(r), 0);
+  const totalCost30 = runs30.reduce((s, r) => s + Number(r.cost_microcents), 0);
+  const tokensByDay = new Map<string, number>();
+  const byModel = new Map<string, { tokens: number; cost: number }>();
+  const byAgent = new Map<string, { tokens: number; cost: number }>();
+  for (const r of runs30) {
+    const k = dayKey(new Date(r.created_at));
+    tokensByDay.set(k, (tokensByDay.get(k) ?? 0) + tokensOf(r));
+    const model = r.model ?? "?";
+    const m = byModel.get(model) ?? { tokens: 0, cost: 0 };
+    m.tokens += tokensOf(r);
+    m.cost += Number(r.cost_microcents);
+    byModel.set(model, m);
+    const a = byAgent.get(r.agent_key) ?? { tokens: 0, cost: 0 };
+    a.tokens += tokensOf(r);
+    a.cost += Number(r.cost_microcents);
+    byAgent.set(r.agent_key, a);
+  }
 
   // ── Funnel d'activation ─────────────────────────────────────────────────────
   const orgsAvecDossier = new Set(reels.map((c) => c.organization_id)).size;
@@ -242,6 +266,65 @@ export default async function AdminOverview() {
           </div>
         </div>
       </div>
+
+      {/* Consommation IA : tokens, coûts, par modèle et par agent */}
+      <section>
+        <h2 className="px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          Consommation IA · 30 jours
+        </h2>
+        <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="rounded-[1.75rem] border bg-card p-6">
+            <p className="text-2xl font-bold tabular-nums tracking-tight">
+              {totalTokens30.toLocaleString("fr-FR")}
+              <span className="ml-1.5 text-sm font-normal text-muted-foreground">tokens</span>
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {euros(totalCost30)} estimés · {runs30.length.toLocaleString("fr-FR")} runs
+            </p>
+            <div className="mt-4">
+              <BarChart
+                ariaLabel="Tokens consommés par jour sur 30 jours"
+                points={days.map((d) => ({ label: d.label, value: tokensByDay.get(d.key) ?? 0 }))}
+              />
+            </div>
+          </div>
+          <div className="rounded-[1.75rem] border bg-card p-6">
+            <h3 className="text-sm font-semibold">Par modèle</h3>
+            <div className="mt-4">
+              <HBars
+                rows={[...byModel.entries()]
+                  .sort((a, b) => b[1].tokens - a[1].tokens)
+                  .slice(0, 8)
+                  .map(([model, v]) => ({
+                    label: model.replace("hermes:", ""),
+                    value: v.tokens,
+                    detail: euros(v.cost),
+                  }))}
+              />
+              {byModel.size === 0 ? (
+                <p className="text-xs text-muted-foreground">Aucun run sur 30 jours.</p>
+              ) : null}
+            </div>
+          </div>
+          <div className="rounded-[1.75rem] border bg-card p-6">
+            <h3 className="text-sm font-semibold">Par agent</h3>
+            <div className="mt-4">
+              <HBars
+                rows={[...byAgent.entries()]
+                  .sort((a, b) => b[1].tokens - a[1].tokens)
+                  .map(([agent, v]) => ({
+                    label: agent,
+                    value: v.tokens,
+                    detail: euros(v.cost),
+                  }))}
+              />
+              {byAgent.size === 0 ? (
+                <p className="text-xs text-muted-foreground">Aucun run sur 30 jours.</p>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Répartitions */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">

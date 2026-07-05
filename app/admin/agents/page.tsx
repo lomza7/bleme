@@ -26,7 +26,7 @@ export default async function AdminHome() {
     supabase.from("agents").select("*").order("created_at"),
     supabase
       .from("agent_runs")
-      .select("agent_key, status, simulated, cost_microcents, created_at")
+      .select("agent_key, status, simulated, input_tokens, output_tokens, cost_microcents, created_at")
       .gte("created_at", d30)
       .order("created_at", { ascending: false }),
   ]);
@@ -34,9 +34,16 @@ export default async function AdminHome() {
   const all = runs ?? [];
   const monthRuns = all.filter((r) => r.created_at >= monthStart.toISOString());
   const spendByAgent = new Map<string, number>();
+  const tokensByAgent = new Map<string, number>();
   const lastRunByAgent = new Map<string, string>();
   for (const r of monthRuns) {
     spendByAgent.set(r.agent_key, (spendByAgent.get(r.agent_key) ?? 0) + Number(r.cost_microcents));
+  }
+  for (const r of all) {
+    tokensByAgent.set(
+      r.agent_key,
+      (tokensByAgent.get(r.agent_key) ?? 0) + Number(r.input_tokens) + Number(r.output_tokens),
+    );
   }
   for (const r of all) {
     if (!lastRunByAgent.has(r.agent_key)) lastRunByAgent.set(r.agent_key, r.created_at);
@@ -120,6 +127,12 @@ export default async function AdminHome() {
                 <p className="flex justify-between">
                   <span>Prompt</span>
                   <span className="text-foreground">v{agent.prompt_version}</span>
+                </p>
+                <p className="flex justify-between">
+                  <span>Tokens · 30 j</span>
+                  <span className="tabular-nums text-foreground">
+                    {(tokensByAgent.get(agent.key) ?? 0).toLocaleString("fr-FR")}
+                  </span>
                 </p>
                 <p className="flex justify-between">
                   <span>Dernier run</span>
