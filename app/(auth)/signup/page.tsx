@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { GoogleButton, OrDivider } from "@/components/auth/google-button";
 import { SignupForm } from "@/components/auth/forms";
 
 export const metadata: Metadata = { title: "Créer mon compte" };
@@ -19,9 +18,7 @@ export default async function SignupPage({
       <p className="mt-2 text-sm text-ink-muted">
         Une minute, et vos blèmes commencent à se régler.
       </p>
-      <div className="mt-8 flex flex-col gap-5">
-        <GoogleButton next={next} />
-        <OrDivider />
+      <div className="mt-8">
         <SignupForm next={next} />
       </div>
       <p className="mt-8 text-sm text-ink-muted">
