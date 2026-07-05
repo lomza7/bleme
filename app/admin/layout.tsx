@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowLeft, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ExternalLink, ShieldCheck } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { getSecret } from "@/lib/secrets";
 
 export const metadata: Metadata = {
   title: { template: "%s · Console admin", default: "Console admin" },
@@ -56,7 +57,9 @@ export default async function AdminLayout({
   );
 }
 
-function AdminTabs() {
+async function AdminTabs() {
+  // L'onglet Ops apparaît dès que PAPERCLIP_URL est posée dans le coffre.
+  const paperclipUrl = await getSecret("PAPERCLIP_URL");
   return (
     <nav aria-label="Sections d’administration" className="border-b bg-muted/40">
       <div className="mx-auto flex max-w-6xl gap-1 px-6 py-2">
@@ -73,6 +76,17 @@ function AdminTabs() {
             {t.label}
           </Link>
         ))}
+        {paperclipUrl?.startsWith("https://") ? (
+          <a
+            href={paperclipUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="ml-auto inline-flex items-center gap-1.5 rounded-full px-4 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-white hover:text-foreground"
+          >
+            Ops · Paperclip
+            <ExternalLink className="size-3.5" />
+          </a>
+        ) : null}
       </div>
     </nav>
   );

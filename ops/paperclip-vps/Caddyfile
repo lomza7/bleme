@@ -1,0 +1,9 @@
+# /etc/caddy/Caddyfile — HTTPS automatique + mot de passe devant Paperclip.
+# Remplacer ops.tondomaine.fr et le hash (généré par `caddy hash-password`).
+
+ops.tondomaine.fr {
+	basic_auth {
+		louis $2a$14$REMPLACER_PAR_LE_HASH_GENERE
+	}
+	reverse_proxy 127.0.0.1:3100
+}

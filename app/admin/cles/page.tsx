@@ -50,6 +50,16 @@ const REGISTRY: { name: string; service: string; usage: string; testable?: boole
     service: "Stripe (webhooks)",
     usage: "Signature des événements de paiement entrants (phase 6).",
   },
+  {
+    name: "NOUS_API_KEY",
+    service: "Nous Research (Hermes)",
+    usage: "Les agents Hermes du Paperclip ops (endpoint inference-api.nousresearch.com/v1).",
+  },
+  {
+    name: "PAPERCLIP_URL",
+    service: "Paperclip (VPS)",
+    usage: "URL de ta console d'orchestration (ex. https://ops.tondomaine.fr) : active l'onglet Ops. Guide : ops/paperclip-vps/.",
+  },
 ];
 
 export default async function ClesAdminPage() {

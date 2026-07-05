@@ -197,6 +197,8 @@ const ENV_WATCHLIST = [
   "MERCI_FACTEUR_API_KEY",
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
+  "NOUS_API_KEY",
+  "PAPERCLIP_URL",
 ];
 
 function mask(value: string): string {
