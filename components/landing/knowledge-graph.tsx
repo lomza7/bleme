@@ -80,11 +80,11 @@ export function KnowledgeGraph() {
         </Reveal>
 
         {/* Constellation desktop */}
-        <Reveal delay={0.15} className="relative hidden lg:block">
-          <div className="relative mx-auto h-[560px] max-w-6xl">
+        <Reveal delay={0.15} className="relative">
+          <div className="relative mx-auto h-[400px] sm:h-[480px] lg:h-[560px] max-w-6xl">
             {/* Halo central */}
-            <div aria-hidden className="absolute left-1/2 top-1/2 size-[26rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/15 blur-3xl" />
-            <div aria-hidden className="absolute left-1/2 top-1/2 size-48 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/25 blur-2xl" />
+            <div aria-hidden className="absolute left-1/2 top-1/2 size-[15rem] sm:size-[20rem] lg:size-[26rem] -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/15 blur-3xl" />
+            <div aria-hidden className="absolute left-1/2 top-1/2 size-28 sm:size-36 lg:size-48 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/25 blur-2xl" />
 
             <svg
               aria-hidden
@@ -149,10 +149,10 @@ export function KnowledgeGraph() {
               className="absolute z-[1] -translate-x-1/2 -translate-y-1/2"
               style={{ left: "50%", top: "50%" }}
             >
-              <div className="flex size-32 items-center justify-center rounded-full bg-white shadow-xl shadow-brand/20 ring-1 ring-black/5">
-                <div className="flex size-[5.5rem] flex-col items-center justify-center rounded-full bg-gradient-to-b from-brand to-brand-strong text-brand-foreground">
-                  <span className="text-2xl font-bold tracking-tight">B.</span>
-                  <span className="text-[8px] font-medium uppercase tracking-[0.2em] opacity-85">
+              <div className="flex size-20 sm:size-24 lg:size-32 items-center justify-center rounded-full bg-white shadow-xl shadow-brand/20 ring-1 ring-black/5">
+                <div className="flex size-14 sm:size-16 lg:size-[5.5rem] flex-col items-center justify-center rounded-full bg-gradient-to-b from-brand to-brand-strong text-brand-foreground">
+                  <span className="text-base sm:text-lg lg:text-2xl font-bold tracking-tight">B.</span>
+                  <span className="hidden lg:block text-[8px] font-medium uppercase tracking-[0.2em] opacity-85">
                     IA juridique
                   </span>
                 </div>
@@ -173,8 +173,8 @@ export function KnowledgeGraph() {
                 }
                 title={t.label}
               >
-                <div className="flex size-16 items-center justify-center rounded-2xl bg-white shadow-lg shadow-zinc-950/[0.1] ring-1 ring-black/5 transition-all duration-500 ease-fluid hover:-translate-y-1 hover:shadow-xl">
-                  <t.icon className="size-7 text-brand-strong" />
+                <div className="flex size-11 sm:size-14 lg:size-16 items-center justify-center rounded-xl lg:rounded-2xl bg-white shadow-lg shadow-zinc-950/[0.1] ring-1 ring-black/5 transition-all duration-500 ease-fluid hover:-translate-y-1 hover:shadow-xl">
+                  <t.icon className="size-5 sm:size-6 lg:size-7 text-brand-strong" />
                 </div>
                 <span className="sr-only">{t.label}</span>
               </div>
@@ -182,37 +182,9 @@ export function KnowledgeGraph() {
           </div>
         </Reveal>
 
-        {/* Version mobile : cœur + tuiles nommées */}
-        <div className="mt-12 lg:hidden">
-          <div className="relative mx-auto w-max">
-            <div aria-hidden className="absolute left-1/2 top-1/2 size-52 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand/20 blur-2xl" />
-            <div className="relative flex size-28 items-center justify-center rounded-full bg-white shadow-xl shadow-brand/20 ring-1 ring-black/5">
-              <div className="flex size-20 flex-col items-center justify-center rounded-full bg-gradient-to-b from-brand to-brand-strong text-brand-foreground">
-                <span className="text-xl font-bold tracking-tight">B.</span>
-                <span className="text-[7px] font-medium uppercase tracking-[0.18em] opacity-85">
-                  IA juridique
-                </span>
-              </div>
-            </div>
-          </div>
-          <ul className="mt-10 grid grid-cols-2 gap-3">
-            {TILES.map((t) => (
-              <li
-                key={t.label}
-                className="flex items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-black/5"
-              >
-                <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
-                  <t.icon className="size-5" />
-                </span>
-                <span className="text-sm font-medium leading-snug">{t.label}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
         {/* Wordmarks des institutions */}
         <Reveal delay={0.25}>
-          <div className="mt-6 text-center lg:mt-0">
+          <div className="mt-2 text-center">
             <p className="text-sm text-muted-foreground">
               Alimentée par les API publiques officielles :
             </p>
