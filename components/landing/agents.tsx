@@ -1,5 +1,5 @@
 /* eslint-disable @next/next/no-img-element */
-import { Database } from "lucide-react";
+import { Armchair, Check, Database } from "lucide-react";
 import { Reveal, RevealItem, RevealStagger } from "@/components/landing/reveal";
 
 /*
@@ -204,8 +204,8 @@ export function AgentsTeam() {
           </h2>
           <p className="mt-4 text-lg text-muted-foreground">
             Pas un chatbot généraliste : des agents spécialisés, chacun branché
-            sur ses sources et entraîné sur son front. Ensemble, ils couvrent
-            tout le blème, du premier récit jusqu’au paiement.
+            sur ses sources et entraîné sur son front. Voici ce qui travaille
+            pour vous en coulisses, du premier récit jusqu’au paiement.
           </p>
         </div>
       </Reveal>
@@ -218,8 +218,43 @@ export function AgentsTeam() {
         ))}
       </RevealStagger>
 
+      {/* Réassurance : l'équipe se coordonne seule */}
+      <Reveal delay={0.15}>
+        <div className="mt-10 grid grid-cols-1 items-center gap-8 rounded-[2rem] bg-brand-soft/60 p-8 ring-1 ring-brand/20 sm:p-10 lg:grid-cols-2">
+          <div>
+            <span className="flex size-11 items-center justify-center rounded-full bg-brand text-brand-foreground">
+              <Armchair className="size-5" />
+            </span>
+            <h3 className="mt-4 text-xl font-bold tracking-tight sm:text-2xl">
+              Et vous, dans tout ça ? Rien à piloter.
+            </h3>
+            <p className="mt-3 max-w-md leading-relaxed text-muted-foreground">
+              Vous ne parlez jamais à six agents : vous racontez votre blème
+              une fois, et l’équipe se coordonne toute seule en coulisses.
+              Cette page existe juste pour vous montrer ce qu’il y a sous le
+              capot.
+            </p>
+          </div>
+          <ul className="space-y-3">
+            {[
+              "Une seule interface : votre dossier, qui avance tout seul",
+              "Les agents se passent le travail entre eux, sans vous solliciter",
+              "Vous n’intervenez que pour l’essentiel : relire et valider",
+            ].map((item) => (
+              <li
+                key={item}
+                className="flex items-start gap-3 rounded-2xl bg-white px-5 py-4 text-[15px] shadow-sm ring-1 ring-black/5"
+              >
+                <Check className="mt-0.5 size-4 shrink-0 text-brand" />
+                <span className="text-muted-foreground">{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </Reveal>
+
       <Reveal delay={0.2}>
-        <p className="mx-auto mt-10 max-w-2xl text-center text-[13px] leading-relaxed text-muted-foreground/80">
+        <p className="mx-auto mt-8 max-w-2xl text-center text-[13px] leading-relaxed text-muted-foreground/80">
           Des agents spécialisés, pas des oracles : chacun prépare, classe et
           propose. Rien ne part sans votre validation, et aucun ne prédit une
           décision de justice.
