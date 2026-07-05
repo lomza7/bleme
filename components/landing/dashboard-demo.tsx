@@ -226,7 +226,7 @@ export function DashboardDemo() {
             </div>
 
             {/* Notification flottante : paiement reçu */}
-            <div className="anim-scroll absolute -right-3 top-16 hidden w-60 rotate-2 rounded-2xl border bg-card p-3.5 text-foreground shadow-xl shadow-zinc-950/[0.35] lg:-right-8 lg:block">
+            <div className="anim-scroll absolute -bottom-8 right-2 w-60 rotate-2 rounded-2xl border bg-card p-3.5 text-foreground shadow-xl shadow-zinc-950/[0.35] lg:bottom-auto lg:-right-8 lg:top-16">
               <div className="flex items-start gap-3">
                 <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
                   <BanknoteArrowDown className="size-4" />
