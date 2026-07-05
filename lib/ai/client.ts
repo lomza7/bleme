@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { getSecret } from "@/lib/secrets";
+import { TOOL_APIS } from "@/lib/tool-apis";
 import { createServiceClient } from "@/lib/supabase/server";
 
 /*
@@ -80,6 +81,43 @@ async function loadAgent(key: string): Promise<AgentConfig | null> {
     .eq("key", key)
     .maybeSingle();
   return (data as AgentConfig | null) ?? null;
+}
+
+/**
+ * APIs outils actives pour un agent (communes + les siennes), avec leurs
+ * credentials résolus depuis le coffre. Une API dont une clé manque est
+ * écartée : l'agent ne voit jamais un outil inutilisable.
+ */
+async function loadAgentToolApis(
+  key: string,
+): Promise<{ name: string; credentials: Record<string, string> }[]> {
+  const supabase = createServiceClient();
+  const { data } = await supabase
+    .from("agent_tool_apis")
+    .select("api_name, agent_key")
+    .or(`agent_key.is.null,agent_key.eq.${key}`);
+  const enabled = new Set((data ?? []).map((r) => r.api_name));
+  const out: { name: string; credentials: Record<string, string> }[] = [];
+  for (const api of TOOL_APIS) {
+    if (!enabled.has(api.name)) continue;
+    const credentials: Record<string, string> = {};
+    let complete = true;
+    for (const secretName of api.secrets) {
+      const value = await getSecret(secretName);
+      if (!value) {
+        complete = false;
+        break;
+      }
+      credentials[secretName] = value;
+    }
+    if (!complete) continue;
+    for (const secretName of api.optionalSecrets ?? []) {
+      const value = await getSecret(secretName);
+      if (value) credentials[secretName] = value;
+    }
+    out.push({ name: api.name, credentials });
+  }
+  return out;
 }
 
 /** Skills actives pour un agent : les communes (agent_key null) + les siennes. */
@@ -166,10 +204,11 @@ export async function runAgent<T>(opts: {
 
   // ── Runtime Hermes : le bleme-bridge du VPS (piloté par /admin) ────────────
   if (agent.runtime === "hermes") {
-    const [bridgeUrl, bridgeToken, skills] = await Promise.all([
+    const [bridgeUrl, bridgeToken, skills, toolApis] = await Promise.all([
       getSecret("BLEME_BRIDGE_URL"),
       getSecret("BLEME_BRIDGE_TOKEN"),
       loadAgentSkills(agent.key),
+      loadAgentToolApis(agent.key),
     ]);
     if (!bridgeUrl || !bridgeToken) {
       await logRun({
@@ -197,6 +236,7 @@ export async function runAgent<T>(opts: {
           input: JSON.stringify(opts.input),
           model: agent.hermes_model,
           skills,
+          tool_apis: toolApis,
         }),
       });
       if (!response.ok) {

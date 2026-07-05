@@ -15,12 +15,15 @@ import {
   getPaperclipIssues,
   getRoutines,
   getSkillScopes,
+  deletePcAgent,
+  patchPcAgent,
   setRoutineStatus,
   setTicketStatus,
   toggleSkillScope,
   type Skill,
 } from "@/lib/admin/hermes-actions";
 import { TicketCreateForm } from "@/components/admin/tickets";
+import { PcAgentCreateForm } from "@/components/admin/pc-agents";
 import { SpriteAvatar } from "@/components/landing/sprite-avatar";
 import { HermesUpdateControls } from "@/components/admin/hermes-update";
 import { InstallSkillButton, RemoveSkillButton } from "@/components/admin/skills";
@@ -310,58 +313,132 @@ export default async function HermesAdminPage() {
         <h2 className="px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
           Organigramme · {pcAgents.length} agents Paperclip
         </h2>
-        {pcAgents.length === 0 ? (
-          <p className="mt-3 rounded-[1.75rem] border border-dashed px-6 py-6 text-center text-sm text-muted-foreground">
-            Aucun agent dans l’organisation Paperclip.
-          </p>
-        ) : (
-          <div className="mt-3 rounded-[1.75rem] border bg-card p-6">
-            <div className="flex flex-col items-center">
-              <span className="rounded-full bg-ink px-4 py-1.5 text-xs font-medium text-white">
-                Board · BLEME
-              </span>
-              <span className="my-2 h-5 w-px bg-border" aria-hidden />
-            </div>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-              {pcAgents.map((a) => {
-                const persona = a.name.toLowerCase();
-                const known = ["marius", "lena", "jeanne", "nora", "sacha", "basile"].includes(persona);
+        <div className="mt-3 flex flex-col gap-3">
+          {pcAgents.length === 0 ? (
+            <p className="rounded-[1.75rem] border border-dashed px-6 py-6 text-center text-sm text-muted-foreground">
+              Aucun agent dans l’organisation Paperclip.
+            </p>
+          ) : (
+            <div className="rounded-[1.75rem] border bg-card p-6">
+              <div className="flex flex-col items-center">
+                <span className="rounded-full bg-ink px-4 py-1.5 text-xs font-medium text-white">
+                  Board · BLEME
+                </span>
+                <span className="my-2 h-5 w-px bg-border" aria-hidden />
+              </div>
+              {(() => {
+                const roots = pcAgents.filter((a) => !a.reportsTo);
+                const childrenOf = (id: string) => pcAgents.filter((a) => a.reportsTo === id);
+                const Card = ({ a }: { a: (typeof pcAgents)[number] }) => {
+                  const persona = a.name.toLowerCase();
+                  const known = ["marius", "lena", "jeanne", "nora", "sacha", "basile"].includes(persona);
+                  return (
+                    <div className="flex flex-col rounded-2xl border bg-background p-3.5">
+                      <div className="flex items-start gap-2.5">
+                        {known ? (
+                          <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b from-brand-soft to-brand/15 ring-1 ring-brand/20">
+                            <SpriteAvatar src={`/agents/${persona}.webp`} alt="" className="h-8" />
+                          </span>
+                        ) : (
+                          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted text-sm font-bold">
+                            {a.name[0]}
+                          </span>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-semibold">{a.name}</p>
+                          <p className="truncate text-[10px] leading-tight text-muted-foreground">
+                            {a.title ?? "—"}
+                          </p>
+                        </div>
+                        <span
+                          title={
+                            overview.online
+                              ? "Le bridge Hermes est en ligne : l'agent répond à la demande."
+                              : "Le bridge Hermes est injoignable : l'agent ne peut pas répondre."
+                          }
+                          className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-medium ring-1 ${
+                            overview.online
+                              ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
+                              : "bg-red-50 text-red-700 ring-red-200"
+                          }`}
+                        >
+                          {overview.online ? "disponible" : "hors ligne"}
+                        </span>
+                      </div>
+                      {a.spentMonthlyCents > 0 || a.budgetMonthlyCents > 0 ? (
+                        <p className="mt-2 text-[10px] text-muted-foreground">
+                          {(a.spentMonthlyCents / 100).toLocaleString("fr-FR")} €
+                          {a.budgetMonthlyCents > 0
+                            ? ` / ${(a.budgetMonthlyCents / 100).toLocaleString("fr-FR")} € ce mois`
+                            : " ce mois"}
+                        </p>
+                      ) : null}
+                      <div className="mt-2.5 flex flex-wrap items-center gap-1.5 border-t pt-2.5">
+                        <form action={patchPcAgent} className="flex min-w-0 flex-1 items-center gap-1.5">
+                          <input type="hidden" name="id" value={a.id} />
+                          <select
+                            name="reportsTo"
+                            defaultValue={a.reportsTo ?? ""}
+                            className="min-w-0 flex-1 rounded-lg border bg-background px-2 py-1 text-[10px] outline-none"
+                          >
+                            <option value="">Board</option>
+                            {pcAgents
+                              .filter((o) => o.id !== a.id)
+                              .map((o) => (
+                                <option key={o.id} value={o.id}>
+                                  {o.name}
+                                </option>
+                              ))}
+                          </select>
+                          <button
+                            type="submit"
+                            className="rounded-full border px-2 py-1 text-[9px] font-medium transition-colors hover:border-brand/50 hover:text-brand-strong"
+                          >
+                            Rattacher
+                          </button>
+                        </form>
+                        <form action={deletePcAgent}>
+                          <input type="hidden" name="id" value={a.id} />
+                          <button
+                            type="submit"
+                            title="Supprimer cet agent de Paperclip"
+                            className="rounded-full border px-2 py-1 text-[9px] text-muted-foreground transition-colors hover:border-red-300 hover:text-red-600"
+                          >
+                            Suppr.
+                          </button>
+                        </form>
+                      </div>
+                    </div>
+                  );
+                };
                 return (
-                  <div key={a.id} className="flex flex-col items-center rounded-2xl border bg-background p-3 text-center">
-                    {known ? (
-                      <span className="flex size-11 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-b from-brand-soft to-brand/15 ring-1 ring-brand/20">
-                        <SpriteAvatar src={`/agents/${persona}.webp`} alt="" className="h-9" />
-                      </span>
-                    ) : (
-                      <span className="flex size-11 items-center justify-center rounded-xl bg-muted text-sm font-bold">
-                        {a.name[0]}
-                      </span>
-                    )}
-                    <p className="mt-2 text-sm font-semibold">{a.name}</p>
-                    <p className="text-[10px] leading-tight text-muted-foreground">{a.title ?? "—"}</p>
-                    <span
-                      className={`mt-1.5 rounded-full px-2 py-0.5 text-[9px] font-medium ring-1 ${
-                        a.status === "error"
-                          ? "bg-red-50 text-red-700 ring-red-200"
-                          : a.status === "idle"
-                            ? "bg-muted text-muted-foreground ring-black/5"
-                            : "bg-emerald-50 text-emerald-700 ring-emerald-200"
-                      }`}
-                    >
-                      {a.status === "idle" ? "en attente" : a.status}
-                    </span>
-                    {a.spentMonthlyCents > 0 || a.budgetMonthlyCents > 0 ? (
-                      <p className="mt-1 text-[9px] tabular-nums text-muted-foreground">
-                        {(a.spentMonthlyCents / 100).toLocaleString("fr-FR")} €
-                        {a.budgetMonthlyCents > 0 ? ` / ${(a.budgetMonthlyCents / 100).toLocaleString("fr-FR")} €` : ""}
-                      </p>
-                    ) : null}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {roots.map((root) => {
+                      const kids = childrenOf(root.id);
+                      return (
+                        <div key={root.id} className="flex flex-col gap-2">
+                          <Card a={root} />
+                          {kids.length > 0 ? (
+                            <div className="ml-5 flex flex-col gap-2 border-l-2 border-brand/20 pl-3">
+                              {kids.map((k) => (
+                                <Card key={k.id} a={k} />
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
                   </div>
                 );
-              })}
+              })()}
             </div>
-          </div>
-        )}
+          )}
+          <PcAgentCreateForm agents={pcAgents.map((a) => ({ id: a.id, name: a.name }))} />
+          <p className="px-1 text-[11px] leading-relaxed text-muted-foreground/80">
+            Les agents s’exécutent à la demande via le bridge Hermes : ils
+            sont disponibles tant que le bridge est en ligne.
+          </p>
+        </div>
       </section>
 
       {/* Ticketing Paperclip */}

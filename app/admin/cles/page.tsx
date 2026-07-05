@@ -4,6 +4,7 @@ import { deleteApiKey, getKeysStatus, lockVault } from "@/lib/admin/secrets-acti
 import {
   SetKeyForm,
   TestAnthropicButton,
+  TestMerciFacteurButton,
   VaultSetupForm,
   VaultUnlockForm,
 } from "@/components/admin/secrets";
@@ -26,6 +27,26 @@ const REGISTRY: { name: string; service: string; usage: string; testable?: boole
     testable: true,
   },
   {
+    name: "PISTE_CLIENT_ID",
+    service: "PISTE (Légifrance)",
+    usage: "API outils : identifiant OAuth du compte piste.gouv.fr, pour que les agents consultent lois et jurisprudence.",
+  },
+  {
+    name: "PISTE_CLIENT_SECRET",
+    service: "PISTE (Légifrance)",
+    usage: "API outils : secret OAuth associé au client PISTE.",
+  },
+  {
+    name: "PISTE_ENV",
+    service: "PISTE (environnement)",
+    usage: "Mettre « sandbox » si l'application PISTE est de type SANDBOX ; laisser vide (ou supprimer) pour la production.",
+  },
+  {
+    name: "PAPPERS_API_KEY",
+    service: "Pappers",
+    usage: "API outils : fiche légale complète des débiteurs (RNE, BODACC, greffes agrégés). Clé sur pappers.fr → Mon compte → API.",
+  },
+  {
     name: "GROQ_API_KEY",
     service: "Groq (Whisper)",
     usage: "Transcription des récits vocaux (phase 1).",
@@ -36,9 +57,20 @@ const REGISTRY: { name: string; service: string; usage: string; testable?: boole
     usage: "Envoi des relances email et notifications (phase 4, après le domaine).",
   },
   {
-    name: "MERCI_FACTEUR_API_KEY",
+    name: "MERCI_FACTEUR_SERVICE_ID",
     service: "Merci Facteur",
-    usage: "Recommandés papier avec AR et suivi (phase 4).",
+    usage: "Recommandés papier avec AR (phase 4) : Service ID du compte Pro (commence par public-…).",
+  },
+  {
+    name: "MERCI_FACTEUR_SECRET_KEY",
+    service: "Merci Facteur",
+    usage: "Recommandés papier (phase 4) : Secret Key du compte Pro, sert à générer les access tokens.",
+    testable: true,
+  },
+  {
+    name: "MERCI_FACTEUR_WEBHOOK_SECRET",
+    service: "Merci Facteur (webhooks)",
+    usage: "Suivi des courriers (phase 4) : X-Mf-Webhook-Secret-Key, vérifie l'origine des webhooks de suivi.",
   },
   {
     name: "STRIPE_SECRET_KEY",
@@ -188,7 +220,9 @@ export default async function ClesAdminPage() {
                     </button>
                   </form>
                 ) : null}
-                {entry.testable ? <TestAnthropicButton /> : null}
+                {entry.testable ? (
+                  entry.name.startsWith("MERCI_FACTEUR") ? <TestMerciFacteurButton /> : <TestAnthropicButton />
+                ) : null}
               </div>
             </div>
           );

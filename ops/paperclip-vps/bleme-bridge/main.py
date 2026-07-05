@@ -30,7 +30,10 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -329,6 +332,7 @@ async def _scheduler() -> None:
 
 @app.on_event("startup")
 async def _start_scheduler() -> None:
+    _sp_maybe_refresh()
     asyncio.create_task(_scheduler())
 
 
@@ -357,9 +361,10 @@ def _pip_sync() -> None:
 
 
 def _schedule_restart() -> None:
-    """systemd (Restart=always) relance le service : le nouveau code se charge."""
-    loop = asyncio.get_event_loop()
-    loop.call_later(1.0, os._exit, 0)
+    """systemd (Restart=always) relance le service : le nouveau code se charge.
+    threading.Timer et non asyncio : les endpoints sync tournent dans un
+    thread AnyIO sans event loop."""
+    threading.Timer(1.0, os._exit, args=(0,)).start()
 
 
 @app.get("/version", dependencies=[Depends(_auth)])
@@ -610,6 +615,53 @@ def paperclip_issues() -> dict:
         return {"ok": False, "error": str(exc)[:200], "issues": []}
 
 
+class PcAgentCreate(BaseModel):
+    name: str
+    title: str | None = None
+    reports_to: str | None = None
+
+
+@app.post("/paperclip/agents/create", dependencies=[Depends(_auth)])
+def paperclip_agent_create(req: PcAgentCreate) -> dict:
+    cid = _pc_company_id()
+    agent = _pc("POST", f"/companies/{cid}/agents", {
+        "name": req.name.strip()[:60],
+        **({"title": req.title.strip()[:80]} if req.title else {}),
+        **({"reportsTo": req.reports_to} if req.reports_to else {}),
+    })
+    _PC_AGENTS_CACHE["at"] = 0  # invalide le cache nom → id
+    return {"ok": True, "agent": agent}
+
+
+ALLOWED_AGENT_PATCH = {"title", "reportsTo", "status", "budgetMonthlyCents"}
+
+
+class PcAgentPatch(BaseModel):
+    id: str
+    patch: dict
+
+
+@app.post("/paperclip/agents/update", dependencies=[Depends(_auth)])
+def paperclip_agent_update(req: PcAgentPatch) -> dict:
+    patch = {k: v for k, v in req.patch.items() if k in ALLOWED_AGENT_PATCH}
+    if not patch:
+        raise HTTPException(400, "aucun champ modifiable fourni")
+    agent = _pc("PATCH", f"/agents/{req.id}", patch)
+    _PC_AGENTS_CACHE["at"] = 0
+    return {"ok": True, "agent": agent}
+
+
+class PcAgentDelete(BaseModel):
+    id: str
+
+
+@app.post("/paperclip/agents/delete", dependencies=[Depends(_auth)])
+def paperclip_agent_delete(req: PcAgentDelete) -> dict:
+    result = _pc("DELETE", f"/agents/{req.id}")
+    _PC_AGENTS_CACHE["at"] = 0
+    return {"ok": True, "result": result}
+
+
 class IssueCreate(BaseModel):
     title: str
     description: str | None = None
@@ -690,12 +742,642 @@ def _skills_context(names: list[str]) -> str:
     return "\n\n".join(parts)
 
 
+
+
+# ── APIs outils : exécutées ici pendant une boucle agentique ─────────────────
+# Le tool use natif n'étant pas routé par OpenRouter pour Hermes 4, l'agent
+# émet {"outil": "api.action", "params": {...}} ; le bridge exécute l'appel
+# HTTP et renvoie le résultat en observation, jusqu'au JSON final (4 appels max).
+
+TOOL_HTTP_TIMEOUT = 20
+TOOL_RESULT_MAX = 3500
+TOOL_CALLS_MAX = 4
+
+_piste_tokens: dict[str, tuple[str, float]] = {}  # client_id → (token, expiry)
+
+
+def _http_json(req: urllib.request.Request) -> dict:
+    try:
+        with urllib.request.urlopen(req, timeout=TOOL_HTTP_TIMEOUT) as resp:
+            return json.loads(resp.read().decode("utf-8", errors="ignore"))
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="ignore")[:400]
+        return {"erreur": f"HTTP {exc.code} : {body}"}
+    except Exception as exc:  # réseau, timeout, JSON invalide
+        return {"erreur": f"{type(exc).__name__}: {exc}"}
+
+
+def _piste_sandbox(credentials: dict) -> bool:
+    return str(credentials.get("PISTE_ENV", "")).strip().lower() == "sandbox"
+
+
+def _piste_token(credentials: dict) -> str | dict:
+    cid = credentials.get("PISTE_CLIENT_ID", "")
+    secret = credentials.get("PISTE_CLIENT_SECRET", "")
+    if not cid or not secret:
+        return {"erreur": "clés PISTE absentes du coffre (/admin/cles)"}
+    sandbox = _piste_sandbox(credentials)
+    cache_key = f"{cid}:{sandbox}"
+    cached = _piste_tokens.get(cache_key)
+    if cached and cached[1] > time.time():
+        return cached[0]
+    data = urllib.parse.urlencode({
+        "grant_type": "client_credentials",
+        "client_id": cid,
+        "client_secret": secret,
+        "scope": "openid",
+    }).encode()
+    oauth_url = (
+        "https://sandbox-oauth.piste.gouv.fr/api/oauth/token"
+        if sandbox
+        else "https://oauth.piste.gouv.fr/api/oauth/token"
+    )
+    req = urllib.request.Request(
+        oauth_url,
+        data=data,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    payload = _http_json(req)
+    if "erreur" in payload:
+        return payload
+    token = payload.get("access_token")
+    if not token:
+        return {"erreur": f"réponse OAuth PISTE inattendue : {str(payload)[:200]}"}
+    _piste_tokens[cache_key] = (token, time.time() + int(payload.get("expires_in", 3600)) - 300)
+    return token
+
+
+LEGIFRANCE_BASE = "https://api.piste.gouv.fr/dila/legifrance/lf-engine-app"
+LEGIFRANCE_BASE_SANDBOX = "https://sandbox-api.piste.gouv.fr/dila/legifrance/lf-engine-app"
+
+
+def _legifrance_post(path: str, body: dict, credentials: dict) -> dict:
+    token = _piste_token(credentials)
+    if isinstance(token, dict):
+        return token
+    base = LEGIFRANCE_BASE_SANDBOX if _piste_sandbox(credentials) else LEGIFRANCE_BASE
+    req = urllib.request.Request(
+        f"{base}{path}",
+        data=json.dumps(body).encode(),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        },
+        method="POST",
+    )
+    return _http_json(req)
+
+
+def _legifrance_search(fond: str, mots_cles: str, credentials: dict) -> dict:
+    payload = _legifrance_post("/search", {
+        "fond": fond,
+        "recherche": {
+            "champs": [{
+                "typeChamp": "ALL",
+                "criteres": [{
+                    "typeRecherche": "TOUS_LES_MOTS_DANS_UN_CHAMP",
+                    "valeur": mots_cles[:200],
+                    "operateur": "ET",
+                }],
+                "operateur": "ET",
+            }],
+            "pageNumber": 1,
+            "pageSize": 5,
+            "operateur": "ET",
+            "sort": "PERTINENCE",
+            "typePagination": "DEFAUT",
+        },
+    }, credentials)
+    if "erreur" in payload:
+        return payload
+    resultats = []
+    for r in (payload.get("results") or [])[:5]:
+        titres = r.get("titles") or []
+        extraits = []
+        for section in (r.get("sections") or [])[:2]:
+            for ext in (section.get("extracts") or [])[:2]:
+                v = re.sub(r"<[^>]+>", "", str(ext.get("values") or ext.get("value") or ""))
+                if v.strip():
+                    extraits.append(v.strip()[:280])
+        resultats.append({
+            "id": (titres[0].get("id") if titres else r.get("id")) or "",
+            "titre": re.sub(r"<[^>]+>", "", str((titres[0].get("title") if titres else "") or r.get("text", "")))[:150],
+            "nature": r.get("nature") or "",
+            "date": r.get("date") or "",
+            "extraits": extraits,
+        })
+    return {"total": payload.get("totalResultNumber", len(resultats)), "resultats": resultats}
+
+
+def _tool_legifrance(action: str, params: dict, credentials: dict) -> dict:
+    if action == "rechercher_loi":
+        return _legifrance_search("LODA_DATE", str(params.get("mots_cles", "")), credentials)
+    if action == "rechercher_jurisprudence":
+        return _legifrance_search("JURI", str(params.get("mots_cles", "")), credentials)
+    if action == "rechercher_convention":
+        return _legifrance_search("KALI", str(params.get("mots_cles", "")), credentials)
+    if action == "consulter_article":
+        payload = _legifrance_post("/consult/getArticle", {"id": str(params.get("id", ""))}, credentials)
+        if "erreur" in payload:
+            return payload
+        article = payload.get("article") or {}
+        return {
+            "id": article.get("id", ""),
+            "numero": article.get("num", ""),
+            "etat": article.get("etat", ""),
+            "contexte": article.get("fullSectionsTitre", ""),
+            "texte": re.sub(r"<[^>]+>", "", str(article.get("texte") or ""))[:2500],
+        }
+    return {"erreur": f"action legifrance inconnue : {action}"}
+
+
+JUDILIBRE_BASE = "https://api.piste.gouv.fr/cassation/judilibre/v1.0"
+JUDILIBRE_BASE_SANDBOX = "https://sandbox-api.piste.gouv.fr/cassation/judilibre/v1.0"
+
+
+def _judilibre_get(path: str, params: dict, credentials: dict) -> dict:
+    token = _piste_token(credentials)
+    if isinstance(token, dict):
+        return token
+    base = JUDILIBRE_BASE_SANDBOX if _piste_sandbox(credentials) else JUDILIBRE_BASE
+    url = f"{base}{path}?" + urllib.parse.urlencode(params)
+    req = urllib.request.Request(
+        url,
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+    )
+    return _http_json(req)
+
+
+def _tool_judilibre(action: str, params: dict, credentials: dict) -> dict:
+    if action == "rechercher":
+        mots = str(params.get("mots_cles", ""))[:200]
+        if not mots.strip():
+            return {"erreur": "paramètre 'mots_cles' vide"}
+        payload = _judilibre_get("/search", {
+            "query": mots,
+            "page_size": 5,
+            "sort": "score",
+            "resolve_references": "true",
+        }, credentials)
+        if "erreur" in payload:
+            return payload
+        resultats = []
+        for r in (payload.get("results") or [])[:5]:
+            resultats.append({
+                "id": r.get("id") or "",
+                "juridiction": r.get("jurisdiction") or "",
+                "chambre": r.get("chamber") or "",
+                "numero": r.get("number") or "",
+                "date": r.get("decision_date") or "",
+                "solution": r.get("solution") or "",
+                "resume": re.sub(r"<[^>]+>", "", str(r.get("summary") or ""))[:300],
+                "extraits": [
+                    re.sub(r"<[^>]+>", "", h)[:200]
+                    for h in (r.get("highlights", {}) or {}).get("text", [])[:2]
+                ],
+            })
+        return {"total": payload.get("total", len(resultats)), "resultats": resultats}
+    if action == "consulter_decision":
+        did = str(params.get("id", ""))
+        if not did.strip():
+            return {"erreur": "paramètre 'id' vide (id obtenu via judilibre.rechercher)"}
+        payload = _judilibre_get("/decision", {"id": did, "resolve_references": "true"}, credentials)
+        if "erreur" in payload:
+            return payload
+        return {
+            "id": payload.get("id") or "",
+            "juridiction": payload.get("jurisdiction") or "",
+            "chambre": payload.get("chamber") or "",
+            "numero": payload.get("number") or "",
+            "date": payload.get("decision_date") or "",
+            "solution": payload.get("solution") or "",
+            "texte": re.sub(r"<[^>]+>", "", str(payload.get("text") or ""))[:2800],
+        }
+    return {"erreur": f"action judilibre inconnue : {action}"}
+
+
+PAPPERS_API = "https://api.pappers.fr/v2"
+
+
+def _tool_pappers(action: str, params: dict, credentials: dict) -> dict:
+    key = credentials.get("PAPPERS_API_KEY", "")
+    if not key:
+        return {"erreur": "clé Pappers absente du coffre (/admin/cles)"}
+    if action != "fiche":
+        return {"erreur": f"action pappers inconnue : {action}"}
+    siren = re.sub(r"\D", "", str(params.get("siren", "")))[:9]
+    if len(siren) != 9:
+        return {"erreur": "paramètre 'siren' invalide (9 chiffres attendus)"}
+    url = f"{PAPPERS_API}/entreprise?" + urllib.parse.urlencode({"api_token": key, "siren": siren})
+    payload = _http_json(urllib.request.Request(url, headers={"Accept": "application/json"}))
+    if "erreur" in payload:
+        # ne jamais refléter l'URL (contient la clé)
+        return {"erreur": payload["erreur"].split(" : ")[0] + " : réponse Pappers en erreur"} if "HTTP" in payload["erreur"] else payload
+    siege = payload.get("siege") or {}
+    procs = payload.get("procedures_collectives") or []
+    comptes = payload.get("comptes") or []
+    return {
+        "siren": siren,
+        "denomination": payload.get("nom_entreprise") or payload.get("denomination") or "",
+        "forme_juridique": payload.get("forme_juridique") or "",
+        "date_creation": payload.get("date_creation") or "",
+        "cessee": bool(payload.get("entreprise_cessee")),
+        "date_cessation": payload.get("date_cessation"),
+        "statut_rcs": payload.get("statut_rcs") or "",
+        "adresse_siege": ", ".join(filter(None, [siege.get("adresse_ligne_1"), siege.get("code_postal"), siege.get("ville")])),
+        "numero_tva": payload.get("numero_tva_intracommunautaire") or "",
+        "capital": payload.get("capital_formate") or "",
+        "procedure_collective_en_cours": bool(payload.get("procedure_collective_en_cours")),
+        "procedures_collectives": [
+            {"type": p.get("type") or "", "date_debut": p.get("date_debut") or ""} for p in procs[:4]
+        ] or None,
+        "dirigeants": [
+            {
+                "nom": " ".join(filter(None, [d.get("prenom"), d.get("nom")])) or d.get("denomination") or "",
+                "qualite": d.get("qualite") or "",
+            }
+            for d in (payload.get("representants") or [])[:6]
+        ],
+        "derniers_comptes": (comptes[0].get("date_cloture") if comptes and isinstance(comptes[0], dict) else None),
+        "nb_actes_deposes": len(payload.get("depots_actes") or []),
+    }
+
+
+BODACC_API = "https://bodacc-datadila.opendatasoft.com/api/explore/v2.1/catalog/datasets/annonces-commerciales/records"
+
+
+def _tool_bodacc(action: str, params: dict, _credentials: dict) -> dict:
+    if action != "annonces":
+        return {"erreur": f"action bodacc inconnue : {action}"}
+    siren = re.sub(r"\D", "", str(params.get("siren", "")))[:9]
+    if len(siren) != 9:
+        return {"erreur": "paramètre 'siren' invalide (9 chiffres attendus)"}
+    url = BODACC_API + "?" + urllib.parse.urlencode({
+        "where": f'registre="{siren}"',
+        "order_by": "dateparution desc",
+        "limit": 8,
+    })
+    payload = _http_json(urllib.request.Request(url, headers={"Accept": "application/json"}))
+    if "erreur" in payload:
+        return payload
+    annonces, alerte = [], []
+    for r in payload.get("results") or []:
+        jugement = {}
+        with contextlib.suppress(Exception):
+            jugement = json.loads(r.get("jugement") or "{}")
+        famille = r.get("familleavis_lib") or r.get("familleavis") or ""
+        if r.get("familleavis") == "collective":
+            alerte.append(f"procédure collective ({jugement.get('nature', 'nature inconnue')})")
+        if r.get("radiationaurcs"):
+            alerte.append("radiation au RCS")
+        annonces.append({
+            "date": r.get("dateparution") or "",
+            "famille": famille,
+            "nature": jugement.get("nature") or r.get("typeavis") or "",
+            "tribunal": r.get("tribunal") or "",
+        })
+    return {
+        "siren": siren,
+        "total_annonces": payload.get("total_count", len(annonces)),
+        "alerte": "; ".join(sorted(set(alerte))) or None,
+        "annonces": annonces,
+    }
+
+
+def _tool_justice_administrative(action: str, params: dict, credentials: dict) -> dict:
+    if action == "rechercher":
+        return _legifrance_search("CETAT", str(params.get("mots_cles", "")), credentials)
+    if action == "consulter_decision":
+        did = str(params.get("id", "")).strip()
+        if not did.startswith("CETATEXT"):
+            return {"erreur": "paramètre 'id' invalide (attendu : CETATEXT…, obtenu via la recherche)"}
+        payload = _legifrance_post("/consult/juri", {"textId": did}, credentials)
+        if "erreur" in payload:
+            return payload
+        txt = payload.get("text") or {}
+        return {
+            "id": did,
+            "titre": re.sub(r"<[^>]+>", "", str(txt.get("titre") or txt.get("title") or ""))[:200],
+            "nature": txt.get("nature") or "",
+            "date": txt.get("dateTexte") or "",
+            "texte": re.sub(r"<[^>]+>", "", str(txt.get("texte") or ""))[:2800],
+        }
+    return {"erreur": f"action justice_administrative inconnue : {action}"}
+
+
+def _tool_entreprises(action: str, params: dict, _credentials: dict) -> dict:
+    if action != "rechercher":
+        return {"erreur": f"action entreprises inconnue : {action}"}
+    q = str(params.get("recherche", "") or params.get("q", ""))[:120]
+    if not q.strip():
+        return {"erreur": "paramètre 'recherche' vide"}
+    url = "https://recherche-entreprises.api.gouv.fr/search?" + urllib.parse.urlencode(
+        {"q": q, "page": 1, "per_page": 5}
+    )
+    payload = _http_json(urllib.request.Request(url, headers={"Accept": "application/json"}))
+    if "erreur" in payload:
+        return payload
+    resultats = []
+    for r in (payload.get("results") or [])[:5]:
+        siege = r.get("siege") or {}
+        resultats.append({
+            "nom": r.get("nom_complet") or r.get("nom_raison_sociale") or "",
+            "siren": r.get("siren") or "",
+            "siret_siege": siege.get("siret") or "",
+            "etat": {"A": "active", "C": "cessée"}.get(r.get("etat_administratif"), r.get("etat_administratif") or "?"),
+            "activite": r.get("activite_principale") or "",
+            "adresse_siege": siege.get("adresse") or "",
+            "date_creation": r.get("date_creation") or "",
+            "dirigeants": [
+                f"{d.get('prenoms', d.get('prenom', ''))} {d.get('nom', d.get('denomination', ''))} ({d.get('qualite', '?')})".strip()
+                for d in (r.get("dirigeants") or [])[:3]
+            ],
+        })
+    return {"total": payload.get("total_results", len(resultats)), "resultats": resultats}
+
+
+
+# ── Service-Public / Entreprendre : index local des fiches pratiques ─────────
+# Pas d'API de recherche officielle : la DILA publie les fiches en XML
+# (Licence Ouverte). On les indexe en SQLite FTS5 dans le home Hermes ;
+# resynchronisation via POST /tools/service-public/sync (et au démarrage
+# si l'index a plus de 30 jours).
+
+SP_DB = Path(os.getenv("HERMES_HOME", str(Path.home() / ".hermes"))) / "service-public.db"
+SP_FLUX = {
+    "professionnels": "https://lecomarquage.service-public.gouv.fr/vdd/3.5/pro/zip/vosdroits-latest.zip",
+    "particuliers": "https://lecomarquage.service-public.gouv.fr/vdd/3.5/part/zip/vosdroits-latest.zip",
+}
+_sp_sync_lock = threading.Lock()
+
+
+def _sp_sync() -> dict:
+    """Télécharge les flux DILA et reconstruit l'index. ~2 min, sous verrou."""
+    import sqlite3
+    import tempfile
+    import xml.etree.ElementTree as ET
+    import zipfile
+
+    if not _sp_sync_lock.acquire(blocking=False):
+        return {"ok": False, "erreur": "synchronisation déjà en cours"}
+    try:
+        tmp_db = SP_DB.with_suffix(".tmp")
+        tmp_db.unlink(missing_ok=True)
+        db = sqlite3.connect(tmp_db)
+        db.execute(
+            "CREATE VIRTUAL TABLE fiches USING fts5"
+            "(id, audience, titre, sujet, description, texte, url, tokenize='unicode61 remove_diacritics 2')"
+        )
+        total = 0
+        for audience, url in SP_FLUX.items():
+            with tempfile.NamedTemporaryFile(suffix=".zip") as tmp:
+                with urllib.request.urlopen(url, timeout=180) as resp:
+                    shutil.copyfileobj(resp, tmp)
+                tmp.flush()
+                with zipfile.ZipFile(tmp.name) as z:
+                    for name in z.namelist():
+                        base = name.rsplit("/", 1)[-1]
+                        if not (base.startswith("F") and base.endswith(".xml")):
+                            continue
+                        with contextlib.suppress(Exception):
+                            root = ET.fromstring(z.read(name))
+                            fid = root.get("ID") or base[:-4]
+                            ns = {"dc": "http://purl.org/dc/elements/1.1/"}
+                            titre = (root.findtext("dc:title", "", ns) or "").strip()
+                            if not titre:
+                                continue
+                            db.execute(
+                                "INSERT INTO fiches VALUES (?,?,?,?,?,?,?)",
+                                (
+                                    fid,
+                                    audience,
+                                    titre,
+                                    (root.findtext("dc:subject", "", ns) or "").strip(),
+                                    (root.findtext("dc:description", "", ns) or "").strip(),
+                                    re.sub(r"\s+", " ", " ".join(root.itertext()))[:20000],
+                                    root.get("spUrl") or "",
+                                ),
+                            )
+                            total += 1
+        db.commit()
+        db.close()
+        tmp_db.replace(SP_DB)
+        return {"ok": True, "fiches": total}
+    except Exception as exc:
+        return {"ok": False, "erreur": f"{type(exc).__name__}: {str(exc)[:200]}"}
+    finally:
+        _sp_sync_lock.release()
+
+
+def _sp_maybe_refresh() -> None:
+    """Au démarrage : (re)construit l'index en arrière-plan si absent ou > 30 j."""
+    try:
+        age = time.time() - SP_DB.stat().st_mtime
+    except OSError:
+        age = None
+    if age is None or age > 30 * 86400:
+        threading.Thread(target=_sp_sync, daemon=True).start()
+
+
+def _sp_query(sql: str, params: tuple) -> list[tuple]:
+    import sqlite3
+
+    db = sqlite3.connect(f"file:{SP_DB}?mode=ro", uri=True)
+    try:
+        return db.execute(sql, params).fetchall()
+    finally:
+        db.close()
+
+
+def _tool_service_public(action: str, params: dict, _credentials: dict) -> dict:
+    if not SP_DB.exists():
+        return {"erreur": "index des fiches en cours de construction, réessaye dans une minute"}
+    if action == "rechercher_fiche":
+        mots = str(params.get("mots_cles", ""))[:150]
+        termes = re.findall(r"[\w'àâäéèêëîïôöùûüç-]+", mots.lower())[:8]
+        if not termes:
+            return {"erreur": "paramètre 'mots_cles' vide"}
+        fts = lambda op: op.join(f'"{t}"' for t in termes)  # noqa: E731
+        sql = (
+            "SELECT id, audience, titre, description, url FROM fiches "
+            "WHERE fiches MATCH ? ORDER BY bm25(fiches) LIMIT 5"
+        )
+        try:
+            rows = _sp_query(sql, (fts(" "),)) or _sp_query(sql, (fts(" OR "),))
+        except Exception as exc:
+            return {"erreur": f"recherche invalide : {str(exc)[:120]}"}
+        return {
+            "resultats": [
+                {"id": r[0], "audience": r[1], "titre": r[2], "description": r[3][:250], "url": r[4]}
+                for r in rows
+            ]
+        }
+    if action == "consulter_fiche":
+        fid = str(params.get("id", "")).strip()
+        if not re.fullmatch(r"[FN]\d{2,6}", fid):
+            return {"erreur": "paramètre 'id' invalide (attendu : F suivi de chiffres, ex. F23211)"}
+        rows = _sp_query(
+            "SELECT id, audience, titre, sujet, texte, url FROM fiches WHERE id = ? LIMIT 1", (fid,)
+        )
+        if not rows:
+            return {"erreur": f"fiche introuvable : {fid}"}
+        r = rows[0]
+        return {"id": r[0], "audience": r[1], "titre": r[2], "sujet": r[3], "texte": r[4][:2800], "url": r[5]}
+    return {"erreur": f"action service_public inconnue : {action}"}
+
+
+@app.post("/tools/service-public/sync", dependencies=[Depends(_auth)])
+def service_public_sync() -> dict:
+    return _sp_sync()
+
+TOOL_APIS = {
+    "legifrance": {
+        "executor": _tool_legifrance,
+        "spec": (
+            "### legifrance — textes officiels (Légifrance)\n"
+            "- legifrance.rechercher_loi {\"mots_cles\": \"...\"} : lois et décrets en vigueur.\n"
+            "- legifrance.rechercher_jurisprudence {\"mots_cles\": \"...\"} : décisions de justice judiciaire.\n"
+            "- legifrance.rechercher_convention {\"mots_cles\": \"...\"} : conventions collectives et accords de branche (fond KALI).\n"
+            "- legifrance.consulter_article {\"id\": \"LEGIARTI...\"} : texte intégral d'un article (id obtenu via une recherche)."
+        ),
+    },
+    "judilibre": {
+        "executor": _tool_judilibre,
+        "spec": (
+            "### judilibre — jurisprudence de la Cour de cassation (texte intégral)\n"
+            "- judilibre.rechercher {\"mots_cles\": \"...\"} : décisions pertinentes (id, chambre, date, solution, extraits).\n"
+            "- judilibre.consulter_decision {\"id\": \"...\"} : texte intégral d'une décision (id obtenu via la recherche)."
+        ),
+    },
+    "pappers": {
+        "executor": _tool_pappers,
+        "spec": (
+            "### pappers — fiche légale complète du débiteur (agrégateur RNE, BODACC, greffes)\n"
+            "- pappers.fiche {\"siren\": \"9 chiffres\"} : dénomination, forme juridique, siège officiel, "
+            "dirigeants, procédures collectives, cessation, comptes et actes déposés. "
+            "Source d'identification fiable avant mise en demeure ou recommandé."
+        ),
+    },
+    "bodacc": {
+        "executor": _tool_bodacc,
+        "spec": (
+            "### bodacc — annonces commerciales officielles (BODACC)\n"
+            "- bodacc.annonces {\"siren\": \"9 chiffres\"} : procédures collectives, radiations, ventes, "
+            "modifications. Le champ 'alerte' signale une procédure collective ou radiation — à vérifier "
+            "AVANT toute relance ou mise en demeure."
+        ),
+    },
+    "justice_administrative": {
+        "executor": _tool_justice_administrative,
+        "spec": (
+            "### justice_administrative — jurisprudence administrative (Conseil d'État, CAA, TA)\n"
+            "- justice_administrative.rechercher {\"mots_cles\": \"...\"} : décisions du contentieux "
+            "administratif (fiscal, URSSAF public, amendes administratives, recours contre l'administration).\n"
+            "- justice_administrative.consulter_decision {\"id\": \"CETATEXT...\"} : texte intégral "
+            "(id obtenu via la recherche)."
+        ),
+    },
+    "service_public": {
+        "executor": _tool_service_public,
+        "spec": (
+            "### service_public — fiches pratiques officielles (Service-Public / Entreprendre)\n"
+            "- service_public.rechercher_fiche {\"mots_cles\": \"...\"} : démarches, procédures, "
+            "contestations, délais, formulaires (fiches DILA officielles).\n"
+            "- service_public.consulter_fiche {\"id\": \"F23211\"} : contenu d'une fiche "
+            "(id obtenu via la recherche)."
+        ),
+    },
+    "entreprises": {
+        "executor": _tool_entreprises,
+        "spec": (
+            "### entreprises — annuaire officiel des entreprises françaises\n"
+            "- entreprises.rechercher {\"recherche\": \"nom ou SIREN/SIRET\"} : identité, état administratif (active/cessée), siège, dirigeants."
+        ),
+    },
+}
+
+
+def _tools_system_block(apis: list[dict]) -> str:
+    specs = [TOOL_APIS[a["name"]]["spec"] for a in apis if a.get("name") in TOOL_APIS]
+    if not specs:
+        return ""
+    return (
+        "\n\n[OUTILS DISPONIBLES]\n"
+        "Tu peux interroger des APIs officielles avant de produire ta réponse.\n"
+        "Pour appeler un outil, réponds UNIQUEMENT avec : "
+        "{\"outil\": \"<api.action>\", \"params\": {...}} — rien d'autre.\n"
+        "Un SEUL appel par réponse, puis arrête-toi : le résultat réel te sera "
+        "renvoyé sous [RÉSULTAT OUTIL]. N'écris JAMAIS toi-même un bloc "
+        "[RÉSULTAT OUTIL] ni un résultat imaginé. "
+        f"Tu disposes d'au plus {TOOL_CALLS_MAX} appels ; ensuite, produis le JSON final demandé.\n"
+        "N'invente jamais un contenu que l'outil peut vérifier.\n\n" + "\n\n".join(specs)
+    )
+
+
+def _first_json_object(text: str) -> dict | None:
+    """Premier objet JSON complet du texte (équilibrage d'accolades), sinon None.
+    Indispensable : le modèle ajoute parfois du texte ou des blocs hallucinés
+    après son JSON — first-{ → last-} casserait le parsing."""
+    start = text.find("{")
+    while start >= 0:
+        depth, in_str, esc = 0, False, False
+        for i in range(start, len(text)):
+            c = text[i]
+            if in_str:
+                if esc:
+                    esc = False
+                elif c == "\\":
+                    esc = True
+                elif c == '"':
+                    in_str = False
+            elif c == '"':
+                in_str = True
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    with contextlib.suppress(Exception):
+                        obj = json.loads(text[start:i + 1])
+                        if isinstance(obj, dict):
+                            return obj
+                    break
+        start = text.find("{", start + 1)
+    return None
+
+
+def _parse_tool_call(text: str) -> dict | None:
+    """Repère {"outil": ..., "params": ...} en tête de réponse, sinon None."""
+    obj = _first_json_object(text)
+    if obj is not None and isinstance(obj.get("outil"), str):
+        return obj
+    return None
+
+
+def _execute_tool_call(call: dict, apis_by_name: dict[str, dict]) -> dict:
+    ref = call.get("outil", "")
+    api_name, _, action = ref.partition(".")
+    api = apis_by_name.get(api_name)
+    if api is None or api_name not in TOOL_APIS:
+        return {"erreur": f"outil non activé : {ref}"}
+    params = call.get("params") if isinstance(call.get("params"), dict) else {}
+    result = TOOL_APIS[api_name]["executor"](action, params, api.get("credentials") or {})
+    text = json.dumps(result, ensure_ascii=False)
+    if len(text) > TOOL_RESULT_MAX:
+        return {"tronque": text[:TOOL_RESULT_MAX] + "… (tronqué)"}
+    return result
+
+
+
 class RunRequest(BaseModel):
     agent: str
     system: str
     input: str
     model: str | None = None
     skills: list[str] = []
+    tool_apis: list[dict] = []
     timeout_s: int | None = None
 
 
@@ -723,18 +1405,45 @@ async def run(req: RunRequest) -> dict:
         if ctx:
             system = f"{system}\n\n[SAVOIR-FAIRE À TA DISPOSITION]\n{ctx}"
 
+    apis = [a for a in req.tool_apis if isinstance(a, dict) and a.get("name") in TOOL_APIS]
+    apis_by_name = {a["name"]: a for a in apis}
+    system += _tools_system_block(apis)
+
     message = (
         f"{req.input}\n\n"
         "Réponds UNIQUEMENT avec le JSON demandé, sans aucun texte autour."
     )
     loop = asyncio.get_running_loop()
     t0 = time.perf_counter()
+    total_in = total_out = 0
+    tool_trace: list[str] = []
     async with _locks[agent]:
         try:
-            text, tokens_in, tokens_out = await asyncio.wait_for(
-                loop.run_in_executor(None, _chat_sync, agent, model, system, message),
-                timeout=req.timeout_s or CHAT_TIMEOUT,
-            )
+            for _ in range(TOOL_CALLS_MAX + 1):
+                text, tokens_in, tokens_out = await asyncio.wait_for(
+                    loop.run_in_executor(None, _chat_sync, agent, model, system, message),
+                    timeout=req.timeout_s or CHAT_TIMEOUT,
+                )
+                total_in += tokens_in
+                total_out += tokens_out
+                call = _parse_tool_call(text) if apis else None
+                if call is None or len(tool_trace) >= TOOL_CALLS_MAX:
+                    if apis:
+                        final_obj = _first_json_object(text)
+                        if final_obj is not None and "outil" not in final_obj:
+                            text = json.dumps(final_obj, ensure_ascii=False)
+                    break
+                result = await loop.run_in_executor(None, _execute_tool_call, call, apis_by_name)
+                tool_trace.append(call.get("outil", "?"))
+                # Appels sans état : on reconstruit le message avec la transcription.
+                message = (
+                    f"{message}\n\n[TON APPEL OUTIL {len(tool_trace)}]\n"
+                    f"{json.dumps(call, ensure_ascii=False)}\n"
+                    f"[RÉSULTAT OUTIL {len(tool_trace)}]\n"
+                    f"{json.dumps(result, ensure_ascii=False)[:TOOL_RESULT_MAX]}\n\n"
+                    "Poursuis : appelle un autre outil si nécessaire, sinon réponds "
+                    "maintenant UNIQUEMENT avec le JSON final demandé."
+                )
         except asyncio.TimeoutError:
             raise HTTPException(504, "délai Hermes dépassé")
         except RuntimeError as exc:
@@ -745,7 +1454,8 @@ async def run(req: RunRequest) -> dict:
         "agent": agent,
         "model": model,
         "text": text,
-        "input_tokens": tokens_in,
-        "output_tokens": tokens_out,
+        "input_tokens": total_in,
+        "output_tokens": total_out,
+        "tool_calls": tool_trace,
         "duration_ms": int((time.perf_counter() - t0) * 1000),
     }

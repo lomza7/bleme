@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { getSecret } from "@/lib/secrets";
+import { TOOL_APIS, TOOL_API_NAMES } from "@/lib/tool-apis";
 
 /* Pont console → bleme-bridge (VPS) : état du cerveau Hermes, bibliothèque
  * de skills (installation/retrait), résumé de l'organisation Paperclip.
@@ -249,6 +250,68 @@ export async function toggleSkillScope(formData: FormData): Promise<void> {
   revalidatePath("/admin/hermes");
 }
 
+// ── APIs outils : activation commune (agent_key null) ou propre à un agent ───
+
+
+export type ToolApiScopes = Record<string, string[]>; // api → ["commun"|agentKey...]
+
+export async function getToolApiScopes(): Promise<ToolApiScopes> {
+  const supabase = await createClient();
+  if (!(await requireAdmin())) return {};
+  const { data } = await supabase.from("agent_tool_apis").select("api_name, agent_key");
+  const out: ToolApiScopes = {};
+  for (const r of data ?? []) {
+    const scope = r.agent_key ?? "commun";
+    out[r.api_name] = [...(out[r.api_name] ?? []), scope];
+  }
+  return out;
+}
+
+/** Présence des clés requises par chaque API (jamais les valeurs). */
+export async function getToolApiReadiness(): Promise<Record<string, boolean>> {
+  if (!(await requireAdmin())) return {};
+  const out: Record<string, boolean> = {};
+  for (const api of TOOL_APIS) {
+    const values = await Promise.all(api.secrets.map((s) => getSecret(s)));
+    out[api.name] = values.every(Boolean);
+  }
+  return out;
+}
+
+const toolApiScopeSchema = z.object({
+  api: z.string().regex(/^[a-z0-9_-]+$/),
+  scope: z.string().regex(/^(commun|[a-z]+)$/),
+});
+
+export async function toggleToolApiScope(formData: FormData): Promise<void> {
+  const supabase = await createClient();
+  if (!(await requireAdmin())) return;
+  const parsed = toolApiScopeSchema.safeParse({
+    api: formData.get("api"),
+    scope: formData.get("scope"),
+  });
+  if (!parsed.success || !TOOL_API_NAMES.has(parsed.data.api)) return;
+  const agentKey = parsed.data.scope === "commun" ? null : parsed.data.scope;
+
+  const query = supabase
+    .from("agent_tool_apis")
+    .select("id")
+    .eq("api_name", parsed.data.api);
+  const { data: existing } = agentKey === null
+    ? await query.is("agent_key", null).maybeSingle()
+    : await query.eq("agent_key", agentKey).maybeSingle();
+
+  if (existing) {
+    await supabase.from("agent_tool_apis").delete().eq("id", existing.id);
+  } else {
+    await supabase.from("agent_tool_apis").insert({
+      api_name: parsed.data.api,
+      agent_key: agentKey,
+    });
+  }
+  revalidatePath("/admin", "layout");
+}
+
 // ── Organigramme et ticketing Paperclip ──────────────────────────────────────
 
 export type PcAgent = {
@@ -305,6 +368,78 @@ export async function getPaperclipIssues(): Promise<PcIssue[]> {
   } catch {
     return [];
   }
+}
+
+const pcAgentSchema = z.object({
+  name: z.string().trim().min(2, "Nom trop court.").max(60),
+  title: z.string().trim().max(80).optional().default(""),
+  reportsTo: z.string().uuid().optional().or(z.literal("")),
+});
+
+export async function createPcAgent(
+  _prev: HermesState,
+  formData: FormData,
+): Promise<HermesState> {
+  if (!(await requireAdmin())) return { error: "Accès réservé aux administrateurs." };
+  const parsed = pcAgentSchema.safeParse({
+    name: formData.get("name"),
+    title: formData.get("title") ?? "",
+    reportsTo: formData.get("reportsTo") ?? "",
+  });
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message ?? "Agent invalide." };
+  try {
+    await bridgeFetch("/paperclip/agents/create", {
+      method: "POST",
+      body: JSON.stringify({
+        name: parsed.data.name,
+        title: parsed.data.title || null,
+        reports_to: parsed.data.reportsTo || null,
+      }),
+    });
+    revalidatePath("/admin/hermes");
+    return { success: `Agent « ${parsed.data.name} » créé dans Paperclip.` };
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : "Échec de la création." };
+  }
+}
+
+export async function patchPcAgent(formData: FormData): Promise<void> {
+  if (!(await requireAdmin())) return;
+  const id = z.string().uuid().safeParse(formData.get("id"));
+  if (!id.success) return;
+  const patch: Record<string, unknown> = {};
+  if (formData.has("reportsTo")) {
+    const v = String(formData.get("reportsTo") ?? "");
+    patch.reportsTo = v === "" ? null : v;
+  }
+  if (formData.has("status")) {
+    patch.status = String(formData.get("status"));
+  }
+  if (Object.keys(patch).length === 0) return;
+  try {
+    await bridgeFetch("/paperclip/agents/update", {
+      method: "POST",
+      body: JSON.stringify({ id: id.data, patch }),
+    });
+  } catch {
+    /* le rafraîchissement montrera l'état réel */
+  }
+  revalidatePath("/admin/hermes");
+}
+
+export async function deletePcAgent(formData: FormData): Promise<void> {
+  if (!(await requireAdmin())) return;
+  const id = z.string().uuid().safeParse(formData.get("id"));
+  if (!id.success) return;
+  try {
+    await bridgeFetch("/paperclip/agents/delete", {
+      method: "POST",
+      body: JSON.stringify({ id: id.data }),
+    });
+  } catch {
+    /* idem */
+  }
+  revalidatePath("/admin/hermes");
 }
 
 const ticketSchema = z.object({

@@ -151,6 +151,15 @@ export async function testAnthropicKey(): Promise<VaultState> {
   }
 }
 
+export async function testMerciFacteur(): Promise<VaultState> {
+  const user = await requireUnlockedAdmin();
+  if (!user) return { error: "Coffre verrouillé : déverrouillez-le d’abord." };
+  const { getMerciFacteurToken } = await import("@/lib/courrier/merci-facteur");
+  const result = await getMerciFacteurToken();
+  if ("error" in result) return { error: result.error };
+  return { success: "Identifiants Merci Facteur valides : access token obtenu (24 h)." };
+}
+
 /** Statut d'affichage : configurée en base, en ENV, ou absente (jamais la valeur en clair). */
 export async function getKeysStatus() {
   const user = await requireAdmin();
@@ -194,7 +203,8 @@ const ENV_WATCHLIST = [
   "ANTHROPIC_API_KEY",
   "GROQ_API_KEY",
   "RESEND_API_KEY",
-  "MERCI_FACTEUR_API_KEY",
+  "MERCI_FACTEUR_SERVICE_ID",
+  "MERCI_FACTEUR_SECRET_KEY",
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
   "NOUS_API_KEY",

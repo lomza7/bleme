@@ -24,7 +24,9 @@ const serverSchema = publicSchema.extend({
   RESEND_INBOUND_SECRET: z.string().min(1).optional(),
   STRIPE_SECRET_KEY: z.string().min(1).optional(),
   STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
-  MERCI_FACTEUR_API_KEY: z.string().min(1).optional(),
+  MERCI_FACTEUR_SERVICE_ID: z.string().min(1).optional(),
+  MERCI_FACTEUR_SECRET_KEY: z.string().min(1).optional(),
+  MERCI_FACTEUR_WEBHOOK_SECRET: z.string().min(1).optional(),
   CASE_EMAIL_DOMAIN: z.string().min(1).default("dossiers.bleme.fr"),
 });
 

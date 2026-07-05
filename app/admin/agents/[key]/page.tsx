@@ -4,7 +4,14 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, History } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { AgentSettingsForm, PromptEditor, TestAgentButton } from "@/components/admin/forms";
-import { getOpenRouterModels, getSkillScopes } from "@/lib/admin/hermes-actions";
+import {
+  getOpenRouterModels,
+  getSkillScopes,
+  getToolApiReadiness,
+  getToolApiScopes,
+  toggleToolApiScope,
+} from "@/lib/admin/hermes-actions";
+import { TOOL_APIS } from "@/lib/tool-apis";
 import { SpriteAvatar } from "@/components/landing/sprite-avatar";
 
 export const metadata: Metadata = { title: "Agent" };
@@ -28,7 +35,12 @@ export default async function AgentAdminPage({
   const { key } = await params;
   const supabase = await createClient();
 
-  const [models, scopes] = await Promise.all([getOpenRouterModels(), getSkillScopes()]);
+  const [models, scopes, toolScopes, toolReadiness] = await Promise.all([
+    getOpenRouterModels(),
+    getSkillScopes(),
+    getToolApiScopes(),
+    getToolApiReadiness(),
+  ]);
   const [{ data: agent }, { data: runs }, { data: versions }] = await Promise.all([
     supabase.from("agents").select("*").eq("key", key).maybeSingle(),
     supabase
@@ -109,6 +121,85 @@ export default async function AgentAdminPage({
             </div>
           );
         })()}
+      </section>
+
+      <section className="rounded-[1.75rem] border bg-card p-6 sm:p-7">
+        <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          APIs outils
+        </h2>
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+          Sources officielles que {agent.prenom} peut interroger pendant un
+          run : l’agent émet un appel, le bridge exécute la requête et lui
+          renvoie le résultat avant la réponse finale.
+        </p>
+        <div className="mt-4 flex flex-col gap-3">
+          {TOOL_APIS.map((api) => {
+            const apiScopes = toolScopes[api.name] ?? [];
+            const commun = apiScopes.includes("commun");
+            const propre = apiScopes.includes(agent.key);
+            const ready = toolReadiness[api.name] ?? false;
+            return (
+              <div
+                key={api.name}
+                className="flex flex-col gap-3 rounded-2xl border bg-background p-4 sm:flex-row sm:items-center"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="flex flex-wrap items-center gap-2 text-sm font-semibold">
+                    {api.label}
+                    {ready ? (
+                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200">
+                        prête
+                      </span>
+                    ) : (
+                      <Link
+                        href="/admin/cles"
+                        className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700 ring-1 ring-amber-200 hover:bg-amber-100"
+                      >
+                        clés manquantes : {api.secrets.join(", ")}
+                      </Link>
+                    )}
+                  </p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {api.description}
+                  </p>
+                  <p className="mt-1.5 font-mono text-[10px] text-muted-foreground/80">
+                    {api.actions.map((a) => `${api.name}.${a}`).join(" · ")}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  <form action={toggleToolApiScope}>
+                    <input type="hidden" name="api" value={api.name} />
+                    <input type="hidden" name="scope" value={agent.key} />
+                    <button
+                      type="submit"
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition-colors ${
+                        propre
+                          ? "bg-brand-soft text-brand-strong ring-brand/30"
+                          : "text-muted-foreground ring-border hover:text-foreground"
+                      }`}
+                    >
+                      {propre ? `Active pour ${agent.prenom}` : `Activer pour ${agent.prenom}`}
+                    </button>
+                  </form>
+                  <form action={toggleToolApiScope}>
+                    <input type="hidden" name="api" value={api.name} />
+                    <input type="hidden" name="scope" value="commun" />
+                    <button
+                      type="submit"
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition-colors ${
+                        commun
+                          ? "bg-ink text-white ring-ink"
+                          : "text-muted-foreground ring-border hover:text-foreground"
+                      }`}
+                    >
+                      {commun ? "Commune aux 6" : "Commun aux 6"}
+                    </button>
+                  </form>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </section>
 
       <section className="rounded-[1.75rem] border bg-card p-6 sm:p-7">

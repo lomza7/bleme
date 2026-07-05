@@ -6,6 +6,7 @@ import {
   createVaultPassword,
   setApiKey,
   testAnthropicKey,
+  testMerciFacteur,
   unlockVault,
   type VaultState,
 } from "@/lib/admin/secrets-actions";
@@ -137,6 +138,23 @@ export function SetKeyForm({
 
 export function TestAnthropicButton() {
   const [state, action, pending] = useActionState(testAnthropicKey, INITIAL);
+  return (
+    <form action={action} className="flex items-center gap-3">
+      <button
+        type="submit"
+        disabled={pending}
+        className="inline-flex items-center gap-1.5 rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors hover:border-brand/50 hover:text-brand-strong disabled:opacity-60"
+      >
+        <Plug2 className="size-3.5" />
+        {pending ? "Test…" : "Tester la connexion"}
+      </button>
+      <Feedback state={state} />
+    </form>
+  );
+}
+
+export function TestMerciFacteurButton() {
+  const [state, action, pending] = useActionState(testMerciFacteur, INITIAL);
   return (
     <form action={action} className="flex items-center gap-3">
       <button
