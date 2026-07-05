@@ -112,15 +112,9 @@ export default async function AdminHome() {
 
               <div className="mt-4 space-y-1.5 border-t pt-3.5 text-xs text-muted-foreground">
                 <p className="flex justify-between">
-                  <span>Runtime</span>
-                  <span className={`font-mono ${agent.runtime === "hermes" ? "text-brand-strong" : "text-foreground"}`}>
-                    {agent.runtime === "hermes" ? "hermes · VPS" : "claude · API"}
-                  </span>
-                </p>
-                <p className="flex justify-between">
-                  <span>Modèle</span>
-                  <span className="max-w-40 truncate font-mono text-foreground" title={agent.runtime === "hermes" ? agent.hermes_model : agent.model}>
-                    {agent.runtime === "hermes" ? agent.hermes_model : agent.model}
+                  <span>Modèle (OpenRouter)</span>
+                  <span className="max-w-40 truncate font-mono text-foreground" title={agent.hermes_model}>
+                    {agent.hermes_model}
                   </span>
                 </p>
                 <p className="flex justify-between">

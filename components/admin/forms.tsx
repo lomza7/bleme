@@ -50,24 +50,9 @@ export function AgentSettingsForm({
   return (
     <form action={action} className="flex flex-col gap-4">
       <input type="hidden" name="key" value={agent.key} />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <label className="flex flex-col gap-1.5 text-sm font-medium">
-          Runtime
-          <select name="runtime" defaultValue={agent.runtime} className={inputCls}>
-            <option value="claude">Claude (API Anthropic)</option>
-            <option value="hermes">Hermes (VPS · Nous)</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1.5 text-sm font-medium">
-          Modèle (runtime Claude)
-          <select name="model" defaultValue={agent.model} className={inputCls}>
-            <option value="claude-sonnet-5">Sonnet 5 (défaut)</option>
-            <option value="claude-haiku-4-5">Haiku 4.5 (rapide)</option>
-            <option value="claude-opus-4-8">Opus 4.8 (fort)</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1.5 text-sm font-medium">
-          Modèle (runtime Hermes)
+          Modèle (OpenRouter)
           <input
             name="hermesModel"
             defaultValue={agent.hermes_model}
@@ -81,7 +66,14 @@ export function AgentSettingsForm({
             <option value="moonshotai/kimi-k2.6" />
             <option value="deepseek/deepseek-chat" />
             <option value="qwen/qwen3-235b-a22b" />
+            <option value="anthropic/claude-sonnet-4.5" />
+            <option value="anthropic/claude-haiku-4.5" />
+            <option value="openai/gpt-5.2" />
+            <option value="google/gemini-2.5-pro" />
           </datalist>
+          <span className="text-[11px] font-normal text-muted-foreground">
+            Tout slug OpenRouter est accepté ; le run de test valide le choix.
+          </span>
         </label>
         <label className="flex flex-col gap-1.5 text-sm font-medium">
           Statut

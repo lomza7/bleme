@@ -26,8 +26,6 @@ async function requireAdmin() {
 
 const settingsSchema = z.object({
   key: z.string().min(1),
-  model: z.enum(["claude-sonnet-5", "claude-haiku-4-5", "claude-opus-4-8"]),
-  runtime: z.enum(["claude", "hermes"]),
   hermesModel: z
     .string()
     .trim()
@@ -45,8 +43,6 @@ export async function updateAgentSettings(
 
   const parsed = settingsSchema.safeParse({
     key: formData.get("key"),
-    model: formData.get("model"),
-    runtime: formData.get("runtime"),
     hermesModel: formData.get("hermesModel"),
     status: formData.get("status"),
     budgetEuros: formData.get("budgetEuros"),
@@ -58,8 +54,7 @@ export async function updateAgentSettings(
   const { error } = await admin.supabase
     .from("agents")
     .update({
-      model: parsed.data.model,
-      runtime: parsed.data.runtime,
+      runtime: "hermes",
       hermes_model: parsed.data.hermesModel,
       status: parsed.data.status,
       monthly_budget_cents: Math.round(parsed.data.budgetEuros * 100),
