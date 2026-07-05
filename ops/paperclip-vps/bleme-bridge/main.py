@@ -240,14 +240,119 @@ def remove_skill(req: SkillRequest) -> dict:
     return {"removed": name}
 
 
+def _pc(method: str, path: str, body: dict | None = None):
+    req = urllib.request.Request(
+        f"{PAPERCLIP_API}{path}",
+        method=method,
+        headers={"Content-Type": "application/json"},
+        data=json.dumps(body).encode() if body is not None else None,
+    )
+    with urllib.request.urlopen(req, timeout=8) as r:
+        return json.load(r)
+
+
+def _pc_company_id() -> str:
+    companies = _pc("GET", "/companies")
+    if not companies:
+        raise HTTPException(502, "aucune company Paperclip")
+    return companies[0]["id"]
+
+
 @app.get("/paperclip/summary", dependencies=[Depends(_auth)])
 def paperclip_summary() -> dict:
     try:
-        with urllib.request.urlopen(f"{PAPERCLIP_API}/companies", timeout=5) as r:
-            companies = json.load(r)
+        companies = _pc("GET", "/companies")
         return {"ok": True, "companies": companies}
     except Exception as exc:
         return {"ok": False, "error": str(exc)[:200]}
+
+
+@app.get("/paperclip/routines", dependencies=[Depends(_auth)])
+def paperclip_routines() -> dict:
+    try:
+        cid = _pc_company_id()
+        routines = _pc("GET", f"/companies/{cid}/routines")
+        return {"ok": True, "routines": routines}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:200], "routines": []}
+
+
+class RoutineCreate(BaseModel):
+    title: str
+    description: str | None = None
+    cron: str | None = None
+    activate: bool = False
+
+
+@app.post("/paperclip/routines", dependencies=[Depends(_auth)])
+def paperclip_routine_create(req: RoutineCreate) -> dict:
+    cid = _pc_company_id()
+    routine = _pc("POST", f"/companies/{cid}/routines", {
+        "title": req.title,
+        **({"description": req.description} if req.description else {}),
+    })
+    rid = routine["id"]
+    if req.cron:
+        _pc("POST", f"/routines/{rid}/triggers", {
+            "kind": "schedule",
+            "cronExpression": req.cron,
+        })
+    if req.activate:
+        routine = _pc("PATCH", f"/routines/{rid}", {"status": "active"})
+    return {"ok": True, "routine": routine}
+
+
+class RoutineStatus(BaseModel):
+    id: str
+    status: str
+
+
+@app.post("/paperclip/routines/status", dependencies=[Depends(_auth)])
+def paperclip_routine_status(req: RoutineStatus) -> dict:
+    if req.status not in ("active", "paused", "archived"):
+        raise HTTPException(400, "statut invalide")
+    routine = _pc("PATCH", f"/routines/{req.id}", {"status": req.status})
+    return {"ok": True, "routine": routine}
+
+
+class RoutineFire(BaseModel):
+    id: str
+
+
+@app.post("/paperclip/routines/fire", dependencies=[Depends(_auth)])
+def paperclip_routine_fire(req: RoutineFire) -> dict:
+    result = _pc("POST", f"/routines/{req.id}/run", {})
+    return {"ok": True, "result": result}
+
+
+MAX_SKILL_CHARS = 4000
+MAX_SKILLS_TOTAL = 14000
+
+
+def _skills_context(names: list[str]) -> str:
+    """Concatène les SKILL.md demandés (bornés) pour injection en système."""
+    parts: list[str] = []
+    total = 0
+    for name in names:
+        if not SKILL_NAME_RE.match(name):
+            continue
+        base = (HOME_SKILLS / name).resolve()
+        if HOME_SKILLS.resolve() not in base.parents or not base.is_dir():
+            continue
+        for candidate in ("SKILL.md", "README.md"):
+            f = base / candidate
+            if f.is_file():
+                with contextlib.suppress(Exception):
+                    content = f.read_text(encoding="utf-8", errors="ignore")[:MAX_SKILL_CHARS]
+                    chunk = f"### Skill : {name}\n{content}"
+                    if total + len(chunk) > MAX_SKILLS_TOTAL:
+                        return "\n\n".join(parts)
+                    parts.append(chunk)
+                    total += len(chunk)
+                break
+    return "\n\n".join(parts)
 
 
 class RunRequest(BaseModel):
@@ -255,6 +360,7 @@ class RunRequest(BaseModel):
     system: str
     input: str
     model: str | None = None
+    skills: list[str] = []
     timeout_s: int | None = None
 
 
@@ -276,6 +382,11 @@ async def run(req: RunRequest) -> dict:
     if agent not in AGENTS:
         raise HTTPException(400, f"agent inconnu: {agent}")
     model = (req.model or MODEL).strip()
+    system = req.system
+    if req.skills:
+        ctx = _skills_context(req.skills[:12])
+        if ctx:
+            system = f"{system}\n\n[SAVOIR-FAIRE À TA DISPOSITION]\n{ctx}"
 
     message = (
         f"{req.input}\n\n"
@@ -286,7 +397,7 @@ async def run(req: RunRequest) -> dict:
     async with _locks[agent]:
         try:
             text = await asyncio.wait_for(
-                loop.run_in_executor(None, _chat_sync, agent, model, req.system, message),
+                loop.run_in_executor(None, _chat_sync, agent, model, system, message),
                 timeout=req.timeout_s or CHAT_TIMEOUT,
             )
         except asyncio.TimeoutError:

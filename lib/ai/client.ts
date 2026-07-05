@@ -57,6 +57,16 @@ async function loadAgent(key: string): Promise<AgentConfig | null> {
   return (data as AgentConfig | null) ?? null;
 }
 
+/** Skills actives pour un agent : les communes (agent_key null) + les siennes. */
+async function loadAgentSkills(key: string): Promise<string[]> {
+  const supabase = createServiceClient();
+  const { data } = await supabase
+    .from("agent_skills")
+    .select("skill_name, agent_key")
+    .or(`agent_key.is.null,agent_key.eq.${key}`);
+  return [...new Set((data ?? []).map((r) => r.skill_name))];
+}
+
 async function monthlySpendMicrocents(key: string): Promise<number> {
   const supabase = createServiceClient();
   const { data } = await supabase
@@ -131,9 +141,10 @@ export async function runAgent<T>(opts: {
 
   // ── Runtime Hermes : le bleme-bridge du VPS (piloté par /admin) ────────────
   if (agent.runtime === "hermes") {
-    const [bridgeUrl, bridgeToken] = await Promise.all([
+    const [bridgeUrl, bridgeToken, skills] = await Promise.all([
       getSecret("BLEME_BRIDGE_URL"),
       getSecret("BLEME_BRIDGE_TOKEN"),
+      loadAgentSkills(agent.key),
     ]);
     if (!bridgeUrl || !bridgeToken) {
       await logRun({
@@ -160,6 +171,7 @@ export async function runAgent<T>(opts: {
           system: agent.system_prompt,
           input: JSON.stringify(opts.input),
           model: agent.hermes_model,
+          skills,
         }),
       });
       if (!response.ok) {

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, History } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { AgentSettingsForm, PromptEditor, TestAgentButton } from "@/components/admin/forms";
+import { getOpenRouterModels, getSkillScopes } from "@/lib/admin/hermes-actions";
 import { SpriteAvatar } from "@/components/landing/sprite-avatar";
 
 export const metadata: Metadata = { title: "Agent" };
@@ -27,6 +28,7 @@ export default async function AgentAdminPage({
   const { key } = await params;
   const supabase = await createClient();
 
+  const [models, scopes] = await Promise.all([getOpenRouterModels(), getSkillScopes()]);
   const [{ data: agent }, { data: runs }, { data: versions }] = await Promise.all([
     supabase.from("agents").select("*").eq("key", key).maybeSingle(),
     supabase
@@ -73,8 +75,40 @@ export default async function AgentAdminPage({
           Réglages du moteur
         </h2>
         <div className="mt-4">
-          <AgentSettingsForm agent={agent} />
+          <AgentSettingsForm agent={agent} models={models} />
         </div>
+        {(() => {
+          const communes = Object.entries(scopes)
+            .filter(([, s]) => s.includes("commun"))
+            .map(([n]) => n);
+          const propres = Object.entries(scopes)
+            .filter(([, s]) => s.includes(agent.key))
+            .map(([n]) => n);
+          return (
+            <div className="mt-5 border-t pt-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                Skills actives pour {agent.prenom}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {communes.map((n) => (
+                  <code key={n} className="rounded-full bg-muted px-2.5 py-1 font-mono text-[11px] text-muted-foreground">
+                    {n} · commun
+                  </code>
+                ))}
+                {propres.map((n) => (
+                  <code key={n} className="rounded-full bg-brand-soft px-2.5 py-1 font-mono text-[11px] text-brand-strong">
+                    {n}
+                  </code>
+                ))}
+                {communes.length + propres.length === 0 ? (
+                  <span className="text-xs text-muted-foreground">
+                    Aucune : gérez les portées dans l’onglet Hermes & Skills.
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          );
+        })()}
       </section>
 
       <section className="rounded-[1.75rem] border bg-card p-6 sm:p-7">

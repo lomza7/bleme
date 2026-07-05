@@ -8,6 +8,7 @@ import {
   updateAgentSettings,
   type AdminState,
 } from "@/lib/admin/actions";
+import type { ORModel } from "@/lib/admin/hermes-actions";
 
 const INITIAL: AdminState = {};
 
@@ -36,6 +37,7 @@ const inputCls =
 
 export function AgentSettingsForm({
   agent,
+  models = [],
 }: {
   agent: {
     key: string;
@@ -45,6 +47,7 @@ export function AgentSettingsForm({
     status: string;
     monthly_budget_cents: number;
   };
+  models?: ORModel[];
 }) {
   const [state, action, pending] = useActionState(updateAgentSettings, INITIAL);
   return (
@@ -61,18 +64,24 @@ export function AgentSettingsForm({
             placeholder="fournisseur/modele"
           />
           <datalist id="openrouter-modeles">
-            <option value="nousresearch/hermes-4-70b" />
-            <option value="nousresearch/hermes-4-405b" />
-            <option value="moonshotai/kimi-k2.6" />
-            <option value="deepseek/deepseek-chat" />
-            <option value="qwen/qwen3-235b-a22b" />
-            <option value="anthropic/claude-sonnet-4.5" />
-            <option value="anthropic/claude-haiku-4.5" />
-            <option value="openai/gpt-5.2" />
-            <option value="google/gemini-2.5-pro" />
+            {models.length > 0 ? (
+              models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {`${m.name}${m.tools ? " · outils ✓" : ""}`}
+                </option>
+              ))
+            ) : (
+              <>
+                <option value="nousresearch/hermes-4-70b" />
+                <option value="moonshotai/kimi-k2.6" />
+                <option value="anthropic/claude-sonnet-4.5" />
+              </>
+            )}
           </datalist>
           <span className="text-[11px] font-normal text-muted-foreground">
-            Tout slug OpenRouter est accepté ; le run de test valide le choix.
+            {models.length > 0
+              ? `${models.length} modèles, liste mise à jour automatiquement depuis OpenRouter · « outils ✓ » = tool use routé (requis pour les skills à outils)`
+              : "Tout slug OpenRouter est accepté ; le run de test valide le choix."}
           </span>
         </label>
         <label className="flex flex-col gap-1.5 text-sm font-medium">

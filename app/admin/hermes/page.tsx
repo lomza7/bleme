@@ -8,8 +8,18 @@ import {
   ExternalLink,
   Ticket,
 } from "lucide-react";
-import { getHermesOverview, type Skill } from "@/lib/admin/hermes-actions";
+import {
+  getHermesOverview,
+  getRoutines,
+  getSkillScopes,
+  setRoutineStatus,
+  fireRoutine,
+  toggleSkillScope,
+  type Skill,
+} from "@/lib/admin/hermes-actions";
 import { InstallSkillButton, RemoveSkillButton } from "@/components/admin/skills";
+import { RoutineCreateForm } from "@/components/admin/routines";
+import { createClient } from "@/lib/supabase/server";
 import { getSecret } from "@/lib/secrets";
 
 export const metadata: Metadata = { title: "Hermes & Skills" };
@@ -32,10 +42,15 @@ function groupByCategory(skills: Skill[]): Map<string, Skill[]> {
 }
 
 export default async function HermesAdminPage() {
-  const [overview, paperclipUrl] = await Promise.all([
+  const supabase = await createClient();
+  const [overview, paperclipUrl, scopes, routinesRes, { data: agentRows }] = await Promise.all([
     getHermesOverview(),
     getSecret("PAPERCLIP_URL"),
+    getSkillScopes(),
+    getRoutines(),
+    supabase.from("agents").select("key, prenom").order("created_at"),
   ]);
+  const agents = agentRows ?? [];
 
   if (!overview.configured) {
     return (
@@ -172,18 +187,47 @@ export default async function HermesAdminPage() {
           </p>
         ) : (
           <div className="mt-3 overflow-hidden rounded-[1.75rem] border bg-card">
-            {installed.map((s, i) => (
-              <div
-                key={s.name}
-                className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-4 ${i > 0 ? "border-t" : ""}`}
-              >
-                <code className="font-mono text-xs font-semibold">{s.name}</code>
-                <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-                  {s.description}
-                </span>
-                <RemoveSkillButton name={s.name} />
-              </div>
-            ))}
+            {installed.map((s, i) => {
+              const skillScopes = scopes[s.name] ?? [];
+              return (
+                <div key={s.name} className={`px-6 py-4 ${i > 0 ? "border-t" : ""}`}>
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <code className="font-mono text-xs font-semibold">{s.name}</code>
+                    <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                      {s.description}
+                    </span>
+                    <RemoveSkillButton name={s.name} />
+                  </div>
+                  <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+                      Portée
+                    </span>
+                    {[{ key: "commun", label: "Commun aux 6" }, ...agents.map((a) => ({ key: a.key, label: a.prenom }))].map(
+                      (scope) => {
+                        const active = skillScopes.includes(scope.key);
+                        return (
+                          <form key={scope.key} action={toggleSkillScope}>
+                            <input type="hidden" name="skill" value={s.name} />
+                            <input type="hidden" name="scope" value={scope.key} />
+                            <button
+                              type="submit"
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 transition-colors ${
+                                active
+                                  ? "bg-brand text-brand-foreground ring-brand"
+                                  : "bg-muted text-muted-foreground ring-black/5 hover:text-foreground"
+                              }`}
+                              title={active ? "Retirer cette portée" : "Activer cette portée"}
+                            >
+                              {scope.label}
+                            </button>
+                          </form>
+                        );
+                      },
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </section>
@@ -224,12 +268,92 @@ export default async function HermesAdminPage() {
         </div>
       </section>
 
+      {/* Routines : les crons des agents, dans les 2 sens (console ↔ Paperclip) */}
+      <section>
+        <h2 className="px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          Routines · les crons des agents · {routinesRes.routines.length}
+        </h2>
+        <p className="mt-1 px-1 text-xs text-muted-foreground">
+          Synchronisées avec Paperclip dans les deux sens : ce qui est créé
+          ici apparaît là-bas, et inversement.
+        </p>
+        <div className="mt-3 flex flex-col gap-3">
+          {routinesRes.routines.filter((r) => r.status !== "archived").length > 0 ? (
+            <div className="overflow-hidden rounded-[1.75rem] border bg-card">
+              {routinesRes.routines
+                .filter((r) => r.status !== "archived")
+                .map((r, i) => (
+                  <div
+                    key={r.id}
+                    className={`flex flex-wrap items-center gap-x-4 gap-y-2 px-6 py-4 ${i > 0 ? "border-t" : ""}`}
+                  >
+                    <span
+                      className={`size-2 shrink-0 rounded-full ${r.status === "active" ? "bg-emerald-500" : "bg-amber-400"}`}
+                      title={r.status}
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{r.title}</span>
+                      <span className="block text-[11px] text-muted-foreground">
+                        {r.triggers.filter((tr) => tr.kind === "schedule").map((tr) => tr.cronExpression).join(" · ") ||
+                          "déclenchement manuel"}
+                        {r.lastTriggeredAt
+                          ? ` · dernier run ${new Date(r.lastTriggeredAt).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}`
+                          : ""}
+                      </span>
+                    </span>
+                    <form action={fireRoutine}>
+                      <input type="hidden" name="id" value={r.id} />
+                      <button
+                        type="submit"
+                        className="rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors hover:border-brand/50 hover:text-brand-strong"
+                      >
+                        Lancer maintenant
+                      </button>
+                    </form>
+                    <form action={setRoutineStatus}>
+                      <input type="hidden" name="id" value={r.id} />
+                      <input type="hidden" name="status" value={r.status === "active" ? "paused" : "active"} />
+                      <button
+                        type="submit"
+                        className={`rounded-full px-3 py-1.5 text-[11px] font-medium ring-1 transition-colors ${
+                          r.status === "active"
+                            ? "bg-amber-50 text-amber-700 ring-amber-200 hover:bg-amber-100"
+                            : "bg-emerald-50 text-emerald-700 ring-emerald-200 hover:bg-emerald-100"
+                        }`}
+                      >
+                        {r.status === "active" ? "Mettre en pause" : "Activer"}
+                      </button>
+                    </form>
+                    <form action={setRoutineStatus}>
+                      <input type="hidden" name="id" value={r.id} />
+                      <input type="hidden" name="status" value="archived" />
+                      <button
+                        type="submit"
+                        className="rounded-full border px-3 py-1.5 text-[11px] text-muted-foreground transition-colors hover:border-red-300 hover:text-red-600"
+                      >
+                        Archiver
+                      </button>
+                    </form>
+                  </div>
+                ))}
+            </div>
+          ) : (
+            <p className="rounded-[1.75rem] border border-dashed px-6 py-6 text-center text-sm text-muted-foreground">
+              Aucune routine : créez la première ci-dessous, ou depuis le
+              dashboard Paperclip.
+            </p>
+          )}
+          <RoutineCreateForm />
+        </div>
+      </section>
+
       <p className="text-xs leading-relaxed text-muted-foreground/80">
-        Les skills sont partagées par les 6 agents (bibliothèque commune du
-        cerveau BLEME, isolée des autres instances Hermes du VPS). Les skills
-        qui déclenchent des outils nécessitent un modèle OpenRouter routant le
-        tool use (anthropic/*, openai/*…) — avec les modèles hermes-4, elles
-        agissent comme savoir-faire de contexte.
+        La bibliothèque est installée sur le cerveau BLEME (isolé des autres
+        instances Hermes du VPS) ; la portée de chaque skill se règle ici :
+        « Commun aux 6 » ou agent par agent. À chaque requête, l’agent reçoit
+        ses skills actives en savoir-faire de contexte. Les skills qui
+        déclenchent des outils nécessitent en plus un modèle marqué
+        « outils ✓ » dans le sélecteur.
       </p>
     </div>
   );
