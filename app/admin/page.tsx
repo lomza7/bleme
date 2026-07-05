@@ -42,6 +42,15 @@ function euros(cents: number): string {
   return `${Math.round(cents / 100).toLocaleString("fr-FR")} €`;
 }
 
+/** Coûts IA en microcentimes (1 € = 1 000 000) : précision adaptée aux petits montants. */
+function eurosIA(microcents: number): string {
+  const e = microcents / 1_000_000;
+  return `${e.toLocaleString("fr-FR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: e < 0.01 ? 4 : 2,
+  })} €`;
+}
+
 function dayKey(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
@@ -263,7 +272,7 @@ export default async function AdminOverview({
     },
     {
       label: "Coût IA du mois",
-      valeur: `${(aiCost / 1_000_000).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} €`,
+      valeur: eurosIA(aiCost),
       detail: `${monthRuns.length} run${monthRuns.length > 1 ? "s" : ""} · ${aiErrors} erreur${aiErrors > 1 ? "s" : ""}`,
     },
     {
@@ -348,7 +357,7 @@ export default async function AdminOverview({
               <span className="ml-1.5 text-sm font-normal text-muted-foreground">tokens</span>
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {euros(totalCostP)} estimés · {runsPeriode.length.toLocaleString("fr-FR")} runs ·
+              {eurosIA(totalCostP)} estimés · {runsPeriode.length.toLocaleString("fr-FR")} runs ·
               par {granularite}
             </p>
             <div className="mt-4">
@@ -368,7 +377,7 @@ export default async function AdminOverview({
                   .map(([model, v]) => ({
                     label: model.replace("hermes:", ""),
                     value: v.tokens,
-                    detail: euros(v.cost),
+                    detail: eurosIA(v.cost),
                   }))}
               />
               {byModel.size === 0 ? (
@@ -385,7 +394,7 @@ export default async function AdminOverview({
                   .map(([agent, v]) => ({
                     label: agent,
                     value: v.tokens,
-                    detail: euros(v.cost),
+                    detail: eurosIA(v.cost),
                   }))}
               />
               {byAgent.size === 0 ? (
