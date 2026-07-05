@@ -36,6 +36,9 @@ HERMES_ROOT = os.getenv("HERMES_ROOT", "/root/.hermes/hermes-agent")
 BRIDGE_BEARER = os.getenv("BLEME_BRIDGE_BEARER", "")
 MODEL = os.getenv("BLEME_HERMES_MODEL", "nousresearch/hermes-4-70b")
 PROVIDER = os.getenv("BLEME_HERMES_PROVIDER", "openrouter")
+# Clé OpenRouter dédiée BLEME (facturation séparée d'ATLAS) ; si absente,
+# HermesCLI retombe sur la clé du config.yaml partagé.
+API_KEY = os.getenv("BLEME_OPENROUTER_API_KEY") or None
 CHAT_TIMEOUT = int(os.getenv("BLEME_CHAT_TIMEOUT", "180"))
 
 AGENTS = ("marius", "lena", "jeanne", "nora", "sacha", "basile")
@@ -70,7 +73,9 @@ def _new_cli(model: str):
         # toolsets=["__aucun__"] : toolset inexistant → get_tool_definitions
         # filtre tout → aucun outil envoyé à l'API (requis : les endpoints
         # OpenRouter des modèles Hermes 4 ne routent pas le tool use).
-        return cli_module.HermesCLI(model=model, provider=PROVIDER, toolsets=["__aucun__"])
+        return cli_module.HermesCLI(
+            model=model, provider=PROVIDER, api_key=API_KEY, toolsets=["__aucun__"]
+        )
 
 
 def _get_cli(agent: str, model: str):
