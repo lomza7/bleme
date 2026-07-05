@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { BadgeCheck, Check, Sparkles } from "lucide-react";
+import { BadgeCheck, Check, Receipt, Sparkles } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/app/ui";
 
@@ -105,6 +105,26 @@ export default async function AbonnementPage() {
               </button>
             </div>
           ))}
+        </div>
+      </section>
+
+      {/* Factures BLEME */}
+      <section>
+        <h2 className="px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          Mes factures BLEME
+        </h2>
+        <div className="mt-3 flex flex-col items-start gap-4 rounded-[1.75rem] border bg-card p-8">
+          <span className="flex size-11 items-center justify-center rounded-full bg-brand-soft text-brand-strong">
+            <Receipt className="size-5" />
+          </span>
+          <p className="max-w-lg text-sm leading-relaxed text-muted-foreground">
+            Toutes les factures émises par BLEME apparaîtront ici : abonnement,
+            dossiers à l’unité, recommandés. Chacune sera téléchargeable en PDF
+            et envoyée par email, prête pour votre comptable.
+          </p>
+          <p className="rounded-full bg-muted px-3.5 py-1.5 text-xs font-medium text-muted-foreground">
+            Aucune facture pour l’instant : l’accès bêta est gratuit.
+          </p>
         </div>
       </section>
 

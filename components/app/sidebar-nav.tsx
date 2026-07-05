@@ -11,7 +11,6 @@ import {
   LayoutDashboard,
   Menu,
   Plus,
-  Receipt,
   Settings,
   Users,
   X,
@@ -23,7 +22,6 @@ const SECTIONS = [
     items: [
       { href: "/app", label: "Tableau de bord", icon: LayoutDashboard, exact: true },
       { href: "/app/dossiers", label: "Mes dossiers", icon: FolderOpen },
-      { href: "/app/factures", label: "Mes factures", icon: Receipt },
       { href: "/app/documents", label: "Mes documents", icon: FileText },
     ],
   },
