@@ -42,9 +42,9 @@ export default function Home() {
             "Assistant IA des artisans, freelances et TPE : impayés, litiges clients et démarches suivis en dossiers, avec relances cadencées et mise en demeure prête à valider.",
           inLanguage: "fr-FR",
           offers: [
-            { "@type": "Offer", name: "Pro Starter", price: "9", priceCurrency: "EUR", description: "1 dossier actif, cadences automatiques, exports illimités. Par mois, HT, sans engagement." },
-            { "@type": "Offer", name: "Pro Business", price: "49", priceCurrency: "EUR", description: "10 dossiers actifs, recommandés intégrés, templates personnalisés. Par mois, HT." },
-            { "@type": "Offer", name: "Pro Scale", price: "99", priceCurrency: "EUR", description: "Dossiers illimités, multi-utilisateurs, intégrations. Par mois, HT." },
+            { "@type": "Offer", name: "Gratuit", price: "0", priceCurrency: "EUR", description: "Préparer son dossier : récit vocal, preuves, boîte de réception, chronologie, brouillons visibles. Rien n'est envoyé." },
+            { "@type": "Offer", name: "Dossier à l'unité", price: "39", priceCurrency: "EUR", description: "Payé une fois, HT, suivi jusqu'à résolution : relances email cadencées, mise en demeure, export professionnel. 19 € HT avec l'abonnement Pro." },
+            { "@type": "Offer", name: "Pro", price: "9", priceCurrency: "EUR", description: "Par mois, HT, sans engagement : boîte de réception illimitée, veille des échéances, documents illimités, dossiers à 19 € HT." },
           ],
         }}
       />
@@ -343,42 +343,34 @@ function IaEtGardeFous() {
 }
 
 function Pricing() {
-  const plans = [
-    {
-      nom: "Pro Business",
-      prix: "49 €",
-      detail:
-        "10 dossiers actifs, recommandés intégrés, templates personnalisés",
-    },
-    {
-      nom: "Pro Scale",
-      prix: "99 €",
-      detail: "Dossiers illimités, multi-utilisateurs, intégrations",
-    },
-  ];
   return (
     <section id="tarifs" className="border-y bg-muted/40">
       <div className="mx-auto max-w-6xl scroll-mt-24 px-6 py-24 lg:py-32">
         <Reveal>
           <h2 className="max-w-2xl text-3xl font-bold tracking-tight sm:text-4xl">
-            Commencez par un dossier. Continuez si ça rapporte.
+            Gratuit pour préparer. Payez quand ça part.
           </h2>
+          <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
+            Montez votre dossier sans sortir la carte. Vous payez au dossier,
+            quand les courriers partent, et jamais de commission sur ce que vous
+            récupérez.
+          </p>
         </Reveal>
-        <RevealStagger className="mt-12 grid grid-cols-1 gap-4 lg:grid-cols-5" stagger={0.12}>
-          <RevealItem className="lg:col-span-2">
-            <div className="flex h-full flex-col justify-between rounded-[1.75rem] bg-ink p-9 text-ink-foreground">
+        <RevealStagger className="mt-12 grid grid-cols-1 gap-4 lg:grid-cols-2" stagger={0.12}>
+          <RevealItem>
+            <div className="flex h-full flex-col justify-between rounded-[1.75rem] border bg-card p-9">
               <div>
-                <h3 className="font-semibold">Pro Starter</h3>
+                <h3 className="font-semibold">Gratuit</h3>
                 <p className="mt-3 text-5xl font-bold tracking-tight">
-                  9 €
-                  <span className="ml-2 text-base font-normal text-ink-muted">
-                    HT/mois
+                  0 €
+                  <span className="ml-2 text-base font-normal text-muted-foreground">
+                    pour toujours
                   </span>
                 </p>
-                <p className="mt-4 leading-relaxed text-ink-muted">
-                  Votre premier dossier tourne pour le prix d’un sandwich :
-                  relances cadencées, mise en demeure, suivi et export. Sans
-                  engagement, remboursé si aucune relance n’est générée.
+                <p className="mt-4 leading-relaxed text-muted-foreground">
+                  Récit vocal, preuves, boîte de réception, chronologie et
+                  brouillons visibles en entier. Le dossier se monte au calme ;
+                  rien ne part tant que vous ne payez pas.
                 </p>
               </div>
               <PillCta href="/nouveau" className="mt-9 justify-center">
@@ -386,37 +378,45 @@ function Pricing() {
               </PillCta>
             </div>
           </RevealItem>
-          <RevealItem className="lg:col-span-3">
-            <div className="flex h-full flex-col overflow-hidden rounded-[1.75rem] border bg-card">
-              {plans.map((p) => (
-                <div
-                  key={p.nom}
-                  className="flex flex-1 flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b px-8 py-6 transition-colors duration-300 hover:bg-muted/50"
-                >
-                  <div className="min-w-0">
-                    <h3 className="font-semibold">{p.nom}</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      {p.detail}
-                    </p>
-                  </div>
-                  <p className="text-2xl font-bold tracking-tight">
-                    {p.prix}
-                    <span className="text-sm font-normal text-muted-foreground">
-                      {" "}
-                      HT/mois
-                    </span>
-                  </p>
-                </div>
-              ))}
-              <p className="bg-muted/50 px-8 py-4 text-[13px] leading-relaxed text-muted-foreground">
-                Sans engagement, résiliable en un clic. Moins 20 % en
-                facturation annuelle. Recommandés facturés au réel (environ
-                12 €). Vos données s’exportent à tout moment, même après
-                résiliation.
-              </p>
+          <RevealItem>
+            <div className="flex h-full flex-col justify-between rounded-[1.75rem] bg-ink p-9 text-ink-foreground">
+              <div>
+                <h3 className="font-semibold">Pro</h3>
+                <p className="mt-3 text-5xl font-bold tracking-tight">
+                  9 €
+                  <span className="ml-2 text-base font-normal text-ink-muted">
+                    HT/mois
+                  </span>
+                </p>
+                <p className="mt-4 leading-relaxed text-ink-muted">
+                  Le continu : boîte de réception illimitée, veille des
+                  échéances, documents sans limite, et le dossier à 19 € HT
+                  au lieu de 39 €. Sans engagement, rentabilisé dès le premier
+                  dossier de l’année.
+                </p>
+              </div>
+              <Link
+                href="/tarifs"
+                className="group mt-9 inline-flex items-center justify-center gap-2 rounded-full bg-white/10 px-6 py-3 text-[15px] font-medium ring-1 ring-white/15 transition-all duration-500 ease-fluid hover:bg-white/15 active:scale-[0.98]"
+              >
+                Voir le détail des tarifs
+                <ArrowRight className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />
+              </Link>
             </div>
           </RevealItem>
         </RevealStagger>
+        <Reveal delay={0.15}>
+          <p className="mt-6 rounded-[1.5rem] border bg-card px-7 py-4 text-[13px] leading-relaxed text-muted-foreground">
+            Le dossier : <strong className="text-foreground">39 € HT</strong>{" "}
+            payé une fois, suivi jusqu’à résolution (19 € HT avec Pro).
+            Envois au réel, validés par vous : relances email incluses,
+            recommandé avec AR 12 € HT.{" "}
+            <Link href="/tarifs" className="font-medium text-brand-strong underline-offset-4 hover:underline">
+              Tous les tarifs en détail
+            </Link>
+            .
+          </p>
+        </Reveal>
       </div>
     </section>
   );
@@ -444,8 +444,8 @@ const FAQ_ITEMS = [
       r: "En Europe. Export complet à tout moment, suppression sur demande, aucune revente, aucun entraînement d’IA sur vos dossiers.",
     },
     {
-      q: "Il y a un engagement ?",
-      r: "Non. Abonnement sans engagement dès 9 € par mois, résiliable en un clic, export libre même après départ.",
+      q: "Combien ça coûte, et il y a un engagement ?",
+      r: "Préparer un dossier est gratuit : récit, preuves, brouillons. Vous payez le dossier (39 € HT, ou 19 € HT avec l'abonnement Pro à 9 € HT/mois) quand les courriers partent, plus les envois au réel (recommandé avec AR 12 € HT). Sans engagement, jamais de commission sur les sommes récupérées, export libre même après départ.",
     },
 ];
 
@@ -543,7 +543,7 @@ function Footer() {
             <ul className="mt-4 space-y-2.5 text-sm">
               <li><a href="#comment" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Comment ça marche</a></li>
               <li><a href="#suivi" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Suivi des dossiers</a></li>
-              <li><a href="#tarifs" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Tarifs</a></li>
+              <li><Link href="/tarifs" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Tarifs</Link></li>
               <li><a href="#faq" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">FAQ</a></li>
             </ul>
             <p className="mt-6 text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">

@@ -8,25 +8,38 @@ export const metadata: Metadata = { title: "Mon abonnement" };
 
 const PLANS = [
   {
-    nom: "Pro Starter",
-    prix: "9 €",
-    inclus: ["1 dossier actif", "Cadences automatiques", "Dashboard cash", "Exports illimités"],
-  },
-  {
-    nom: "Pro Business",
-    prix: "49 €",
-    populaire: true,
+    nom: "Gratuit",
+    prix: "0 €",
+    suffixe: "pour toujours",
     inclus: [
-      "10 dossiers actifs",
-      "Recommandés intégrés",
-      "Templates personnalisés",
-      "Support prioritaire",
+      "Récit vocal et montage des preuves",
+      "Boîte de réception et chronologie",
+      "Brouillons visibles en entier",
+      "1 dossier en préparation",
     ],
   },
   {
-    nom: "Pro Scale",
-    prix: "99 €",
-    inclus: ["Dossiers illimités", "Multi-utilisateurs", "Intégrations compta", "Onboarding dédié"],
+    nom: "Le dossier",
+    prix: "39 €",
+    suffixe: "HT/dossier · 19 € en Pro",
+    populaire: true,
+    inclus: [
+      "Payé une fois, suivi jusqu’à résolution",
+      "Relances email incluses et cadencées",
+      "Mise en demeure prête à partir",
+      "Export pro : synthèse + pièces",
+    ],
+  },
+  {
+    nom: "Pro",
+    prix: "9 €",
+    suffixe: "HT/mois, sans engagement",
+    inclus: [
+      "Dossiers à 19 € HT au lieu de 39 €",
+      "Boîte de réception illimitée + libellés",
+      "Veille des échéances et prescription",
+      "Documents d’entreprise illimités",
+    ],
   },
 ];
 
@@ -53,9 +66,10 @@ export default async function AbonnementPage() {
           <div>
             <p className="font-semibold">Accès de lancement</p>
             <p className="mt-1 max-w-md text-sm leading-relaxed text-ink-muted">
-              Vous faites partie des premiers : l’accès est offert pendant la
-              construction. Au lancement, l’abonnement démarre à 9 € par mois,
-              remboursé si aucune relance n’est générée.
+              Vous faites partie des premiers : tout est offert pendant la
+              construction, dossiers compris. Au lancement, préparer restera
+              gratuit ; le dossier coûtera 39 € HT (19 € HT avec Pro à
+              9 € HT/mois).
             </p>
           </div>
         </div>
@@ -86,7 +100,7 @@ export default async function AbonnementPage() {
               <h3 className="font-semibold">{p.nom}</h3>
               <p className="mt-2 text-3xl font-bold tracking-tight">
                 {p.prix}
-                <span className="text-sm font-normal text-muted-foreground"> HT/mois</span>
+                <span className="text-sm font-normal text-muted-foreground"> {p.suffixe}</span>
               </p>
               <ul className="mt-5 flex-1 space-y-2.5">
                 {p.inclus.map((i) => (
@@ -129,10 +143,12 @@ export default async function AbonnementPage() {
       </section>
 
       <p className="text-xs leading-relaxed text-muted-foreground/80">
-        Moins 20 % en facturation annuelle. Frais variables au réel : recommandé
-        papier ~12 €, lettre recommandée électronique ~7 €. Un « dossier
-        actif » est un dossier ni résolu ni clôturé : vos dossiers terminés
-        restent consultables et exportables sans limite.
+        Pro en annuel : 90 € HT (2 mois offerts). Envois au réel, validés
+        avant chaque paiement : relances email incluses, lettre suivie
+        5 € HT, recommandé papier avec AR 12 € HT, recommandé électronique
+        8 € HT (bientôt). Jamais de commission sur les sommes récupérées ;
+        vos dossiers clôturés restent consultables et exportables sans
+        limite.
       </p>
     </div>
   );

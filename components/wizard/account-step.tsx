@@ -146,9 +146,9 @@ export function AccountStep({ data }: { data: WizardData }) {
           Créez votre compte pour ouvrir le dossier.
         </p>
         <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">
-          Une minute avec Google ou votre email. L’abonnement démarre à 9 €
-          par mois, sans engagement, remboursé si aucune relance n’est
-          générée.
+          Une minute avec votre email, et c’est gratuit : le dossier se
+          prépare sans payer. Vous ne réglez que quand les courriers partent,
+          à partir de 19 € HT le dossier.
         </p>
         <Link
           href="/signup?next=/app"

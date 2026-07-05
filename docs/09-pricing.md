@@ -1,16 +1,37 @@
 # Étape 9 — Pricing B2B
 
-> **Révision du 05/07/2026 (décision produit)** : le Pro Starter passe à
-> **9 € HT/mois avec 1 dossier actif** et devient LE produit d'appel — on
-> supprime le one-shot « premier dossier 39 € » (redondant face à un
-> abonnement moins cher). Nouvelle grille : Starter 9 € (1 dossier),
-> Business 49 € (10 dossiers, recommandés intégrés), Scale 99 € (illimité,
-> multi-utilisateurs). Logique : signer vite, faire vivre le premier dossier
-> dans l'abonnement, retenir par la valeur accumulée (historique, cadences,
-> adresse email par dossier) — jamais en bloquant les données. Vigilance
-> unit economics : à 9 €, la marge sur un dossier actif gourmand en IA est
-> mince (~3 € de coût IA) ; le modèle repose sur l'upsell Business dès le
-> 2e dossier simultané.
+> **Révision v2 du 05/07/2026 (décision produit — modèle hybride)** :
+> l'abonnement pur ne colle pas à un besoin épisodique (2-3 impayés/an →
+> churn dès résolution). Nouveau modèle, qui remplace les grilles
+> ci-dessous :
+>
+> - **Gratuit** : préparer sans payer — intake vocal, preuves, boîte de
+>   réception, chronologie, brouillons visibles. 1 dossier en préparation.
+>   **Rien n'est envoyé.** Le paywall tombe au moment de l'envoi, au pic de
+>   motivation.
+> - **Dossier à l'unité : 39 € HT** (19 € HT pour les abonnés Pro) — payé
+>   une fois, suivi jusqu'à résolution ou clôture, consultable à vie.
+>   Relances email incluses ; envois postaux au réel.
+> - **Pro : 9 € HT/mois** (annuel 90 €, 2 mois offerts) — achète le
+>   *continu* : boîte de réception illimitée + libellés, veille des
+>   échéances, documents illimités, dossiers en préparation illimités, et
+>   le tarif dossier réduit. L'occasionnel le rentabilise dès le 1er
+>   dossier de l'année.
+> - **Envois refacturés, prix affichés avant validation** : email inclus ·
+>   lettre suivie 5 € HT · recommandé papier AR 12 € HT · LRE qualifiée
+>   8 € HT (V2).
+> - Business/Scale (équipes, volume) : parqués pour la V2, hors grille
+>   publique.
+>
+> Invariants : jamais de commission sur les sommes récupérées (risque de
+> requalification en recouvrement réglementé), export libre à vie, pas de
+> frais de sortie. Ancre concurrentielle : MED par avocat 90-300 €,
+> recouvreurs 10-20 % du recouvré — un dossier BLEME complet avec un
+> recommandé = 51 € HT.
+>
+> *(Révision v1 du 05/07/2026, remplacée : Starter 9 €/1 dossier actif,
+> Business 49 €, Scale 99 €. Les sections ci-dessous datent des grilles
+> précédentes et restent pour l'historique des raisonnements.)*
 
 ## Logique d'ensemble
 
