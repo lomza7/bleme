@@ -7,6 +7,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { recomputeCaseProgress } from "@/lib/cases/completeness";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
+import { runAgent } from "@/lib/ai/client";
 
 /*
  * Courriers : brouillon (généré par template versionné, conforme — les
@@ -127,7 +128,36 @@ export async function generateLetter(
     .maybeSingle();
   if (!c) return { error: "Dossier introuvable." };
 
-  const { subject, body } = buildLetter(kind, c, org.orgName);
+  // Gabarit conforme (mentions légales fixes) = socle de secours et de sûreté.
+  const tpl = buildLetter(kind, c, org.orgName);
+  let subject = tpl.subject;
+  let body = tpl.body;
+  // Rédaction RÉELLE par Marius (run tracé dans agent_runs). Sur échec ou en
+  // bêta, on retombe sur le gabarit. L'utilisateur relit et valide de toute façon.
+  try {
+    const { data: m } = await runAgent({
+      key: "marius",
+      input: {
+        consigne:
+          "Rédige ce courrier en français à partir des seuls faits fournis. N'invente aucun montant, date ni fait. Garde les mentions légales du gabarit telles quelles. Réponds en JSON { subject, body_md }.",
+        type: LETTER_KINDS[kind].label,
+        ton: LETTER_KINDS[kind].tone,
+        destinataire: c.debtor_name,
+        montant_reclame_cents: c.amount_claimed_cents,
+        expediteur: org.orgName,
+        gabarit: tpl.body,
+      },
+      schema: z.object({ subject: z.string().min(3).max(200), body_md: z.string().min(60) }),
+      simulation: { subject: tpl.subject, body_md: tpl.body },
+      organizationId: org.orgId,
+      caseId: c.id,
+      maxTokens: 1200,
+    });
+    subject = m.subject?.trim() || tpl.subject;
+    body = m.body_md?.trim() || tpl.body;
+  } catch {
+    // run en erreur déjà tracé ; on garde le gabarit conforme
+  }
 
   const { data: created, error } = await supabase
     .from("letters")

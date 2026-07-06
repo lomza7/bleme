@@ -1,8 +1,10 @@
 "use client";
 
-import { useActionState, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { CircleAlert, CircleCheck, LoaderCircle, UploadCloud } from "lucide-react";
 import { uploadDocument, type DocState } from "@/lib/documents/actions";
+import { AnalysisModal } from "@/components/app/analysis-modal";
+import type { PieceAnalysis } from "@/lib/cases/analysis-types";
 
 const INITIAL: DocState = {};
 
@@ -19,6 +21,16 @@ export function Uploader({
   const formRef = useRef<HTMLFormElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [modal, setModal] = useState<PieceAnalysis | null>(null);
+  const shown = useRef<PieceAnalysis | null>(null);
+
+  // Ouvre la popup d'analyse dès qu'un upload renvoie une analyse.
+  useEffect(() => {
+    if (state.analysis && state.analysis !== shown.current) {
+      shown.current = state.analysis;
+      setModal(state.analysis);
+    }
+  }, [state.analysis]);
 
   function submitFiles(files: FileList | null) {
     if (!files || files.length === 0 || !inputRef.current) return;
@@ -27,6 +39,7 @@ export function Uploader({
   }
 
   return (
+    <>
     <form ref={formRef} action={action} className="flex flex-col gap-3">
       <input type="hidden" name="scope" value={scope} />
       {kinds && kinds.length > 0 ? (
@@ -100,5 +113,7 @@ export function Uploader({
         </p>
       ) : null}
     </form>
+    {modal ? <AnalysisModal analysis={modal} onClose={() => setModal(null)} /> : null}
+    </>
   );
 }

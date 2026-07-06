@@ -6,8 +6,17 @@ import { createClient } from "@/lib/supabase/server";
 import { parseWhatsAppExport, pickKeyMessages } from "@/lib/whatsapp/parser";
 import { detectFacts } from "@/lib/cases/extraction";
 import { recomputeCaseProgress } from "@/lib/cases/completeness";
+import { analysePiece } from "@/lib/cases/analysis";
+import type { PieceAnalysis } from "@/lib/cases/analysis-types";
+import { runAgent } from "@/lib/ai/client";
 
-export type DocState = { error?: string; success?: string };
+export type DocState = { error?: string; success?: string; analysis?: PieceAnalysis };
+
+// Sortie attendue de l'agent Nora (run réel, tracé dans agent_runs).
+const NORA_SCHEMA = z.object({
+  type_confirme: z.boolean(),
+  alertes: z.array(z.string().max(300)).max(6).default([]),
+});
 
 const MAX_SIZE = 25 * 1024 * 1024;
 const ALLOWED_MIME = new Set([
@@ -65,16 +74,18 @@ export async function uploadDocument(
 
   const supabase = await createClient();
   let caseId: string | null = null;
+  let claimedCents = 0;
   if (scope !== "company") {
     const parsed = z.uuid().safeParse(scope);
     if (!parsed.success) return { error: "Dossier inconnu." };
     const { data: c } = await supabase
       .from("cases")
-      .select("id")
+      .select("id, amount_claimed_cents")
       .eq("id", parsed.data)
       .maybeSingle();
     if (!c) return { error: "Dossier inconnu." };
     caseId = c.id;
+    claimedCents = Number(c.amount_claimed_cents) || 0;
   }
 
   // Texte lisible (pour WhatsApp + extraction des faits), lu une seule fois.
@@ -162,7 +173,8 @@ export async function uploadDocument(
   }
 
   // Phase 3 : extraction des faits (texte lisible + nom de fichier), sourcée
-  // et éditable ; puis recalcul de la progression du dossier.
+  // et éditable ; analyse de cohérence ; puis recalcul de la progression.
+  let analysis: PieceAnalysis | undefined;
   if (caseId) {
     const facts = detectFacts(fileText, file.name);
     if (facts.length > 0) {
@@ -179,12 +191,46 @@ export async function uploadDocument(
       );
       message += ` ${facts.length} information${facts.length > 1 ? "s" : ""} détectée${facts.length > 1 ? "s" : ""} (à vérifier).`;
     }
+    // Socle déterministe fiable (facts + cohérence + confirmation de type).
+    const det = analysePiece(file.name, docKind, facts, claimedCents, fileText);
+    analysis = det;
+    // Run RÉEL de Nora (tracé dans agent_runs) : elle confirme le type et peut
+    // ajouter des alertes. Le déterministe reste le socle si l'agent échoue.
+    try {
+      const { data: nora } = await runAgent({
+        key: "nora",
+        input: {
+          consigne:
+            "Tu analyses une pièce d'un dossier. Confirme si elle correspond au type déclaré et signale toute incohérence avec le dossier. Réponds en JSON { type_confirme: bool, alertes: string[] }.",
+          type_declare: det.kindLabel,
+          montant_reclame_cents: claimedCents,
+          champs_detectes: det.facts,
+          extrait: fileText ? fileText.slice(0, 4000) : "(document non textuel : contenu non lisible)",
+        },
+        schema: NORA_SCHEMA,
+        simulation: {
+          type_confirme: det.kindConfirmed,
+          alertes: det.coherence.filter((c) => c.level === "warn").map((c) => c.message),
+        },
+        organizationId: orgId,
+        caseId,
+      });
+      const coherence = [...det.coherence];
+      for (const a of nora.alertes) {
+        if (a.trim() && !coherence.some((c) => c.message === a)) coherence.push({ level: "warn", message: a });
+      }
+      // On reste conservateur : le type n'est « confirmé » que si le socle
+      // déterministe ET l'agent le confirment (pas de fausse validation).
+      analysis = { ...det, kindConfirmed: det.kindConfirmed && nora.type_confirme, coherence };
+    } catch {
+      // Le run en erreur est déjà tracé par runAgent ; on garde le socle.
+    }
     await recomputeCaseProgress(caseId);
     revalidatePath(`/app/dossiers/${caseId}`);
   }
 
   revalidatePath("/app/documents", "layout");
-  return { success: message };
+  return { success: message, analysis };
 }
 
 /** Corrige une valeur extraite : la correction utilisateur prime toujours. */

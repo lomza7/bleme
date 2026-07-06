@@ -60,7 +60,8 @@ function firstDate(text: string): { iso: string; excerpt: string } | null {
 function invoiceNumber(text: string, fileName: string): { value: string; excerpt: string } | null {
   const re = /\b(?:facture|invoice|fact\.?)\s*(?:n[°o]?\s*)?[:.]?\s*([A-Z0-9][A-Z0-9-/]{2,20})/i;
   const m = re.exec(text) ?? re.exec(fileName);
-  if (m) return { value: m[1], excerpt: m[0] };
+  // Un vrai numéro contient au moins un chiffre (évite de mordre sur « facture.txt »).
+  if (m && /\d/.test(m[1])) return { value: m[1], excerpt: m[0] };
   const f = /\b([A-Z]{1,3}[-_]?\d{3,}(?:[-/]\d+)*)\b/.exec(fileName);
   if (f) return { value: f[1], excerpt: fileName };
   return null;
