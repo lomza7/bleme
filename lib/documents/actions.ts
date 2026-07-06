@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { parseWhatsAppExport, pickKeyMessages } from "@/lib/whatsapp/parser";
+import { detectFacts } from "@/lib/cases/extraction";
+import { recomputeCaseProgress } from "@/lib/cases/completeness";
 
 export type DocState = { error?: string; success?: string };
 
@@ -46,6 +48,7 @@ export async function uploadDocument(
 ): Promise<DocState> {
   const file = formData.get("file");
   const scope = String(formData.get("scope") ?? ""); // 'company' ou un case id
+  const docKind = String(formData.get("doc_kind") ?? "").trim() || null;
 
   if (!(file instanceof File) || file.size === 0) {
     return { error: "Choisissez un fichier." };
@@ -74,11 +77,20 @@ export async function uploadDocument(
     caseId = c.id;
   }
 
+  // Texte lisible (pour WhatsApp + extraction des faits), lu une seule fois.
+  let fileText = "";
+  if (file.type === "text/plain") {
+    try {
+      fileText = await file.text();
+    } catch {
+      fileText = "";
+    }
+  }
   // Export WhatsApp ? (fichier texte déposé dans un dossier de blème)
   let whatsapp: ReturnType<typeof parseWhatsAppExport> = null;
-  if (caseId && file.type === "text/plain") {
+  if (caseId && fileText) {
     try {
-      whatsapp = parseWhatsAppExport(await file.text());
+      whatsapp = parseWhatsAppExport(fileText);
     } catch {
       whatsapp = null;
     }
@@ -92,26 +104,33 @@ export async function uploadDocument(
     return { error: "Échec de l’envoi. Réessayez." };
   }
 
-  const { error: dbErr } = await supabase.from("documents").insert({
-    organization_id: orgId,
-    case_id: caseId,
-    file_name: file.name,
-    storage_path: path,
-    mime_type: file.type,
-    size_bytes: file.size,
-    doc_class: whatsapp ? "whatsapp_export" : "other",
-  });
-  if (dbErr) {
+  const { data: doc, error: dbErr } = await supabase
+    .from("documents")
+    .insert({
+      organization_id: orgId,
+      case_id: caseId,
+      file_name: file.name,
+      storage_path: path,
+      mime_type: file.type,
+      size_bytes: file.size,
+      doc_class: whatsapp ? "whatsapp_export" : "other",
+      doc_kind: docKind,
+    })
+    .select("id")
+    .single();
+  if (dbErr || !doc) {
     await supabase.storage.from("documents").remove([path]);
     return { error: "Échec de l’enregistrement. Réessayez." };
   }
+
+  let message = `« ${file.name} » ajouté.`;
 
   if (caseId && whatsapp) {
     const fmt = (d: Date) =>
       d.toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
     const keys = pickKeyMessages(whatsapp);
     // PostgREST exige des clés identiques sur toutes les lignes d'un insert groupé.
-    const { error: evErr } = await supabase.from("case_events").insert([
+    await supabase.from("case_events").insert([
       {
         case_id: caseId,
         organization_id: orgId,
@@ -131,19 +150,8 @@ export async function uploadDocument(
         source: "ai",
       })),
     ]);
-    if (evErr) {
-      return {
-        success: `« ${file.name} » ajouté (conversation reconnue, mais la chronologie n'a pas pu être mise à jour).`,
-      };
-    }
-    revalidatePath("/app/documents", "layout");
-    revalidatePath(`/app/dossiers/${caseId}`);
-    return {
-      success: `Conversation WhatsApp importée : ${whatsapp.messages.filter((m) => m.author).length} messages, ${keys.length} moment${keys.length > 1 ? "s" : ""} clé${keys.length > 1 ? "s" : ""} ajouté${keys.length > 1 ? "s" : ""} à la chronologie.`,
-    };
-  }
-
-  if (caseId) {
+    message = `Conversation WhatsApp importée : ${whatsapp.messages.filter((m) => m.author).length} messages, ${keys.length} moment${keys.length > 1 ? "s" : ""} clé${keys.length > 1 ? "s" : ""} ajouté${keys.length > 1 ? "s" : ""} à la chronologie.`;
+  } else if (caseId) {
     await supabase.from("case_events").insert({
       case_id: caseId,
       organization_id: orgId,
@@ -153,8 +161,44 @@ export async function uploadDocument(
     });
   }
 
+  // Phase 3 : extraction des faits (texte lisible + nom de fichier), sourcée
+  // et éditable ; puis recalcul de la progression du dossier.
+  if (caseId) {
+    const facts = detectFacts(fileText, file.name);
+    if (facts.length > 0) {
+      await supabase.from("document_extractions").insert(
+        facts.map((f) => ({
+          organization_id: orgId,
+          document_id: doc.id,
+          field_key: f.field_key,
+          value_text: f.value_text,
+          value_normalized: f.value_normalized,
+          confidence: f.confidence,
+          source_excerpt: f.source_excerpt,
+        })),
+      );
+      message += ` ${facts.length} information${facts.length > 1 ? "s" : ""} détectée${facts.length > 1 ? "s" : ""} (à vérifier).`;
+    }
+    await recomputeCaseProgress(caseId);
+    revalidatePath(`/app/dossiers/${caseId}`);
+  }
+
   revalidatePath("/app/documents", "layout");
-  return { success: `« ${file.name} » ajouté.` };
+  return { success: message };
+}
+
+/** Corrige une valeur extraite : la correction utilisateur prime toujours. */
+export async function correctExtraction(formData: FormData): Promise<void> {
+  const id = z.uuid().safeParse(formData.get("id"));
+  const caseId = String(formData.get("caseId") ?? "");
+  const value = String(formData.get("value") ?? "").trim();
+  if (!id.success || !value) return;
+  const supabase = await createClient();
+  await supabase
+    .from("document_extractions")
+    .update({ corrected_value: value, is_user_corrected: true })
+    .eq("id", id.data);
+  if (caseId) revalidatePath(`/app/dossiers/${caseId}`);
 }
 
 export async function deleteDocument(formData: FormData): Promise<void> {

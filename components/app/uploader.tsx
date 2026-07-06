@@ -6,8 +6,15 @@ import { uploadDocument, type DocState } from "@/lib/documents/actions";
 
 const INITIAL: DocState = {};
 
-/** Zone de dépôt : clic ou glisser-déposer, envoi immédiat. */
-export function Uploader({ scope }: { scope: string }) {
+/** Zone de dépôt : clic ou glisser-déposer, envoi immédiat. Avec `kinds`,
+ * propose de catégoriser la pièce (alimente la complétude du dossier). */
+export function Uploader({
+  scope,
+  kinds,
+}: {
+  scope: string;
+  kinds?: { value: string; label: string }[];
+}) {
   const [state, action, pending] = useActionState(uploadDocument, INITIAL);
   const formRef = useRef<HTMLFormElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -22,6 +29,22 @@ export function Uploader({ scope }: { scope: string }) {
   return (
     <form ref={formRef} action={action} className="flex flex-col gap-3">
       <input type="hidden" name="scope" value={scope} />
+      {kinds && kinds.length > 0 ? (
+        <label className="flex flex-col gap-1.5 text-sm font-medium">
+          Type de pièce
+          <select
+            name="doc_kind"
+            defaultValue={kinds[0].value}
+            className="rounded-xl border bg-background px-3.5 py-2.5 text-sm outline-none transition-colors focus:border-brand"
+          >
+            {kinds.map((k) => (
+              <option key={k.value} value={k.value}>
+                {k.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       <input
         ref={inputRef}
         type="file"
