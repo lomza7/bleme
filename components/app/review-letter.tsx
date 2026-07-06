@@ -67,6 +67,10 @@ export function ReviewLetter({
           {letter.channel === "postal" ? " lettre recommandée" : " email"}. La
           preuve de validation (hash du contenu) est archivée.
         </p>
+        <p className="mt-3 rounded-2xl bg-amber-50 px-4 py-3 text-[13px] leading-relaxed text-amber-800 ring-1 ring-amber-200">
+          Pendant la phase de test, votre validation et sa preuve sont enregistrées ;
+          l’expédition réelle (email / lettre recommandée) sera activée pour l’ouverture publique.
+        </p>
         <article className="mt-5 whitespace-pre-line rounded-2xl bg-muted/50 p-5 text-[15px] leading-relaxed">
           {letter.body_md}
         </article>

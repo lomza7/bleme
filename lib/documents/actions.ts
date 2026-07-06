@@ -32,6 +32,28 @@ const ALLOWED_MIME = new Set([
   "application/msword",
 ]);
 
+// Certains navigateurs renvoient un type MIME vide ('') ou 'application/octet-stream'
+// pour .heic/.heif/.eml et parfois .doc/.docx. On retombe alors sur l'extension.
+const MIME_BY_EXT: Record<string, string> = {
+  pdf: "application/pdf",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  png: "image/png",
+  heic: "image/heic",
+  heif: "image/heif",
+  webp: "image/webp",
+  txt: "text/plain",
+  eml: "message/rfc822",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+};
+
+function resolveMime(fileName: string, providedType: string): string {
+  if (providedType && ALLOWED_MIME.has(providedType)) return providedType;
+  const ext = fileName.toLowerCase().split(".").pop() ?? "";
+  return MIME_BY_EXT[ext] ?? providedType ?? "";
+}
+
 async function currentOrgId() {
   const supabase = await createClient();
   const {
@@ -51,21 +73,21 @@ function safeName(name: string): string {
   return name.replace(/[^\p{L}\p{N}._ -]/gu, "").slice(-120) || "document";
 }
 
-export async function uploadDocument(
-  _prev: DocState,
-  formData: FormData,
-): Promise<DocState> {
-  const file = formData.get("file");
-  const scope = String(formData.get("scope") ?? ""); // 'company' ou un case id
-  const docKind = String(formData.get("doc_kind") ?? "").trim() || null;
-
-  if (!(file instanceof File) || file.size === 0) {
-    return { error: "Choisissez un fichier." };
-  }
-  if (file.size > MAX_SIZE) {
-    return { error: "Fichier trop lourd (25 Mo maximum)." };
-  }
-  if (!ALLOWED_MIME.has(file.type)) {
+/**
+ * Étape 1 : prépare un envoi DIRECT navigateur → Storage (URL signée). Les
+ * octets ne transitent plus par la Server Action → on contourne la limite
+ * plateforme (~4,5 Mo sur Vercel) et on tient réellement les 25 Mo annoncés.
+ */
+export async function prepareUpload(input: {
+  scope: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}): Promise<{ path?: string; token?: string; contentType?: string; error?: string }> {
+  const mime = resolveMime(input.fileName, input.mimeType);
+  if (!input.fileName || input.sizeBytes <= 0) return { error: "Choisissez un fichier." };
+  if (input.sizeBytes > MAX_SIZE) return { error: "Fichier trop lourd (25 Mo maximum)." };
+  if (!ALLOWED_MIME.has(mime)) {
     return { error: "Format non pris en charge (PDF, images, Word, email, texte)." };
   }
 
@@ -74,9 +96,46 @@ export async function uploadDocument(
 
   const supabase = await createClient();
   let caseId: string | null = null;
+  if (input.scope !== "company") {
+    const parsed = z.uuid().safeParse(input.scope);
+    if (!parsed.success) return { error: "Dossier inconnu." };
+    const { data: c } = await supabase.from("cases").select("id").eq("id", parsed.data).maybeSingle();
+    if (!c) return { error: "Dossier inconnu." };
+    caseId = c.id;
+  }
+
+  const path = `${orgId}/${caseId ?? "company"}/${crypto.randomUUID()}-${safeName(input.fileName)}`;
+  // La policy INSERT de storage.objects vérifie que le 1er segment = l'org.
+  const { data, error } = await supabase.storage.from("documents").createSignedUploadUrl(path);
+  if (error || !data) return { error: "Impossible de préparer l’envoi. Réessayez." };
+  return { path: data.path, token: data.token, contentType: mime };
+}
+
+/**
+ * Étape 2 : le fichier est déjà dans le Storage (chemin `path`, uploadé en
+ * direct par le navigateur). On enregistre la pièce, extrait les faits, lance
+ * Nora (run réel) et recalcule la progression — comportement identique à l'ancien
+ * uploadDocument.
+ */
+export async function finalizeUpload(input: {
+  scope: string;
+  path: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  docKind: string | null;
+}): Promise<DocState> {
+  const mime = resolveMime(input.fileName, input.mimeType);
+  const orgId = await currentOrgId();
+  if (!orgId) return { error: "Session expirée, reconnectez-vous." };
+  // Le chemin doit appartenir à l'organisation (un client ne finalise pas un chemin tiers).
+  if (!input.path.startsWith(`${orgId}/`)) return { error: "Chemin de fichier invalide." };
+
+  const supabase = await createClient();
+  let caseId: string | null = null;
   let claimedCents = 0;
-  if (scope !== "company") {
-    const parsed = z.uuid().safeParse(scope);
+  if (input.scope !== "company") {
+    const parsed = z.uuid().safeParse(input.scope);
     if (!parsed.success) return { error: "Dossier inconnu." };
     const { data: c } = await supabase
       .from("cases")
@@ -88,16 +147,16 @@ export async function uploadDocument(
     claimedCents = Number(c.amount_claimed_cents) || 0;
   }
 
-  // Texte lisible (pour WhatsApp + extraction des faits), lu une seule fois.
+  // Texte lisible (WhatsApp + extraction) : on télécharge l'objet si c'est du texte.
   let fileText = "";
-  if (file.type === "text/plain") {
+  if (mime === "text/plain") {
     try {
-      fileText = await file.text();
+      const { data: blob } = await supabase.storage.from("documents").download(input.path);
+      if (blob) fileText = await blob.text();
     } catch {
       fileText = "";
     }
   }
-  // Export WhatsApp ? (fichier texte déposé dans un dossier de blème)
   let whatsapp: ReturnType<typeof parseWhatsAppExport> = null;
   if (caseId && fileText) {
     try {
@@ -107,34 +166,26 @@ export async function uploadDocument(
     }
   }
 
-  const path = `${orgId}/${caseId ?? "company"}/${crypto.randomUUID()}-${safeName(file.name)}`;
-  const { error: upErr } = await supabase.storage
-    .from("documents")
-    .upload(path, file, { contentType: file.type });
-  if (upErr) {
-    return { error: "Échec de l’envoi. Réessayez." };
-  }
-
   const { data: doc, error: dbErr } = await supabase
     .from("documents")
     .insert({
       organization_id: orgId,
       case_id: caseId,
-      file_name: file.name,
-      storage_path: path,
-      mime_type: file.type,
-      size_bytes: file.size,
+      file_name: input.fileName,
+      storage_path: input.path,
+      mime_type: mime,
+      size_bytes: input.sizeBytes,
       doc_class: whatsapp ? "whatsapp_export" : "other",
-      doc_kind: docKind,
+      doc_kind: input.docKind,
     })
     .select("id")
     .single();
   if (dbErr || !doc) {
-    await supabase.storage.from("documents").remove([path]);
+    await supabase.storage.from("documents").remove([input.path]);
     return { error: "Échec de l’enregistrement. Réessayez." };
   }
 
-  let message = `« ${file.name} » ajouté.`;
+  let message = `« ${input.fileName} » ajouté.`;
 
   if (caseId && whatsapp) {
     const fmt = (d: Date) =>
@@ -167,7 +218,7 @@ export async function uploadDocument(
       case_id: caseId,
       organization_id: orgId,
       event_type: "documents",
-      title: `Pièce ajoutée : ${file.name}`,
+      title: `Pièce ajoutée : ${input.fileName}`,
       source: "user",
     });
   }
@@ -176,7 +227,7 @@ export async function uploadDocument(
   // et éditable ; analyse de cohérence ; puis recalcul de la progression.
   let analysis: PieceAnalysis | undefined;
   if (caseId) {
-    const facts = detectFacts(fileText, file.name);
+    const facts = detectFacts(fileText, input.fileName);
     if (facts.length > 0) {
       await supabase.from("document_extractions").insert(
         facts.map((f) => ({
@@ -192,7 +243,7 @@ export async function uploadDocument(
       message += ` ${facts.length} information${facts.length > 1 ? "s" : ""} détectée${facts.length > 1 ? "s" : ""} (à vérifier).`;
     }
     // Socle déterministe fiable (facts + cohérence + confirmation de type).
-    const det = analysePiece(file.name, docKind, facts, claimedCents, fileText);
+    const det = analysePiece(input.fileName, input.docKind, facts, claimedCents, fileText);
     analysis = det;
     // Run RÉEL de Nora (tracé dans agent_runs) : elle confirme le type et peut
     // ajouter des alertes. Le déterministe reste le socle si l'agent échoue.
