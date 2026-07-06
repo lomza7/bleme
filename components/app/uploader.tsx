@@ -45,10 +45,18 @@ export function Uploader({
         return setState({ error: prep.error ?? "Impossible de préparer l’envoi." });
       }
       // 2. Upload direct des octets vers le Storage (ne passe pas par la fonction).
+      // storage-js IGNORE options.contentType pour un Blob : la part multipart
+      // porte file.type, vide pour un HEIC/.eml → octet-stream → refusé par le
+      // bucket. On retype le Blob (partage les octets, aucune copie) pour porter
+      // le bon MIME résolu côté serveur.
       const supabase = createClient();
+      const body =
+        prep.contentType && file.type !== prep.contentType
+          ? file.slice(0, file.size, prep.contentType)
+          : file;
       const { error: upErr } = await supabase.storage
         .from("documents")
-        .uploadToSignedUrl(prep.path, prep.token, file, { contentType: prep.contentType });
+        .uploadToSignedUrl(prep.path, prep.token, body, { contentType: prep.contentType });
       if (upErr) return setState({ error: "Échec de l’envoi. Réessayez." });
       // 3. Enregistrement + extraction + Nora (métadonnées seulement).
       const res = await finalizeUpload({
