@@ -126,10 +126,12 @@ export async function finalizeUpload(input: {
   docKind: string | null;
 }): Promise<DocState> {
   const mime = resolveMime(input.fileName, input.mimeType);
+  // Revalidation serveur (l'action est invocable directement, pas seulement via l'UI).
+  if (!ALLOWED_MIME.has(mime)) {
+    return { error: "Format non pris en charge (PDF, images, Word, email, texte)." };
+  }
   const orgId = await currentOrgId();
   if (!orgId) return { error: "Session expirée, reconnectez-vous." };
-  // Le chemin doit appartenir à l'organisation (un client ne finalise pas un chemin tiers).
-  if (!input.path.startsWith(`${orgId}/`)) return { error: "Chemin de fichier invalide." };
 
   const supabase = await createClient();
   let caseId: string | null = null;
@@ -147,9 +149,41 @@ export async function finalizeUpload(input: {
     claimedCents = Number(c.amount_claimed_cents) || 0;
   }
 
+  // Le chemin doit correspondre EXACTEMENT au scope résolu (org + dossier|company) :
+  // un client ne finalise ni un chemin d'une autre org, ni d'un autre dossier.
+  if (!input.path.startsWith(`${orgId}/${caseId ?? "company"}/`)) {
+    return { error: "Chemin de fichier invalide." };
+  }
+
+  // Idempotence : si une pièce référence déjà ce chemin (rejeu, double-submit,
+  // retry réseau), on ne réinsère pas, on ne relance pas Nora, et on ne supprime
+  // SURTOUT PAS l'objet (ce serait détruire une pièce existante).
+  const { data: already } = await supabase
+    .from("documents")
+    .select("id")
+    .eq("storage_path", input.path)
+    .maybeSingle();
+  if (already) return { success: `« ${input.fileName} » déjà enregistré.` };
+
+  // L'objet doit exister réellement dans le Storage (pas de ligne fantôme). On
+  // dérive taille + type de l'objet STOCKÉ (les métadonnées client ne font pas foi).
+  const slash = input.path.lastIndexOf("/");
+  const { data: listed } = await supabase.storage
+    .from("documents")
+    .list(input.path.slice(0, slash), { search: input.path.slice(slash + 1), limit: 100 });
+  const obj = (listed ?? []).find((o) => o.name === input.path.slice(slash + 1));
+  if (!obj) return { error: "Fichier introuvable dans le stockage. Réessayez." };
+  const meta = (obj.metadata ?? {}) as { size?: number; mimetype?: string };
+  const realSize = Number(meta.size ?? input.sizeBytes) || 0;
+  if (realSize <= 0 || realSize > MAX_SIZE) {
+    await supabase.storage.from("documents").remove([input.path]);
+    return { error: "Fichier vide ou trop lourd (25 Mo maximum)." };
+  }
+  const finalMime = meta.mimetype && ALLOWED_MIME.has(meta.mimetype) ? meta.mimetype : mime;
+
   // Texte lisible (WhatsApp + extraction) : on télécharge l'objet si c'est du texte.
   let fileText = "";
-  if (mime === "text/plain") {
+  if (finalMime === "text/plain") {
     try {
       const { data: blob } = await supabase.storage.from("documents").download(input.path);
       if (blob) fileText = await blob.text();
@@ -173,15 +207,22 @@ export async function finalizeUpload(input: {
       case_id: caseId,
       file_name: input.fileName,
       storage_path: input.path,
-      mime_type: mime,
-      size_bytes: input.sizeBytes,
+      mime_type: finalMime,
+      size_bytes: realSize,
       doc_class: whatsapp ? "whatsapp_export" : "other",
       doc_kind: input.docKind,
     })
     .select("id")
     .single();
   if (dbErr || !doc) {
-    await supabase.storage.from("documents").remove([input.path]);
+    // On ne supprime l'objet que si AUCUNE ligne ne le référence (sinon une
+    // collision d'unicité détruirait la pièce existante).
+    const { data: ref } = await supabase
+      .from("documents")
+      .select("id")
+      .eq("storage_path", input.path)
+      .maybeSingle();
+    if (!ref) await supabase.storage.from("documents").remove([input.path]);
     return { error: "Échec de l’enregistrement. Réessayez." };
   }
 
