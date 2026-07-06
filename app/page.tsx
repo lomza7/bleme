@@ -178,9 +178,10 @@ function Hero() {
             </h1>
           </Reveal>
           <Reveal onLoad delay={0.12}>
-            <p className="mt-6 max-w-md text-lg leading-relaxed text-ink-muted">
-              Racontez votre blème à voix haute. L’IA rassemble emails,
-              WhatsApp et documents, prépare les courriers, suit chaque étape.
+            <p className="mt-6 max-w-lg text-lg leading-relaxed text-ink-muted">
+              Emails, WhatsApp, photos : l’IA monte le dossier en 15 minutes,
+              rédige les courriers et les envoie en lettre recommandée. Vous
+              validez chaque envoi.
             </p>
           </Reveal>
           <Reveal onLoad delay={0.22}>

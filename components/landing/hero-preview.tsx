@@ -30,7 +30,7 @@ const STEPS = [
     done: true,
   },
   {
-    label: "Mise en demeure prête pour recommandé",
+    label: "Mise en demeure prête",
     meta: "aujourd'hui · distribué sous 3 j en moyenne",
     done: false,
   },
@@ -114,10 +114,15 @@ export function HeroPreview() {
                     className={
                       step.done
                         ? "text-sm text-muted-foreground"
-                        : "text-sm font-medium"
+                        : "flex flex-wrap items-center gap-2 text-sm font-medium"
                     }
                   >
                     {step.label}
+                    {!step.done ? (
+                      <span className="rounded-full bg-brand px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-foreground">
+                        Recommandé
+                      </span>
+                    ) : null}
                   </p>
                   <p className="mt-0.5 flex items-center gap-1 text-xs text-muted-foreground/80">
                     {step.meta}
