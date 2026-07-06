@@ -4,29 +4,18 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { parseWhatsAppExport, pickKeyMessages } from "@/lib/whatsapp/parser";
+import { ALLOWED_MIME, MAX_SIZE, resolveMime } from "@/lib/documents/mime";
 
 /*
  * Boîte de réception : import de fichiers et d'emails collés, libellés de
  * tri, versement vers un dossier. Même pipeline que lib/documents/actions
- * (Storage 'documents', chemin {org}/inbox/...), avec détection WhatsApp.
+ * (Storage 'documents', chemin {org}/inbox/..., upload DIRECT navigateur→Storage),
+ * avec détection WhatsApp.
  */
 
 export type InboxState = { error?: string; success?: string };
 
-const MAX_SIZE = 25 * 1024 * 1024;
 const MAX_TEXT = 2 * 1024 * 1024;
-const ALLOWED_MIME = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "image/heic",
-  "image/heif",
-  "image/webp",
-  "text/plain",
-  "message/rfc822",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
-]);
 
 async function currentOrgId() {
   const supabase = await createClient();
@@ -47,33 +36,77 @@ function safeName(name: string): string {
   return name.replace(/[^\p{L}\p{N}._ -]/gu, "").slice(-120) || "document";
 }
 
-// ── Import d'un fichier (pièce, export WhatsApp) ─────────────────────────────
+// ── Import d'un fichier : upload DIRECT navigateur → Storage (URL signée) ─────
 
-export async function importInboxFile(
-  _prev: InboxState,
-  formData: FormData,
-): Promise<InboxState> {
-  const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) {
-    return { error: "Choisissez un fichier." };
-  }
-  if (file.size > MAX_SIZE) {
-    return { error: "Fichier trop lourd (25 Mo maximum)." };
-  }
-  if (!ALLOWED_MIME.has(file.type)) {
+/** Étape 1 : prépare une URL d'upload signée (les octets ne passent pas par la
+ * fonction → on tient les 25 Mo même en prod, comme pour le dépôt de dossier). */
+export async function prepareInboxUpload(input: {
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}): Promise<{ path?: string; token?: string; contentType?: string; error?: string }> {
+  const mime = resolveMime(input.fileName, input.mimeType);
+  if (!input.fileName || input.sizeBytes <= 0) return { error: "Choisissez un fichier." };
+  if (input.sizeBytes > MAX_SIZE) return { error: "Fichier trop lourd (25 Mo maximum)." };
+  if (!ALLOWED_MIME.has(mime)) {
     return { error: "Format non pris en charge (PDF, images, Word, email, texte)." };
   }
-
   const orgId = await currentOrgId();
   if (!orgId) return { error: "Session expirée, reconnectez-vous." };
   const supabase = await createClient();
+  const path = `${orgId}/inbox/${crypto.randomUUID()}-${safeName(input.fileName)}`;
+  const { data, error } = await supabase.storage.from("documents").createSignedUploadUrl(path);
+  if (error || !data) return { error: "Impossible de préparer l’envoi. Réessayez." };
+  return { path: data.path, token: data.token, contentType: mime };
+}
 
-  // Export WhatsApp ? On garde le texte pour le versement en chronologie.
+/** Étape 2 : le fichier est déjà dans le Storage → création de l'élément de boîte
+ * (taille + type dérivés de l'objet stocké ; idempotent ; suppression sûre). */
+export async function finalizeInboxImport(input: {
+  path: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+}): Promise<InboxState> {
+  const mime = resolveMime(input.fileName, input.mimeType);
+  if (!ALLOWED_MIME.has(mime)) {
+    return { error: "Format non pris en charge (PDF, images, Word, email, texte)." };
+  }
+  const orgId = await currentOrgId();
+  if (!orgId) return { error: "Session expirée, reconnectez-vous." };
+  if (!input.path.startsWith(`${orgId}/inbox/`)) return { error: "Chemin de fichier invalide." };
+
+  const supabase = await createClient();
+  // Idempotence : rejeu d'un chemin déjà reçu → no-op (pas de doublon, pas de remove).
+  const { data: already } = await supabase
+    .from("inbox_items")
+    .select("id")
+    .eq("storage_path", input.path)
+    .maybeSingle();
+  if (already) return { success: `« ${input.fileName} » déjà reçu.` };
+
+  // L'objet doit exister réellement ; on dérive taille + type du stockage.
+  const slash = input.path.lastIndexOf("/");
+  const { data: listed } = await supabase.storage
+    .from("documents")
+    .list(input.path.slice(0, slash), { search: input.path.slice(slash + 1), limit: 100 });
+  const obj = (listed ?? []).find((o) => o.name === input.path.slice(slash + 1));
+  if (!obj) return { error: "Fichier introuvable dans le stockage. Réessayez." };
+  const meta = (obj.metadata ?? {}) as { size?: number; mimetype?: string };
+  const realSize = Number(meta.size ?? input.sizeBytes) || 0;
+  if (realSize <= 0 || realSize > MAX_SIZE) {
+    await supabase.storage.from("documents").remove([input.path]);
+    return { error: "Fichier vide ou trop lourd (25 Mo maximum)." };
+  }
+  const finalMime = meta.mimetype && ALLOWED_MIME.has(meta.mimetype) ? meta.mimetype : mime;
+
+  // Export WhatsApp ? On télécharge le texte (petit) pour le versement chronologie.
   let whatsapp: ReturnType<typeof parseWhatsAppExport> = null;
   let bodyText: string | null = null;
-  if (file.type === "text/plain" && file.size <= MAX_TEXT) {
+  if (finalMime === "text/plain" && realSize <= MAX_TEXT) {
     try {
-      const text = await file.text();
+      const { data: blob } = await supabase.storage.from("documents").download(input.path);
+      const text = blob ? await blob.text() : "";
       whatsapp = parseWhatsAppExport(text);
       if (whatsapp) bodyText = text;
     } catch {
@@ -81,32 +114,29 @@ export async function importInboxFile(
     }
   }
 
-  const path = `${orgId}/inbox/${crypto.randomUUID()}-${safeName(file.name)}`;
-  const { error: upErr } = await supabase.storage
-    .from("documents")
-    .upload(path, file, { contentType: file.type });
-  if (upErr) return { error: "Échec de l’envoi. Réessayez." };
-
-  const authored = whatsapp
-    ? whatsapp.messages.filter((m) => m.author).length
-    : 0;
+  const authored = whatsapp ? whatsapp.messages.filter((m) => m.author).length : 0;
   const { error: dbErr } = await supabase.from("inbox_items").insert({
     organization_id: orgId,
     source: whatsapp ? "whatsapp" : "fichier",
     from_name: whatsapp ? whatsapp.participants.join(", ") : null,
     subject: whatsapp
       ? `Conversation WhatsApp · ${whatsapp.participants.join(", ")}`
-      : file.name,
+      : input.fileName,
     excerpt: whatsapp
       ? `${authored} messages, du ${whatsapp.from.toLocaleDateString("fr-FR")} au ${whatsapp.to.toLocaleDateString("fr-FR")}`
-      : `${file.type.split("/")[1] ?? "fichier"} · ${(file.size / 1024).toFixed(0)} Ko`,
+      : `${finalMime.split("/")[1] ?? "fichier"} · ${(realSize / 1024).toFixed(0)} Ko`,
     body_text: bodyText,
-    storage_path: path,
-    mime_type: file.type,
-    size_bytes: file.size,
+    storage_path: input.path,
+    mime_type: finalMime,
+    size_bytes: realSize,
   });
   if (dbErr) {
-    await supabase.storage.from("documents").remove([path]);
+    const { data: ref } = await supabase
+      .from("inbox_items")
+      .select("id")
+      .eq("storage_path", input.path)
+      .maybeSingle();
+    if (!ref) await supabase.storage.from("documents").remove([input.path]);
     return { error: "Échec de l’enregistrement. Réessayez." };
   }
 
@@ -114,7 +144,7 @@ export async function importInboxFile(
   return {
     success: whatsapp
       ? `Conversation WhatsApp reçue (${authored} messages). Classez-la, puis versez-la au bon dossier.`
-      : `« ${file.name} » reçu dans la boîte.`,
+      : `« ${input.fileName} » reçu dans la boîte.`,
   };
 }
 

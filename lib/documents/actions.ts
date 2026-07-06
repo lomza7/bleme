@@ -9,6 +9,7 @@ import { recomputeCaseProgress } from "@/lib/cases/completeness";
 import { analysePiece } from "@/lib/cases/analysis";
 import type { PieceAnalysis } from "@/lib/cases/analysis-types";
 import { runAgent } from "@/lib/ai/client";
+import { ALLOWED_MIME, MAX_SIZE, resolveMime } from "@/lib/documents/mime";
 
 export type DocState = { error?: string; success?: string; analysis?: PieceAnalysis };
 
@@ -17,42 +18,6 @@ const NORA_SCHEMA = z.object({
   type_confirme: z.boolean(),
   alertes: z.array(z.string().max(300)).max(6).default([]),
 });
-
-const MAX_SIZE = 25 * 1024 * 1024;
-const ALLOWED_MIME = new Set([
-  "application/pdf",
-  "image/jpeg",
-  "image/png",
-  "image/heic",
-  "image/heif",
-  "image/webp",
-  "text/plain",
-  "message/rfc822",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/msword",
-]);
-
-// Certains navigateurs renvoient un type MIME vide ('') ou 'application/octet-stream'
-// pour .heic/.heif/.eml et parfois .doc/.docx. On retombe alors sur l'extension.
-const MIME_BY_EXT: Record<string, string> = {
-  pdf: "application/pdf",
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  heic: "image/heic",
-  heif: "image/heif",
-  webp: "image/webp",
-  txt: "text/plain",
-  eml: "message/rfc822",
-  doc: "application/msword",
-  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-};
-
-function resolveMime(fileName: string, providedType: string): string {
-  if (providedType && ALLOWED_MIME.has(providedType)) return providedType;
-  const ext = fileName.toLowerCase().split(".").pop() ?? "";
-  return MIME_BY_EXT[ext] ?? providedType ?? "";
-}
 
 async function currentOrgId() {
   const supabase = await createClient();

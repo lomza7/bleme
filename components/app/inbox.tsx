@@ -16,11 +16,15 @@ import {
   addPastedEmail,
   assignItemToCase,
   createLabel,
-  importInboxFile,
+  prepareInboxUpload,
+  finalizeInboxImport,
   setItemLabel,
   type InboxState,
 } from "@/lib/inbox/actions";
+import { createClient } from "@/lib/supabase/client";
 import { LABEL_COLORS } from "@/lib/inbox/label-colors";
+
+const MAX_SIZE = 25 * 1024 * 1024;
 
 const INITIAL: InboxState = {};
 
@@ -72,24 +76,51 @@ export function CopyAddress({ address }: { address: string }) {
   );
 }
 
-/** Zone de dépôt : clic ou glisser-déposer, envoi immédiat vers la boîte. */
+/** Zone de dépôt : upload DIRECT navigateur → Storage (URL signée) vers la boîte. */
 export function InboxUploader() {
-  const [state, action, pending] = useActionState(importInboxFile, INITIAL);
-  const formRef = useRef<HTMLFormElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [pending, setPending] = useState(false);
+  const [state, setState] = useState<InboxState>({});
   const [dragging, setDragging] = useState(false);
 
+  async function handleFile(file: File | undefined) {
+    if (!file || pending) return;
+    setState({});
+    if (file.size === 0) return setState({ error: "Choisissez un fichier." });
+    if (file.size > MAX_SIZE) return setState({ error: "Fichier trop lourd (25 Mo maximum)." });
+    setPending(true);
+    try {
+      const prep = await prepareInboxUpload({ fileName: file.name, mimeType: file.type, sizeBytes: file.size });
+      if (prep.error || !prep.path || !prep.token) {
+        return setState({ error: prep.error ?? "Impossible de préparer l’envoi." });
+      }
+      const supabase = createClient();
+      // storage-js ignore options.contentType pour un Blob → on retype (sans copie).
+      const body =
+        prep.contentType && file.type !== prep.contentType
+          ? file.slice(0, file.size, prep.contentType)
+          : file;
+      const { error: upErr } = await supabase.storage
+        .from("documents")
+        .uploadToSignedUrl(prep.path, prep.token, body, { contentType: prep.contentType });
+      if (upErr) return setState({ error: "Échec de l’envoi. Réessayez." });
+      setState(await finalizeInboxImport({ path: prep.path, fileName: file.name, mimeType: file.type, sizeBytes: file.size }));
+    } catch {
+      setState({ error: "Une erreur est survenue. Réessayez." });
+    } finally {
+      setPending(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
   return (
-    <form ref={formRef} action={action} className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3">
       <input
         ref={inputRef}
         type="file"
-        name="file"
         className="sr-only"
         accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,.webp,.txt,.eml,.doc,.docx"
-        onChange={(e) => {
-          if (e.target.files?.length) formRef.current?.requestSubmit();
-        }}
+        onChange={(e) => handleFile(e.target.files?.[0] ?? undefined)}
       />
       <button
         type="button"
@@ -103,10 +134,7 @@ export function InboxUploader() {
         onDrop={(e) => {
           e.preventDefault();
           setDragging(false);
-          if (e.dataTransfer.files.length && inputRef.current) {
-            inputRef.current.files = e.dataTransfer.files;
-            formRef.current?.requestSubmit();
-          }
+          handleFile(e.dataTransfer.files?.[0] ?? undefined);
         }}
         className={`flex w-full flex-col items-center gap-2 rounded-[1.75rem] border-2 border-dashed px-6 py-7 text-center transition-all duration-300 ${
           dragging
@@ -127,7 +155,7 @@ export function InboxUploader() {
         </span>
       </button>
       <Feedback state={state} />
-    </form>
+    </div>
   );
 }
 
