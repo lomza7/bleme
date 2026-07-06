@@ -93,7 +93,7 @@ function NavItems({ onNavigate, isAdmin }: { onNavigate?: () => void; isAdmin?: 
 function NewCaseButton({ onNavigate }: { onNavigate?: () => void }) {
   return (
     <Link
-      href="/nouveau"
+      href="/app/nouveau"
       onClick={onNavigate}
       className="flex items-center justify-center gap-2 rounded-full bg-brand px-4 py-2.5 text-sm font-medium text-brand-foreground transition-all duration-500 ease-fluid hover:bg-brand-strong active:scale-[0.98]"
     >
