@@ -10,13 +10,12 @@ import {
   CircleAlert,
   Landmark,
   LoaderCircle,
-  PenLine,
   Scale,
-  ShieldQuestion,
 } from "lucide-react";
 import { CompanionCard, type Companion } from "@/components/app/companion-card";
 import { CompanySearch } from "@/components/app/company-search";
-import { VoiceRecorder } from "@/components/wizard/voice-recorder";
+import { VoiceCapture } from "@/components/app/voice-capture";
+import { IntakeQuestions } from "@/components/app/intake-questions";
 import { createCaseFromDraft } from "@/lib/cases/actions";
 import { EMPTY_DATA, KIND_META, type CaseKind, type WizardData } from "@/components/wizard/types";
 
@@ -160,48 +159,21 @@ export function CreateFlow() {
     </section>
   );
 
-  const storyDone = (data.storyMode === "voice" && data.storySeconds > 0) || (data.storyMode === "text" && data.storyText.trim().length >= 40);
   const panelStory = (
     <section className="rounded-[1.75rem] border bg-card p-6 sm:p-7">
       <h2 className="text-lg font-semibold">Racontez ce qui s’est passé{data.partyName ? ` avec ${data.partyName}` : ""}</h2>
-      <p className="mt-1 text-sm text-muted-foreground">Optionnel, mais c’est ce qui rend le dossier solide. Vous pourrez compléter dans le dossier.</p>
+      <p className="mt-1 text-sm text-muted-foreground">Optionnel, mais c’est ce qui rend le dossier solide. Nora transcrit, vous relisez.</p>
       <div className="mt-5">
-        {data.storyMode !== "text" ? (
-          <>
-            <VoiceRecorder light onDone={(s) => patch({ storyMode: "voice", storySeconds: s })} onDenied={() => patch({ storyMode: "text" })} />
-            {data.storyMode !== "voice" ? (
-              <button type="button" onClick={() => patch({ storyMode: "text" })} className="mt-4 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground">
-                <PenLine className="size-4" />
-                Je préfère écrire
-              </button>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <textarea
-              autoFocus
-              rows={6}
-              value={data.storyText}
-              onChange={(e) => patch({ storyText: e.target.value })}
-              placeholder="La mission ou le chantier, ce qui était convenu, ce qui s’est passé, où ça bloque…"
-              className="w-full rounded-2xl border bg-background p-4 text-sm leading-relaxed outline-none transition-colors focus:border-brand"
-            />
-            <button type="button" onClick={() => patch({ storyMode: null, storyText: "" })} className="mt-2 text-sm text-muted-foreground transition-colors hover:text-foreground">
-              Revenir au vocal
-            </button>
-          </>
-        )}
+        <VoiceCapture value={data.storyText} onChange={(t) => patch({ storyMode: "text", storyText: t })} />
       </div>
-      {storyDone ? (
-        <div className="mt-5 rounded-2xl bg-brand-soft/50 p-5 ring-1 ring-brand/20">
-          <div className="flex items-center gap-2">
-            <ShieldQuestion className="size-4 text-brand-strong" />
-            <p className="text-sm font-semibold">La question qui fâche</p>
-          </div>
-          <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-            {data.kind === "dispute" ? "Qu’est-ce que l’autre partie vous reproche, au juste ?" : `Qu’est-ce que ${data.partyName || "l’autre partie"} pourrait répondre pour ne pas payer ?`} Dites tout, même ce qui vous dessert.
-          </p>
-          <textarea rows={2} value={data.devilAnswer} onChange={(e) => patch({ devilAnswer: e.target.value })} placeholder="Ça restera entre nous — c’est ce qui rend le dossier béton." className="mt-3 w-full rounded-2xl border bg-background p-3 text-sm leading-relaxed outline-none transition-colors focus:border-brand" />
+      {data.storyText.trim().length >= 40 ? (
+        <div className="mt-6 border-t pt-6">
+          <IntakeQuestions
+            transcript={data.storyText}
+            kind={isUnpaid ? "unpaid" : "dispute"}
+            partyName={data.partyName}
+            onChange={(a) => patch({ devilAnswer: a })}
+          />
         </div>
       ) : null}
     </section>
