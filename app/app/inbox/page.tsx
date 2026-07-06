@@ -81,7 +81,7 @@ export default async function InboxPage({
     supabase.from("inbox_labels").select("id, name, color").order("created_at"),
     supabase
       .from("cases")
-      .select("id, title, status")
+      .select("id, title, status, case_type")
       .in("status", [...OPEN_STATUSES])
       .order("updated_at", { ascending: false }),
   ]);
@@ -297,6 +297,7 @@ export default async function InboxPage({
                   ) : (
                     <ItemActions
                       itemId={item.id}
+                      source={item.source}
                       labelId={item.label_id}
                       labels={labels ?? []}
                       cases={cases ?? []}

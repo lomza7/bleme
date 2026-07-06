@@ -5,6 +5,11 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { parseWhatsAppExport, pickKeyMessages } from "@/lib/whatsapp/parser";
 import { ALLOWED_MIME, MAX_SIZE, resolveMime } from "@/lib/documents/mime";
+import { detectFacts, FIELD_LABEL } from "@/lib/cases/extraction";
+import { analysePiece } from "@/lib/cases/analysis";
+import type { PieceAnalysis } from "@/lib/cases/analysis-types";
+import { recomputeCaseProgress } from "@/lib/cases/completeness";
+import { runAgent } from "@/lib/ai/client";
 
 /*
  * Boîte de réception : import de fichiers et d'emails collés, libellés de
@@ -16,6 +21,38 @@ import { ALLOWED_MIME, MAX_SIZE, resolveMime } from "@/lib/documents/mime";
 export type InboxState = { error?: string; success?: string };
 
 const MAX_TEXT = 2 * 1024 * 1024;
+
+// Sortie attendue des agents pour l'analyse d'un email versé (runs tracés).
+const NORA_SCHEMA = z.object({
+  type_confirme: z.boolean(),
+  alertes: z.array(z.string().max(300)).max(6).default([]),
+});
+const LENA_SCHEMA = z.object({
+  resume_court: z.string().max(300).default(""),
+  alertes: z.array(z.string().max(300)).max(6).default([]),
+});
+
+/** Une valeur extraite, sourcée + confiance, corrigeable AVANT la fusion. */
+export type EditableFact = {
+  field_key: string;
+  label: string;
+  value_text: string;
+  value_normalized: Record<string, unknown> | null;
+  confidence: number;
+  source_excerpt: string | null;
+  corrected?: string | null;
+};
+
+export type EmailAnalysisResult =
+  | { error: string }
+  | {
+      analysis: PieceAnalysis;
+      facts: EditableFact[];
+      suggestedDocKind: string;
+      suggestedAmountCents: number | null;
+      caseAmountCents: number;
+      agent: "nora" | "lena";
+    };
 
 async function currentOrgId() {
   const supabase = await createClient();
@@ -378,6 +415,276 @@ export async function assignItemToCase(
       ? `Conversation versée au dossier « ${caseRow.title} » : chronologie mise à jour.`
       : `Versé au dossier « ${caseRow.title} ».`,
   };
+}
+
+// ── Analyse IA d'un email + fusion au dossier (popup) ────────────────────────
+
+/**
+ * Étape 1 : un agent lit l'email dans le contexte du dossier choisi et renvoie
+ * les faits extraits (sourcés, éditables) SANS rien écrire. La fusion n'a lieu
+ * qu'à la confirmation (confirmEmailMerge) → aucune pièce orpheline si on ferme
+ * la popup. Sans clé IA, runAgent tourne en simulation (tracé dans agent_runs).
+ */
+export async function analyzeEmailForCase(input: {
+  itemId: string;
+  caseId: string;
+}): Promise<EmailAnalysisResult> {
+  const itemId = z.uuid().safeParse(input.itemId);
+  const caseId = z.uuid().safeParse(input.caseId);
+  if (!itemId.success || !caseId.success) return { error: "Élément ou dossier introuvable." };
+
+  const orgId = await currentOrgId();
+  if (!orgId) return { error: "Session expirée, reconnectez-vous." };
+  const supabase = await createClient();
+
+  const [{ data: item }, { data: caseRow }] = await Promise.all([
+    supabase
+      .from("inbox_items")
+      .select("id, subject, body_text, from_name, received_at, source")
+      .eq("id", itemId.data)
+      .maybeSingle(),
+    supabase
+      .from("cases")
+      .select("id, title, case_type, amount_claimed_cents")
+      .eq("id", caseId.data)
+      .maybeSingle(),
+  ]);
+  if (!item) return { error: "Élément introuvable." };
+  if (!caseRow) return { error: "Dossier introuvable." };
+
+  const text = item.body_text ?? "";
+  const subject = item.subject ?? "Email";
+  const claimedCents = Number(caseRow.amount_claimed_cents) || 0;
+  const facts = detectFacts(text, subject);
+  const det = analysePiece(subject, "echanges", facts, claimedCents, text);
+
+  const isDispute = caseRow.case_type === "client_dispute";
+  const agent: "nora" | "lena" = isDispute ? "lena" : "nora";
+
+  const mergeAlertes = (alertes: string[]) => {
+    const coherence = [...det.coherence];
+    for (const a of alertes) {
+      if (a.trim() && !coherence.some((c) => c.message === a)) {
+        coherence.push({ level: "warn", message: a });
+      }
+    }
+    det.coherence = coherence;
+  };
+
+  try {
+    if (isDispute) {
+      const { data } = await runAgent({
+        key: "lena",
+        input: {
+          consigne:
+            "Tu lis un email d'un dossier de litige. Résume-le en une phrase neutre et signale toute incohérence avec le dossier. Réponds en JSON { resume_court: string, alertes: string[] }. N'invente jamais une valeur.",
+          objet: subject,
+          montant_reclame_cents: claimedCents,
+          champs_detectes: det.facts,
+          extrait: text ? text.slice(0, 4000) : "(email sans corps lisible)",
+        },
+        schema: LENA_SCHEMA,
+        simulation: {
+          resume_court: "",
+          alertes: det.coherence.filter((c) => c.level === "warn").map((c) => c.message),
+        },
+        organizationId: orgId,
+        caseId: caseRow.id,
+      });
+      mergeAlertes(data.alertes);
+    } else {
+      const { data } = await runAgent({
+        key: "nora",
+        input: {
+          consigne:
+            "Tu analyses un email versé à un dossier. Confirme s'il apporte des éléments cohérents avec le dossier et signale toute incohérence. Réponds en JSON { type_confirme: bool, alertes: string[] }. N'invente jamais une valeur.",
+          type_declare: det.kindLabel,
+          montant_reclame_cents: claimedCents,
+          champs_detectes: det.facts,
+          extrait: text ? text.slice(0, 4000) : "(email sans corps lisible)",
+        },
+        schema: NORA_SCHEMA,
+        simulation: {
+          type_confirme: det.kindConfirmed,
+          alertes: det.coherence.filter((c) => c.level === "warn").map((c) => c.message),
+        },
+        organizationId: orgId,
+        caseId: caseRow.id,
+      });
+      mergeAlertes(data.alertes);
+    }
+  } catch {
+    // Le run en erreur est déjà tracé par runAgent ; on garde le socle déterministe.
+  }
+
+  const amountFact = facts.find((f) => f.field_key === "amount_cents");
+  const amountCents = amountFact?.value_normalized
+    ? (amountFact.value_normalized as { cents?: number }).cents
+    : undefined;
+
+  return {
+    analysis: det,
+    facts: facts.map((f) => ({
+      field_key: f.field_key,
+      label: FIELD_LABEL[f.field_key] ?? f.field_key,
+      value_text: f.value_text,
+      value_normalized: f.value_normalized,
+      confidence: f.confidence,
+      source_excerpt: f.source_excerpt,
+    })),
+    suggestedDocKind: "echanges",
+    suggestedAmountCents: typeof amountCents === "number" && amountCents > 0 ? amountCents : null,
+    caseAmountCents: claimedCents,
+    agent,
+  };
+}
+
+const editableFactSchema = z.object({
+  field_key: z.string().max(60),
+  value_text: z.string().max(2000),
+  value_normalized: z.record(z.string(), z.unknown()).nullable(),
+  confidence: z.number(),
+  source_excerpt: z.string().nullable(),
+  corrected: z.string().max(2000).nullable().optional(),
+});
+
+const confirmSchema = z.object({
+  itemId: z.uuid(),
+  caseId: z.uuid(),
+  docKind: z.string().max(40),
+  applyAmountCents: z.number().int().nonnegative().nullable(),
+  facts: z.array(editableFactSchema).max(20),
+});
+
+/**
+ * Étape 2 : la fusion réelle, avec les corrections de l'utilisateur. Le corps de
+ * l'email devient une pièce texte du dossier, ses pièces jointes des pièces à
+ * part entière, les valeurs extraites (corrigées) des extractions sourcées.
+ * cases.* n'est JAMAIS écrasé en silence (pilier #3).
+ */
+export async function confirmEmailMerge(input: {
+  itemId: string;
+  caseId: string;
+  docKind: string;
+  applyAmountCents: number | null;
+  facts: EditableFact[];
+}): Promise<InboxState> {
+  const parsed = confirmSchema.safeParse(input);
+  if (!parsed.success) return { error: "Données invalides. Réessayez." };
+  const { itemId, caseId, docKind, applyAmountCents, facts } = parsed.data;
+
+  const orgId = await currentOrgId();
+  if (!orgId) return { error: "Session expirée, reconnectez-vous." };
+  const supabase = await createClient();
+
+  const [{ data: item }, { data: caseRow }] = await Promise.all([
+    supabase.from("inbox_items").select("*").eq("id", itemId).maybeSingle(),
+    supabase.from("cases").select("id, title, amount_claimed_cents").eq("id", caseId).maybeSingle(),
+  ]);
+  if (!item) return { error: "Élément introuvable." };
+  if (!caseRow) return { error: "Dossier introuvable." };
+
+  // 1. Le corps de l'email devient une pièce texte du dossier.
+  const body = item.body_text ?? "";
+  const bodyPath = `${orgId}/${caseRow.id}/${crypto.randomUUID()}-email.txt`;
+  const { error: upErr } = await supabase.storage
+    .from("documents")
+    .upload(bodyPath, new Blob([body], { type: "text/plain" }), {
+      contentType: "text/plain",
+      upsert: false,
+    });
+  if (upErr) return { error: "Échec de l’enregistrement de l’email. Réessayez." };
+
+  const { data: bodyDoc, error: docErr } = await supabase
+    .from("documents")
+    .insert({
+      organization_id: orgId,
+      case_id: caseRow.id,
+      file_name: item.subject,
+      storage_path: bodyPath,
+      mime_type: "text/plain",
+      size_bytes: new TextEncoder().encode(body).length,
+      doc_class: "other",
+      doc_kind: docKind,
+    })
+    .select("id")
+    .single();
+  if (docErr || !bodyDoc) {
+    await supabase.storage.from("documents").remove([bodyPath]);
+    return { error: "Échec du versement. Réessayez." };
+  }
+
+  // 2. Les pièces jointes deviennent des pièces du dossier (objet Storage réutilisé).
+  const { data: attachments } = await supabase
+    .from("inbox_attachments")
+    .select("file_name, storage_path, mime_type, size_bytes")
+    .eq("inbox_item_id", item.id);
+  for (const a of attachments ?? []) {
+    const { error: aErr } = await supabase.from("documents").insert({
+      organization_id: orgId,
+      case_id: caseRow.id,
+      file_name: a.file_name,
+      storage_path: a.storage_path,
+      mime_type: a.mime_type,
+      size_bytes: a.size_bytes,
+      doc_class: "other",
+      doc_kind: null,
+    });
+    // Idempotence : une pièce déjà versée (23505) n'interrompt pas le reste.
+    if (aErr && aErr.code !== "23505") continue;
+  }
+
+  // 3. Valeurs extraites (sourcées) ; une correction saisie prime dès l'écriture.
+  if (facts.length > 0) {
+    await supabase.from("document_extractions").insert(
+      facts.map((f) => {
+        const corrected = f.corrected?.trim() || null;
+        return {
+          organization_id: orgId,
+          document_id: bodyDoc.id,
+          field_key: f.field_key,
+          value_text: f.value_text,
+          value_normalized: f.value_normalized,
+          confidence: f.confidence,
+          source_excerpt: f.source_excerpt,
+          corrected_value: corrected,
+          is_user_corrected: !!corrected,
+        };
+      }),
+    );
+  }
+
+  // 4. La chronologie du dossier s'enrichit.
+  await supabase.from("case_events").insert({
+    case_id: caseRow.id,
+    organization_id: orgId,
+    event_type: "email",
+    event_date: item.received_at,
+    title: `Email versé : ${item.subject}`,
+    description: item.excerpt
+      ? `${item.from_name ? `De ${item.from_name} · ` : ""}« ${item.excerpt} »`
+      : item.from_name
+        ? `De ${item.from_name}`
+        : undefined,
+    source: "user",
+  });
+
+  // 5. Montant : jamais d'écrasement silencieux — posé seulement s'il est absent.
+  if (applyAmountCents && applyAmountCents > 0 && (Number(caseRow.amount_claimed_cents) || 0) === 0) {
+    await supabase.from("cases").update({ amount_claimed_cents: applyAmountCents }).eq("id", caseRow.id);
+  }
+
+  // 6. L'élément est classé (lu + archivé + rattaché).
+  await supabase
+    .from("inbox_items")
+    .update({ case_id: caseRow.id, is_read: true, is_archived: true })
+    .eq("id", item.id);
+
+  await recomputeCaseProgress(caseRow.id);
+  revalidatePath("/app/inbox");
+  revalidatePath("/app/documents", "layout");
+  revalidatePath(`/app/dossiers/${caseRow.id}`);
+  return { success: `Versé au dossier « ${caseRow.title} ».` };
 }
 
 export async function deleteInboxItem(formData: FormData): Promise<void> {

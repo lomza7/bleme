@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Check,
   CircleAlert,
@@ -9,6 +10,7 @@ import {
   FolderInput,
   LoaderCircle,
   MailPlus,
+  Sparkles,
   Tag,
   UploadCloud,
 } from "lucide-react";
@@ -23,6 +25,7 @@ import {
 } from "@/lib/inbox/actions";
 import { createClient } from "@/lib/supabase/client";
 import { LABEL_COLORS } from "@/lib/inbox/label-colors";
+import { EmailAnalysisModal } from "@/components/app/email-analysis-modal";
 
 const MAX_SIZE = 25 * 1024 * 1024;
 
@@ -255,22 +258,30 @@ export function NewLabelForm() {
 }
 
 type LabelOption = { id: string; name: string; color: string };
-type CaseOption = { id: string; title: string };
+type CaseOption = { id: string; title: string; case_type: string };
 
-/** Actions d'un élément ouvert : libellé (appliqué au changement) + versement. */
+/** Actions d'un élément ouvert : libellé (appliqué au changement) + versement.
+ * Pour un email, « Verser au dossier » ouvre l'analyse IA (popup) avant fusion ;
+ * pour les autres sources, versement direct (déterministe) comme avant. */
 export function ItemActions({
   itemId,
+  source,
   labelId,
   labels,
   cases,
 }: {
   itemId: string;
+  source: string;
   labelId: string | null;
   labels: LabelOption[];
   cases: CaseOption[];
 }) {
+  const router = useRouter();
   const [state, assign, pending] = useActionState(assignItemToCase, INITIAL);
   const labelFormRef = useRef<HTMLFormElement>(null);
+  const [pickedCase, setPickedCase] = useState("");
+  const [modalCase, setModalCase] = useState<CaseOption | null>(null);
+  const isEmail = source === "email";
 
   return (
     <div className="flex flex-col gap-3">
@@ -295,7 +306,37 @@ export function ItemActions({
           </form>
         ) : null}
 
-        {cases.length > 0 ? (
+        {cases.length > 0 && isEmail ? (
+          <div className="flex items-center gap-2">
+            <FolderInput className="size-3.5 text-muted-foreground" />
+            <select
+              value={pickedCase}
+              onChange={(e) => setPickedCase(e.target.value)}
+              className="max-w-52 rounded-xl border bg-background px-2.5 py-1.5 text-xs outline-none transition-colors focus:border-brand"
+            >
+              <option value="" disabled>
+                Choisir un dossier…
+              </option>
+              {cases.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.title}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={!pickedCase}
+              onClick={() => {
+                const c = cases.find((x) => x.id === pickedCase);
+                if (c) setModalCase(c);
+              }}
+              className="inline-flex items-center gap-1.5 rounded-full bg-brand px-3.5 py-1.5 text-xs font-medium text-brand-foreground transition-all duration-300 hover:bg-brand-strong active:scale-[0.98] disabled:opacity-60"
+            >
+              <Sparkles className="size-3.5" />
+              Analyser et verser
+            </button>
+          </div>
+        ) : cases.length > 0 ? (
           <form action={assign} className="flex items-center gap-2">
             <input type="hidden" name="id" value={itemId} />
             <FolderInput className="size-3.5 text-muted-foreground" />
@@ -325,6 +366,20 @@ export function ItemActions({
         ) : null}
       </div>
       <Feedback state={state} />
+
+      {modalCase ? (
+        <EmailAnalysisModal
+          itemId={itemId}
+          caseId={modalCase.id}
+          caseTitle={modalCase.title}
+          caseType={modalCase.case_type}
+          onDone={() => {
+            setModalCase(null);
+            router.refresh();
+          }}
+          onCancel={() => setModalCase(null)}
+        />
+      ) : null}
     </div>
   );
 }
