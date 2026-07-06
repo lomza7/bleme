@@ -63,14 +63,33 @@ export function ImpayeTypeTabs() {
       </div>
 
       <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl bg-white/10 p-6 ring-1 ring-brand/40">
-          <p className="text-sm text-ink-muted">
+        <div
+          className={`relative rounded-2xl p-6 ring-1 transition-all duration-500 ease-fluid ${
+            pro
+              ? "bg-white text-foreground shadow-2xl shadow-black/40 ring-brand/30 sm:-translate-y-1"
+              : "bg-white/10 text-ink-foreground ring-brand/40"
+          }`}
+        >
+          {pro ? (
+            <span className="absolute -top-2.5 left-6 rounded-full bg-brand px-2.5 py-0.5 text-[11px] font-semibold text-brand-foreground shadow-lg shadow-black/20">
+              Meilleur prix
+            </span>
+          ) : null}
+          <p className={`text-sm ${pro ? "text-muted-foreground" : "text-ink-muted"}`}>
             {pro ? "Avec BLEME Pro" : "Avec BLEME"}
           </p>
-          <p className="mt-2 text-3xl font-bold tabular-nums tracking-tight">
+          <p
+            className={`mt-2 text-3xl font-bold tabular-nums tracking-tight ${
+              pro ? "text-brand-strong" : ""
+            }`}
+          >
             {eur(total)} HT
           </p>
-          <p className="mt-2 text-[13px] leading-relaxed text-ink-muted">
+          <p
+            className={`mt-2 text-[13px] leading-relaxed ${
+              pro ? "text-muted-foreground" : "text-ink-muted"
+            }`}
+          >
             Dossier {eur(dossier)} + recommandé AR {eur(PRIX.recommande)}.
             {pro
               ? ` L’abonnement Pro (${eur(PRIX.proMois)} HT/mois) divise le prix du dossier par deux.`
