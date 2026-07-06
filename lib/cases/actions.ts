@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { fetchCompanyFiche } from "@/lib/companies/pappers";
 
 async function currentOrgId(): Promise<{ orgId: string } | { error: string }> {
   const supabase = await createClient();
@@ -30,6 +31,7 @@ function days(n: number): string {
 const draftSchema = z.object({
   kind: z.enum(["unpaid", "dispute", "admin"]),
   partyName: z.string().trim().min(1).max(200),
+  debtorSiren: z.string().regex(/^\d{9}$/).nullable().optional().default(null),
   amount: z.string().optional().default(""),
   age: z.string().optional().default(""),
   subject: z.string().optional().default(""),
@@ -74,6 +76,20 @@ export async function createCaseFromDraft(
   if (isUnpaid && d.age) summaryParts.push(`Impayé depuis : ${d.age.toLowerCase()}.`);
   if (!isUnpaid && d.subject) summaryParts.push(`Objet du litige : ${d.subject}. Où ça en est : ${d.stage || "non précisé"}.`);
 
+  // Fiche entreprise (Pappers) rattachée au dossier si un SIREN a été retenu —
+  // utile pour la suite et pour les agents (siège officiel, dirigeants, alerte
+  // procédure collective). Récupérée une seule fois, à la création.
+  const company = d.debtorSiren ? await fetchCompanyFiche(d.debtorSiren) : null;
+  const vigilance =
+    [
+      d.devilAnswer.trim() || null,
+      company?.procedureCollective
+        ? "⚠️ Le débiteur figure en procédure collective (source officielle) : vérifiez la situation avant toute relance ou envoi."
+        : null,
+    ]
+      .filter(Boolean)
+      .join("\n\n") || null;
+
   const { data: created, error } = await supabase
     .from("cases")
     .insert({
@@ -82,9 +98,11 @@ export async function createCaseFromDraft(
       title: `${isUnpaid ? "Facture impayée" : "Litige client"} · ${d.partyName}`,
       status: isUnpaid ? "awaiting_user" : "awaiting_user",
       debtor_name: d.partyName,
+      debtor_siren: d.debtorSiren,
+      debtor_company: company,
       amount_claimed_cents: amountCents,
       summary_md: summaryParts.join("\n\n") || null,
-      weak_points_md: d.devilAnswer.trim() || null,
+      weak_points_md: vigilance,
       stage: 1,
       phase: 1,
       next_letter_kind: isUnpaid ? "reminder_1" : "response",

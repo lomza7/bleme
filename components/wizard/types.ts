@@ -6,6 +6,7 @@ export type WizardData = {
   kind: CaseKind | null;
   // Détails (champs selon le type)
   partyName: string;
+  debtorSiren: string | null;
   amount: string;
   age: string;
   subject: string;
@@ -20,6 +21,7 @@ export type WizardData = {
 export const EMPTY_DATA: WizardData = {
   kind: null,
   partyName: "",
+  debtorSiren: null,
   amount: "",
   age: "",
   subject: "",

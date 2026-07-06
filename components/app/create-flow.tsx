@@ -15,6 +15,7 @@ import {
   ShieldQuestion,
 } from "lucide-react";
 import { CompanionCard, type Companion } from "@/components/app/companion-card";
+import { CompanySearch } from "@/components/app/company-search";
 import { VoiceRecorder } from "@/components/wizard/voice-recorder";
 import { createCaseFromDraft } from "@/lib/cases/actions";
 import { EMPTY_DATA, KIND_META, type CaseKind, type WizardData } from "@/components/wizard/types";
@@ -125,10 +126,10 @@ export function CreateFlow() {
       <h2 className="text-lg font-semibold">{isUnpaid ? "Les faits, en 30 secondes" : "Le litige, en 30 secondes"}</h2>
       <p className="mt-1 text-sm text-muted-foreground">Juste de quoi ouvrir le dossier — vous détaillerez ensuite.</p>
       <div className="mt-5 flex flex-col gap-5">
-        <label className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">{isUnpaid ? "Qui vous doit de l’argent ?" : "Avec qui avez-vous ce litige ?"}</span>
-          <input className={inputCls} placeholder="Nom de l’entreprise ou du client" value={data.partyName} onChange={(e) => patch({ partyName: e.target.value })} autoFocus />
-        </label>
+          <CompanySearch value={data.partyName} onChange={({ name, siren }) => patch({ partyName: name, debtorSiren: siren })} />
+        </div>
         {isUnpaid ? (
           <>
             <label className="flex flex-col gap-1.5">
