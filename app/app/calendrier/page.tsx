@@ -1,22 +1,31 @@
 import type { Metadata } from "next";
-import { createServiceClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
-import { RelanceCalendar, type CalEvent } from "@/components/admin/relance-calendar";
+import { PageHeader } from "@/components/app/ui";
+import { RelanceCalendar, type CalEvent } from "@/components/app/relance-calendar";
 
-export const metadata: Metadata = { title: "Calendrier des relances" };
+export const metadata: Metadata = { title: "Agenda" };
 
 /*
- * Calendrier des relances (cross-organisations, service-role). Agrège les dates
- * pilotées par les agents : prochaines relances (Sacha), courriers envoyés
- * (Marius), retours clients, échéances de récupération. Le « distribué » (accusé
- * Merci Facteur) s'ajoutera quand l'envoi postal réel sera branché.
+ * Agenda des relances — MES dossiers uniquement. Client user-scoped : les RLS
+ * (organization_id in user_org_ids()) garantissent qu'on ne voit que les
+ * dossiers de son organisation. On agrège les dates pilotées par les agents :
+ * prochaines relances (Sacha), courriers envoyés (Marius), retours clients,
+ * échéances de récupération. Le « distribué » (accusé Merci Facteur) s'ajoutera
+ * quand l'envoi postal réel sera branché.
  */
-export default async function AdminCalendrierPage() {
-  const sb = createServiceClient();
+export default async function AgendaPage() {
+  const sb = await createClient();
+  const {
+    data: { user },
+  } = await sb.auth.getUser();
+  if (!user) redirect("/login");
+
   const [{ data: cases }, { data: letters }, { data: replies }] = await Promise.all([
     sb
       .from("cases")
-      .select("id, title, status, case_type, next_action_at, next_action_label, next_letter_kind, expected_recovery_at")
+      .select("id, title, status, next_action_at, next_action_label, next_letter_kind, expected_recovery_at")
       .eq("is_sample", false),
     sb.from("letters").select("case_id, kind, sent_at").not("sent_at", "is", null),
     sb.from("debtor_replies").select("case_id, received_at"),
@@ -72,14 +81,12 @@ export default async function AdminCalendrierPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
-      <h1 className="text-2xl font-bold tracking-tight">Calendrier des relances</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        Toutes les échéances de tous les dossiers, au même endroit. Alimenté par les agents : Sacha planifie les relances, Marius trace les envois.
-      </p>
-      <div className="mt-6">
-        <RelanceCalendar events={events} />
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Agenda des relances"
+        sub="Toutes les échéances de vos dossiers, au même endroit. Vos agents les tiennent à jour."
+      />
+      <RelanceCalendar events={events} />
     </div>
   );
 }

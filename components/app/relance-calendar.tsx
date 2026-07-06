@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { SpriteAvatar } from "@/components/landing/sprite-avatar";
 
@@ -27,17 +28,37 @@ const WD = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"];
 function dayKey(d: Date) {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
+function monthStartOf(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
+function startOfDay(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
 function timeFr(iso: string) {
   return new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 }
 
-export function RelanceCalendar({ events }: { events: CalEvent[] }) {
-  const today = new Date();
-  const todayKey = dayKey(today);
-  const startOfToday = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+// Drapeau d'hydratation (idiome partagé avec draft-banner) : false au SSR et au
+// premier rendu client, true après. Toute la logique de dates (placement des
+// évènements, « aujourd'hui », sélection) est donc calculée UNIQUEMENT côté
+// navigateur, dans le fuseau de l'utilisateur — jamais de mismatch d'hydratation
+// entre une infra en UTC et un utilisateur en France.
+const noopSubscribe = () => () => {};
+function useHydrated() {
+  return useSyncExternalStore(noopSubscribe, () => true, () => false);
+}
 
-  const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
-  const [selected, setSelected] = useState<string | null>(todayKey);
+/*
+ * Agenda des relances de MES dossiers (scopé RLS côté serveur). Grille mensuelle
+ * lundi-first, chips colorées par type + avatar de l'agent qui porte l'action,
+ * relances en retard en ambre. Un clic sur un jour ouvre le détail ; chaque
+ * évènement renvoie vers son dossier.
+ */
+export function RelanceCalendar({ events }: { events: CalEvent[] }) {
+  const hydrated = useHydrated();
+  // null = « suit aujourd'hui » ; renseigné dès que l'utilisateur navigue/clique.
+  const [cursorOverride, setCursorOverride] = useState<Date | null>(null);
+  const [selectedOverride, setSelectedOverride] = useState<string | null>(null);
 
   const byDay = useMemo(() => {
     const m = new Map<string, CalEvent[]>();
@@ -49,9 +70,17 @@ export function RelanceCalendar({ events }: { events: CalEvent[] }) {
     return m;
   }, [events]);
 
-  const monthStart = new Date(cursor.getFullYear(), cursor.getMonth(), 1);
-  const lead = (monthStart.getDay() + 6) % 7; // lundi = 0
-  const gridStart = new Date(monthStart);
+  // Rendu serveur / première hydratation : squelette neutre, aucune date.
+  if (!hydrated) return <CalendarSkeleton />;
+
+  const now = new Date();
+  const todayKey = dayKey(now);
+  const startOfToday = startOfDay(now);
+  const cursor = cursorOverride ?? monthStartOf(now);
+  const selected = selectedOverride ?? todayKey;
+
+  const lead = (cursor.getDay() + 6) % 7; // lundi = 0
+  const gridStart = new Date(cursor);
   gridStart.setDate(1 - lead);
   const days = Array.from({ length: 42 }, (_, i) => {
     const d = new Date(gridStart);
@@ -62,9 +91,9 @@ export function RelanceCalendar({ events }: { events: CalEvent[] }) {
   const isOverdue = (e: CalEvent) => e.type === "relance" && new Date(e.date).getTime() < startOfToday;
   const styleFor = (e: CalEvent) => (isOverdue(e) ? OVERDUE : META[e.type]);
 
-  const selectedEvents = selected ? byDay.get(selected) ?? [] : [];
-  const [sy, sm, sd] = (selected ?? "").split("-").map(Number);
-  const selectedDate = selected ? new Date(sy, sm, sd) : null;
+  const selectedEvents = byDay.get(selected) ?? [];
+  const [sy, sm, sd] = selected.split("-").map(Number);
+  const selectedDate = new Date(sy, sm, sd);
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_20rem]">
@@ -77,15 +106,18 @@ export function RelanceCalendar({ events }: { events: CalEvent[] }) {
           <div className="flex items-center gap-1.5">
             <button
               type="button"
-              onClick={() => setCursor(new Date(today.getFullYear(), today.getMonth(), 1))}
+              onClick={() => {
+                setCursorOverride(null);
+                setSelectedOverride(null);
+              }}
               className="rounded-full border px-3 py-1.5 text-sm font-medium transition-colors hover:bg-brand-soft/50"
             >
               Aujourd’hui
             </button>
-            <button type="button" aria-label="Mois précédent" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))} className="flex size-8 items-center justify-center rounded-full border transition-colors hover:bg-muted">
+            <button type="button" aria-label="Mois précédent" onClick={() => setCursorOverride(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))} className="flex size-8 items-center justify-center rounded-full border transition-colors hover:bg-muted">
               <ChevronLeft className="size-4" />
             </button>
-            <button type="button" aria-label="Mois suivant" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))} className="flex size-8 items-center justify-center rounded-full border transition-colors hover:bg-muted">
+            <button type="button" aria-label="Mois suivant" onClick={() => setCursorOverride(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))} className="flex size-8 items-center justify-center rounded-full border transition-colors hover:bg-muted">
               <ChevronRight className="size-4" />
             </button>
           </div>
@@ -105,7 +137,7 @@ export function RelanceCalendar({ events }: { events: CalEvent[] }) {
               <button
                 key={k}
                 type="button"
-                onClick={() => setSelected(k)}
+                onClick={() => setSelectedOverride(k)}
                 className={`flex min-h-[5.5rem] flex-col gap-1 rounded-xl border p-1.5 text-left transition-colors ${
                   isSel ? "border-brand bg-brand-soft/40" : "border-transparent hover:bg-muted/60"
                 } ${inMonth ? "" : "opacity-40"}`}
@@ -154,9 +186,7 @@ export function RelanceCalendar({ events }: { events: CalEvent[] }) {
       {/* Détail du jour */}
       <aside className="rounded-[1.75rem] border bg-card p-5 lg:sticky lg:top-6 lg:h-max">
         <p className="text-sm font-semibold">
-          {selectedDate
-            ? selectedDate.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })
-            : "Sélectionnez un jour"}
+          {selectedDate.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })}
         </p>
         <div className="mt-4 flex flex-col gap-2.5">
           {selectedEvents.length === 0 ? (
@@ -165,7 +195,11 @@ export function RelanceCalendar({ events }: { events: CalEvent[] }) {
             selectedEvents.map((e, i) => {
               const s = styleFor(e);
               return (
-                <div key={i} className="flex items-start gap-3 rounded-2xl border p-3">
+                <Link
+                  key={i}
+                  href={`/app/dossiers/${e.caseId}`}
+                  className="flex items-start gap-3 rounded-2xl border p-3 transition-colors hover:border-brand/50 hover:bg-brand-soft/25"
+                >
                   <span className={`mt-0.5 flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg ${s.chip}`}>
                     {e.agent ? <SpriteAvatar src={`/agents/${e.agent}.webp`} alt="" className="h-6" /> : <span className={`size-2 rounded-full ${s.dot}`} />}
                   </span>
@@ -177,11 +211,34 @@ export function RelanceCalendar({ events }: { events: CalEvent[] }) {
                       {isOverdue(e) ? " · en retard" : ""}
                     </p>
                   </div>
-                </div>
+                </Link>
               );
             })
           )}
         </div>
+      </aside>
+    </div>
+  );
+}
+
+/* Squelette au rendu serveur : même gabarit que le calendrier, sans dates. */
+function CalendarSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_20rem]">
+      <div className="rounded-[1.75rem] border bg-card p-5">
+        <div className="flex items-center justify-between">
+          <div className="h-6 w-32 animate-pulse rounded-md bg-muted" />
+          <div className="h-8 w-28 animate-pulse rounded-full bg-muted" />
+        </div>
+        <div className="mt-4 grid grid-cols-7 gap-1">
+          {Array.from({ length: 42 }).map((_, i) => (
+            <div key={i} className="min-h-[5.5rem] animate-pulse rounded-xl bg-muted/40" />
+          ))}
+        </div>
+      </div>
+      <aside className="rounded-[1.75rem] border bg-card p-5">
+        <div className="h-5 w-28 animate-pulse rounded-md bg-muted" />
+        <div className="mt-4 h-20 animate-pulse rounded-2xl bg-muted/40" />
       </aside>
     </div>
   );

@@ -65,7 +65,6 @@ async function AdminTabs() {
       <div className="mx-auto flex max-w-6xl gap-1 px-6 py-2">
         {[
           { href: "/admin", label: "Vue d’ensemble" },
-          { href: "/admin/calendrier", label: "Calendrier" },
           { href: "/admin/agents", label: "Agents" },
           { href: "/admin/hermes", label: "Hermes & Skills" },
           { href: "/admin/cles", label: "Clés & API" },
