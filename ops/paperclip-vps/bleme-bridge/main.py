@@ -136,23 +136,30 @@ def _seed_system(cli, system: str) -> bool:
     return False
 
 
-def _session_tokens(cli) -> tuple[int, int]:
+def _session_usage(cli) -> tuple[int, int, float]:
+    """(tokens_entrée, tokens_sortie, coût_estimé_usd) cumulés de la session.
+
+    `session_estimated_cost_usd` est le coût que Hermes calcule lui-même (le
+    même que sa commande /usage) : on le forwarde pour que BLEME affiche le
+    chiffre de Hermes plutôt qu'un tarif-liste recalculé. Absent → 0.0, et
+    BLEME retombe alors sur son estimation par slug (comportement inchangé)."""
     holder = getattr(cli, "agent", None)
     if holder is None:
-        return (0, 0)
+        return (0, 0, 0.0)
     return (
         int(getattr(holder, "session_prompt_tokens", 0) or 0),
         int(getattr(holder, "session_completion_tokens", 0) or 0),
+        float(getattr(holder, "session_estimated_cost_usd", 0.0) or 0.0),
     )
 
 
-def _chat_sync(agent: str, model: str, system: str, message: str) -> tuple[str, int, int]:
-    """Retourne (texte, tokens_entrée, tokens_sortie) — delta des compteurs de session."""
+def _chat_sync(agent: str, model: str, system: str, message: str) -> tuple[str, int, int, float]:
+    """Retourne (texte, tokens_entrée, tokens_sortie, coût_usd) — deltas de session."""
     cli = _get_cli(agent, model)
     _disarm_tools(cli)
     if not _seed_system(cli, system):
         message = f"[RÔLE — à respecter strictement]\n{system}\n\n{message}"
-    before_in, before_out = _session_tokens(cli)
+    before_in, before_out, before_cost = _session_usage(cli)
     sink = io.StringIO()
     try:
         with contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
@@ -166,11 +173,12 @@ def _chat_sync(agent: str, model: str, system: str, message: str) -> tuple[str, 
             _clear_history(cli)
     if response is None:
         raise RuntimeError("HermesCLI.chat a renvoyé None")
-    after_in, after_out = _session_tokens(cli)
+    after_in, after_out, after_cost = _session_usage(cli)
     return (
         str(response).strip(),
         max(0, after_in - before_in),
         max(0, after_out - before_out),
+        max(0.0, after_cost - before_cost),
     )
 
 
@@ -255,7 +263,7 @@ async def _execute_routine(routine_id: str, title: str) -> str:
     )
     loop = asyncio.get_running_loop()
     async with _locks[agent]:
-        text, _tok_in, _tok_out = await asyncio.wait_for(
+        text, _tok_in, _tok_out, _cost = await asyncio.wait_for(
             loop.run_in_executor(None, _chat_sync, agent, MODEL, system, message),
             timeout=CHAT_TIMEOUT,
         )
@@ -1596,16 +1604,18 @@ async def run(req: RunRequest) -> dict:
     loop = asyncio.get_running_loop()
     t0 = time.perf_counter()
     total_in = total_out = 0
+    total_cost = 0.0
     tool_trace: list[str] = []
     async with _locks[agent]:
         try:
             for _ in range(TOOL_CALLS_MAX + 1):
-                text, tokens_in, tokens_out = await asyncio.wait_for(
+                text, tokens_in, tokens_out, cost = await asyncio.wait_for(
                     loop.run_in_executor(None, _chat_sync, agent, model, system, message),
                     timeout=req.timeout_s or CHAT_TIMEOUT,
                 )
                 total_in += tokens_in
                 total_out += tokens_out
+                total_cost += cost
                 call = _parse_tool_call(text) if apis else None
                 if call is None or len(tool_trace) >= TOOL_CALLS_MAX:
                     if apis:
@@ -1636,6 +1646,9 @@ async def run(req: RunRequest) -> dict:
         "text": text,
         "input_tokens": total_in,
         "output_tokens": total_out,
+        # Coût estimé par Hermes (USD≈€). BLEME le lit via payload.cost et le
+        # stocke tel quel ; s'il est 0/absent, BLEME retombe sur le tarif-liste.
+        "cost": round(total_cost, 6),
         "tool_calls": tool_trace,
         "duration_ms": int((time.perf_counter() - t0) * 1000),
     }

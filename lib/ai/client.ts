@@ -25,6 +25,11 @@ type AgentConfig = {
   monthly_budget_cents: number;
   system_prompt: string;
   prompt_version: number;
+  // Mixture-of-Agents (voir migration 20260706120000_agents_moa) :
+  moa_enabled: boolean;
+  moa_reference_models: string[];
+  moa_aggregator_model: string | null;
+  moa_reference_max_tokens: number | null;
 };
 
 // microcentimes (1 € = 1 000 000) par token, estimation des tarifs publics.
@@ -59,6 +64,99 @@ async function modelPricingMicrocents(model: string): Promise<{ inMc: number; ou
   return pricingCache.map.get(model) ?? null;
 }
 
+/**
+ * Coût d'un appel en microcents. Privilégie un coût réel déjà remonté par le
+ * fournisseur (`reportedMicrocents`, ex. usage.cost OpenRouter) ; à défaut,
+ * repli sur le pricing du map en essayant chaque slug dans l'ordre. On tente
+ * plusieurs slugs car l'id de modèle RENVOYÉ par un fournisseur peut être daté
+ * (ex. anthropic/claude-4.8-opus-20260528) et ne pas correspondre aux clés du
+ * map, alors que le slug DEMANDÉ (ex. anthropic/claude-opus-4.8) y figure.
+ */
+async function resolveCostMicrocents(opts: {
+  reportedMicrocents?: number | null;
+  inputTokens: number;
+  outputTokens: number;
+  slugs: (string | null | undefined)[];
+}): Promise<number> {
+  if (opts.reportedMicrocents != null) return opts.reportedMicrocents;
+  for (const slug of opts.slugs) {
+    if (!slug) continue;
+    const pricing = await modelPricingMicrocents(slug);
+    if (pricing) return Math.round(opts.inputTokens * pricing.inMc + opts.outputTokens * pricing.outMc);
+  }
+  return 0;
+}
+
+/**
+ * Un appel OpenRouter chat/completions. Retourne le texte, les tokens réels
+ * (usage) et le modèle effectivement servi. Utilisé pour le MOA : proposeurs
+ * et agrégateur passent tous par ici.
+ */
+async function openRouterChat(opts: {
+  apiKey: string;
+  model: string;
+  system: string;
+  user: string;
+  maxTokens: number;
+}): Promise<{
+  text: string;
+  inputTokens: number;
+  outputTokens: number;
+  model: string;
+  // Coût réel facturé par OpenRouter (usage.cost, en USD≈€), en microcents.
+  // null si non renvoyé → repli sur le pricing par slug demandé côté appelant.
+  costMicrocents: number | null;
+}> {
+  const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${opts.apiKey}`,
+      "content-type": "application/json",
+      "HTTP-Referer": "https://bleme.fr",
+      "X-Title": "BLEME",
+    },
+    body: JSON.stringify({
+      model: opts.model,
+      max_tokens: opts.maxTokens,
+      usage: { include: true },
+      messages: [
+        { role: "system", content: opts.system },
+        { role: "user", content: opts.user },
+      ],
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(`OpenRouter ${res.status} (${opts.model}) : ${(await res.text()).slice(0, 200)}`);
+  }
+  const payload = await res.json();
+  const usageCost = payload.usage?.cost;
+  return {
+    text: payload.choices?.[0]?.message?.content ?? "",
+    inputTokens: payload.usage?.prompt_tokens ?? 0,
+    outputTokens: payload.usage?.completion_tokens ?? 0,
+    model: payload.model ?? opts.model,
+    costMicrocents: typeof usageCost === "number" ? Math.round(usageCost * 1_000_000) : null,
+  };
+}
+
+/*
+ * Préambule « Aggregate-and-Synthesize » (papier MoA, Wang et al. 2024),
+ * adapté aux règles non négociables de BLEME : l'agrégateur SYNTHÉTISE (il ne
+ * recopie ni ne vote), évalue chaque proposition de façon critique, et surtout
+ * n'invente jamais une valeur absente des propositions et des faits fournis.
+ * Il est préfixé aux consignes de rôle de l'agent, suivi des réponses des
+ * proposeurs en liste numérotée.
+ */
+const MOA_AGGREGATOR_PREAMBLE =
+  "Plusieurs modèles ont produit chacun une réponse candidate à la même requête. " +
+  "Ta tâche : les SYNTHÉTISER en une seule réponse de haute qualité. Évalue chaque " +
+  "proposition de façon critique — certaines peuvent être biaisées ou erronées. Ne " +
+  "recopie aucune proposition à l'aveugle et ne te contente pas de la majorité : " +
+  "produis une réponse affinée, exacte et complète. N'invente JAMAIS une valeur " +
+  "(montant, date, référence, fait) absente à la fois des propositions et des faits " +
+  "fournis en entrée ; conserve pour chaque valeur sa source. Respecte strictement les " +
+  "consignes de ton rôle ci-dessous et le format de sortie demandé.";
+
 export class AgentUnavailableError extends Error {
   constructor(
     public reason: "paused" | "budget" | "unknown_agent",
@@ -77,10 +175,17 @@ async function loadAgent(key: string): Promise<AgentConfig | null> {
   const supabase = createServiceClient();
   const { data } = await supabase
     .from("agents")
-    .select("key, model, hermes_model, runtime, status, monthly_budget_cents, system_prompt, prompt_version")
+    .select(
+      "key, model, hermes_model, runtime, status, monthly_budget_cents, system_prompt, prompt_version, moa_enabled, moa_reference_models, moa_aggregator_model, moa_reference_max_tokens",
+    )
     .eq("key", key)
     .maybeSingle();
-  return (data as AgentConfig | null) ?? null;
+  if (!data) return null;
+  // moa_reference_models est du jsonb : garantir un tableau de chaînes propre.
+  const refs = Array.isArray(data.moa_reference_models)
+    ? (data.moa_reference_models as unknown[]).filter((m): m is string => typeof m === "string")
+    : [];
+  return { ...(data as AgentConfig), moa_reference_models: refs };
 }
 
 /**
@@ -202,6 +307,123 @@ export async function runAgent<T>(opts: {
   // Coffre de la console d'abord (effet immédiat), variable d'ENV en repli.
   const started = Date.now();
 
+  // ── Mixture-of-Agents (MOA) via OpenRouter ─────────────────────────────────
+  // Orthogonal au runtime : quand un agent a le MOA activé et au moins un
+  // proposeur, proposeurs ET agrégateur passent par OpenRouter. N proposeurs
+  // répondent en parallèle, l'agrégateur synthétise la réponse finale (JSON
+  // validé). Tokens et coût des N+1 appels sommés dans une seule trace.
+  const refModels = [...new Set(agent.moa_reference_models)].filter(Boolean);
+  if (agent.moa_enabled && refModels.length > 0) {
+    const orKey = await getSecret("OPENROUTER_API_KEY");
+
+    // Bêta sans clé OpenRouter : simulation tracée, jamais silencieuse.
+    if (!orKey || orKey === "local-placeholder") {
+      await logRun({
+        ...base,
+        model: `moa:${refModels.length}réfs (simulé)`,
+        status: "ok",
+        simulated: true,
+        duration_ms: Date.now() - started,
+      });
+      return { data: opts.simulation, simulated: true };
+    }
+
+    const aggregatorModel = agent.moa_aggregator_model ?? agent.hermes_model;
+    const refMaxTokens = agent.moa_reference_max_tokens ?? 800;
+    const userMessage = `${JSON.stringify(opts.input)}\n\nRéponds UNIQUEMENT avec le JSON demandé, sans texte autour.`;
+
+    try {
+      // 1) Proposeurs en parallèle. Ils reçoivent la persona de l'agent (donc
+      //    la règle « aucune valeur inventée » — garde-fou juridique), mais un
+      //    échec isolé n'annule pas le run : on agrège les proposeurs qui ont
+      //    répondu (comportement fidèle à Hermes).
+      const proposals = await Promise.allSettled(
+        refModels.map((model) =>
+          openRouterChat({
+            apiKey: orKey,
+            model,
+            system: agent.system_prompt,
+            user: userMessage,
+            maxTokens: refMaxTokens,
+          }),
+        ),
+      );
+      const ok = proposals
+        .map((p, i) => ({ p, model: refModels[i] }))
+        .filter((x): x is { p: PromiseFulfilledResult<Awaited<ReturnType<typeof openRouterChat>>>; model: string } =>
+          x.p.status === "fulfilled",
+        )
+        .map((x) => ({ ...x.p.value, requested: x.model }));
+
+      if (ok.length === 0) {
+        const first = proposals.find((p) => p.status === "rejected") as PromiseRejectedResult | undefined;
+        throw new Error(
+          `Aucun proposeur MOA n'a répondu (${first?.reason instanceof Error ? first.reason.message : "erreur inconnue"})`,
+        );
+      }
+
+      // 2) Agrégateur : préambule de synthèse + persona + réponses numérotées.
+      const references = ok.map((r, i) => `${i + 1}. ${r.text.trim()}`).join("\n\n");
+      const aggregatorSystem = `${agent.system_prompt}\n\n---\n${MOA_AGGREGATOR_PREAMBLE}\n\nRéponses des modèles :\n${references}`;
+      const aggregated = await openRouterChat({
+        apiKey: orKey,
+        model: aggregatorModel,
+        system: aggregatorSystem,
+        user: userMessage,
+        maxTokens: opts.maxTokens ?? 2048,
+      });
+
+      // 3) Le modèle peut entourer le JSON : on isole le premier objet.
+      const jsonText = aggregated.text.slice(
+        aggregated.text.indexOf("{"),
+        aggregated.text.lastIndexOf("}") + 1,
+      );
+      const data = opts.schema.parse(JSON.parse(jsonText));
+
+      // 4) Coût cumulé des N+1 appels. On privilégie le coût réel renvoyé par
+      //    OpenRouter (usage.cost) ; à défaut, repli sur le pricing du map,
+      //    indexé par le SLUG DEMANDÉ (l'id renvoyé peut être daté et ne pas
+      //    correspondre aux clés du map — ex. anthropic/claude-4.8-opus-…).
+      const costOf = (call: Awaited<ReturnType<typeof openRouterChat>>, requestedSlug: string) =>
+        resolveCostMicrocents({
+          reportedMicrocents: call.costMicrocents,
+          inputTokens: call.inputTokens,
+          outputTokens: call.outputTokens,
+          slugs: [requestedSlug],
+        });
+
+      let inputTokens = aggregated.inputTokens;
+      let outputTokens = aggregated.outputTokens;
+      let cost = await costOf(aggregated, aggregatorModel);
+      for (const r of ok) {
+        inputTokens += r.inputTokens;
+        outputTokens += r.outputTokens;
+        cost += await costOf(r, r.requested);
+      }
+
+      const aggShort = aggregatorModel.split("/").pop() ?? aggregatorModel;
+      await logRun({
+        ...base,
+        model: `moa:${ok.length}réfs→${aggShort}`,
+        status: "ok",
+        input_tokens: inputTokens,
+        output_tokens: outputTokens,
+        cost_microcents: cost,
+        duration_ms: Date.now() - started,
+      });
+      return { data, simulated: false };
+    } catch (err) {
+      await logRun({
+        ...base,
+        model: `moa:${refModels.length}réfs`,
+        status: "error",
+        duration_ms: Date.now() - started,
+        error: err instanceof Error ? err.message.slice(0, 500) : "Erreur inconnue",
+      });
+      throw err;
+    }
+  }
+
   // ── Runtime Hermes : le bleme-bridge du VPS (piloté par /admin) ────────────
   if (agent.runtime === "hermes") {
     const [bridgeUrl, bridgeToken, skills, toolApis] = await Promise.all([
@@ -248,10 +470,23 @@ export async function runAgent<T>(opts: {
       const data = opts.schema.parse(JSON.parse(jsonText));
       const inputTokens: number = payload.input_tokens ?? 0;
       const outputTokens: number = payload.output_tokens ?? 0;
-      const pricing = await modelPricingMicrocents(payload.model ?? agent.hermes_model);
-      const cost = pricing
-        ? Math.round(inputTokens * pricing.inMc + outputTokens * pricing.outMc)
-        : 0;
+      // Coût : d'abord un coût réel remonté par le bridge (payload.cost en
+      // USD≈€, ou payload.cost_microcents) ; sinon pricing par slug — on essaie
+      // l'id renvoyé PUIS le slug demandé (l'id peut être daté et rater le map).
+      // > 0 requis : un coût 0/absent du bridge signifie « inconnu » (Hermes ne
+      // l'a pas remonté), pas « gratuit » → on laisse le repli tarif-liste jouer.
+      const reportedMicrocents =
+        typeof payload.cost === "number" && payload.cost > 0
+          ? Math.round(payload.cost * 1_000_000)
+          : typeof payload.cost_microcents === "number" && payload.cost_microcents > 0
+            ? payload.cost_microcents
+            : null;
+      const cost = await resolveCostMicrocents({
+        reportedMicrocents,
+        inputTokens,
+        outputTokens,
+        slugs: [payload.model, agent.hermes_model],
+      });
       await logRun({
         ...base,
         model: `hermes:${payload.model ?? "?"}`,

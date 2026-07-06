@@ -24,14 +24,26 @@ async function requireAdmin() {
   return data?.is_admin ? { supabase, user } : null;
 }
 
+const OR_SLUG = /^[a-z0-9.-]+\/[A-Za-z0-9._:-]+$/;
+
 const settingsSchema = z.object({
   key: z.string().min(1),
-  hermesModel: z
-    .string()
-    .trim()
-    .regex(/^[a-z0-9.-]+\/[A-Za-z0-9._:-]+$/, "Slug OpenRouter attendu (ex. nousresearch/hermes-4-70b)."),
+  hermesModel: z.string().trim().regex(OR_SLUG, "Slug OpenRouter attendu (ex. nousresearch/hermes-4-70b)."),
   status: z.enum(["active", "paused"]),
   budgetEuros: z.coerce.number().min(0).max(10000),
+  moaEnabled: z.coerce.boolean(),
+  // Slug agrégateur optionnel ("" → repli sur le modèle de l'agent).
+  moaAggregatorModel: z
+    .string()
+    .trim()
+    .refine((v) => v === "" || OR_SLUG.test(v), "Slug d’agrégateur OpenRouter invalide.")
+    .transform((v) => (v === "" ? null : v)),
+  // Plafond de tokens des proposeurs ("" → non plafonné).
+  moaReferenceMaxTokens: z
+    .string()
+    .trim()
+    .refine((v) => v === "" || (/^\d+$/.test(v) && Number(v) > 0 && Number(v) <= 32000), "Plafond de tokens invalide.")
+    .transform((v) => (v === "" ? null : Number(v))),
 });
 
 export async function updateAgentSettings(
@@ -46,9 +58,22 @@ export async function updateAgentSettings(
     hermesModel: formData.get("hermesModel"),
     status: formData.get("status"),
     budgetEuros: formData.get("budgetEuros"),
+    moaEnabled: formData.get("moaEnabled") === "true",
+    moaAggregatorModel: formData.get("moaAggregatorModel") ?? "",
+    moaReferenceMaxTokens: formData.get("moaReferenceMaxTokens") ?? "",
   });
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message ?? "Réglages invalides." };
+  }
+
+  // Liste des proposeurs : chaque slug validé, dédupliqué, ordre conservé.
+  const rawRefs = formData.getAll("moaReferenceModels").map((v) => String(v).trim()).filter(Boolean);
+  const badRef = rawRefs.find((r) => !OR_SLUG.test(r));
+  if (badRef) return { error: `Slug de proposeur invalide : ${badRef}` };
+  const referenceModels = [...new Set(rawRefs)];
+
+  if (parsed.data.moaEnabled && referenceModels.length === 0) {
+    return { error: "Ajoutez au moins un modèle proposeur pour activer le MOA." };
   }
 
   const { error } = await admin.supabase
@@ -58,6 +83,10 @@ export async function updateAgentSettings(
       hermes_model: parsed.data.hermesModel,
       status: parsed.data.status,
       monthly_budget_cents: Math.round(parsed.data.budgetEuros * 100),
+      moa_enabled: parsed.data.moaEnabled,
+      moa_reference_models: referenceModels,
+      moa_aggregator_model: parsed.data.moaAggregatorModel,
+      moa_reference_max_tokens: parsed.data.moaReferenceMaxTokens,
       updated_at: new Date().toISOString(),
     })
     .eq("key", parsed.data.key);

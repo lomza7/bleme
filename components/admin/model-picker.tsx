@@ -13,15 +13,31 @@ export function ModelPicker({
   name,
   defaultValue,
   models,
+  onSelect,
+  placeholder,
 }: {
-  name: string;
-  defaultValue: string;
+  name?: string;
+  defaultValue?: string;
   models: ORModel[];
+  // Mode « ajouteur » : quand fourni, sélectionner un modèle appelle onSelect
+  // et remet le champ à zéro au lieu de porter une valeur (pas d'input caché).
+  onSelect?: (id: string) => void;
+  placeholder?: string;
 }) {
-  const [value, setValue] = useState(defaultValue);
+  const [value, setValue] = useState(defaultValue ?? "");
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  const choose = (id: string) => {
+    if (onSelect) {
+      onSelect(id);
+      setValue("");
+    } else {
+      setValue(id);
+    }
+    setOpen(false);
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -35,7 +51,7 @@ export function ModelPicker({
 
   return (
     <div ref={rootRef} className="relative">
-      <input type="hidden" name={name} value={value} />
+      {name ? <input type="hidden" name={name} value={value} /> : null}
       <button
         type="button"
         onClick={() => {
@@ -44,7 +60,7 @@ export function ModelPicker({
         }}
         className="flex w-full items-center justify-between gap-2 rounded-xl border bg-background px-3.5 py-2.5 text-left font-mono text-xs outline-none transition-colors focus:border-brand"
       >
-        <span className="truncate">{value || "Choisir un modèle…"}</span>
+        <span className="truncate">{value || placeholder || "Choisir un modèle…"}</span>
         <ChevronDown className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
@@ -71,10 +87,7 @@ export function ModelPicker({
                 <li key={m.id}>
                   <button
                     type="button"
-                    onClick={() => {
-                      setValue(m.id);
-                      setOpen(false);
-                    }}
+                    onClick={() => choose(m.id)}
                     className={`flex w-full items-center gap-2.5 px-4 py-2 text-left transition-colors hover:bg-muted ${
                       m.id === value ? "bg-brand-soft/50" : ""
                     }`}
@@ -108,10 +121,7 @@ export function ModelPicker({
                 <li className="border-t">
                   <button
                     type="button"
-                    onClick={() => {
-                      setValue(query.trim());
-                      setOpen(false);
-                    }}
+                    onClick={() => choose(query.trim())}
                     className="w-full px-4 py-2 text-left font-mono text-[11px] text-muted-foreground hover:bg-muted"
                   >
                     Utiliser tel quel : « {query.trim()} »

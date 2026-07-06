@@ -111,7 +111,7 @@ export default async function AdminOverview({
     service.from("inbox_items").select("id, source, is_read, is_archived, is_sample"),
     service
       .from("agent_runs")
-      .select("agent_key, status, model, input_tokens, output_tokens, cost_microcents, created_at")
+      .select("agent_key, status, model, simulated, input_tokens, output_tokens, cost_microcents, created_at")
       .gte("created_at", new Date(now - fetchDays * 24 * 3600 * 1000).toISOString()),
   ]);
 
@@ -183,6 +183,10 @@ export default async function AdminOverview({
     Number(r.input_tokens) + Number(r.output_tokens);
   const totalTokensP = runsPeriode.reduce((s, r) => s + tokensOf(r), 0);
   const totalCostP = runsPeriode.reduce((s, r) => s + Number(r.cost_microcents), 0);
+  // Distinction réel / simulé : les runs simulés (bêta sans clé API) sont à 0
+  // token et 0 coût ; on les compte à part pour qu'aucun total ne trompe.
+  const runsReels = runsPeriode.filter((r) => !r.simulated).length;
+  const runsSimules = runsPeriode.length - runsReels;
 
   const granularite = periode <= 30 ? "jour" : periode <= 90 ? "semaine" : "mois";
   const bucketKey = (d: Date): string => {
@@ -357,8 +361,16 @@ export default async function AdminOverview({
               <span className="ml-1.5 text-sm font-normal text-muted-foreground">tokens</span>
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {eurosIA(totalCostP)} estimés · {runsPeriode.length.toLocaleString("fr-FR")} runs ·
-              par {granularite}
+              {eurosIA(totalCostP)} · {runsReels.toLocaleString("fr-FR")} run
+              {runsReels > 1 ? "s" : ""} réel{runsReels > 1 ? "s" : ""}
+              {runsSimules > 0
+                ? ` · ${runsSimules.toLocaleString("fr-FR")} simulé${runsSimules > 1 ? "s" : ""}`
+                : ""}{" "}
+              · par {granularite}
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/80">
+              Coût réel facturé par OpenRouter (usage.cost) pour les runs MOA et
+              Hermes ; les runs simulés (bêta sans clé) restent à 0.
             </p>
             <div className="mt-4">
               <BarChart
