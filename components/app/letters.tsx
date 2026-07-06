@@ -8,37 +8,50 @@ import { LETTER_KINDS, LETTER_STATUS_LABEL } from "@/lib/cases/letter-meta";
 
 const INITIAL: LetterState = {};
 
-/** Boutons de génération de courriers, filtrés par type de dossier. */
+/**
+ * Boutons de génération de courriers. Par défaut, tous les kinds du type de
+ * dossier ; `kinds` cible une sélection (ex. P1 = ['reminder_1'], P2 = prochain
+ * cran d'escalade) ; `primary` affiche un gros bouton brand plutôt qu'une rangée
+ * d'outline.
+ */
 export function GenerateLetterButtons({
   caseId,
   caseType,
+  kinds,
+  primary = false,
 }: {
   caseId: string;
   caseType: string;
+  kinds?: string[];
+  primary?: boolean;
 }) {
   const [state, action, pending] = useActionState(generateLetter, INITIAL);
-  const kinds = Object.entries(LETTER_KINDS).filter(([, m]) =>
-    m.caseTypes.includes(caseType),
-  );
+  const entries: [string, { label: string }][] = kinds
+    ? kinds.filter((k) => LETTER_KINDS[k]).map((k): [string, { label: string }] => [k, LETTER_KINDS[k]])
+    : Object.entries(LETTER_KINDS).filter(([, m]) => m.caseTypes.includes(caseType));
 
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-2">
-        {kinds.map(([kind, meta]) => (
+        {entries.map(([kind, meta]) => (
           <form key={kind} action={action}>
             <input type="hidden" name="caseId" value={caseId} />
             <input type="hidden" name="kind" value={kind} />
             <button
               type="submit"
               disabled={pending}
-              className="inline-flex items-center gap-2 rounded-full border bg-background px-3.5 py-2 text-sm font-medium transition-colors duration-300 hover:border-brand/60 hover:bg-brand-soft disabled:opacity-60"
+              className={
+                primary
+                  ? "inline-flex items-center gap-2 rounded-full bg-brand px-5 py-2.5 text-sm font-medium text-brand-foreground transition-all duration-300 hover:bg-brand-strong active:scale-[0.98] disabled:opacity-60"
+                  : "inline-flex items-center gap-2 rounded-full border bg-background px-3.5 py-2 text-sm font-medium transition-colors duration-300 hover:border-brand/60 hover:bg-brand-soft disabled:opacity-60"
+              }
             >
               {pending ? (
                 <LoaderCircle className="size-4 animate-spin" />
               ) : (
-                <PenLine className="size-4 text-brand-strong" />
+                <PenLine className={`size-4 ${primary ? "" : "text-brand-strong"}`} />
               )}
-              {meta.label}
+              {primary ? `Préparer : ${meta.label.toLowerCase()}` : meta.label}
             </button>
           </form>
         ))}

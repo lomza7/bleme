@@ -254,7 +254,7 @@ export async function deleteDocument(formData: FormData): Promise<void> {
   const supabase = await createClient();
   const { data: doc } = await supabase
     .from("documents")
-    .select("id, storage_path")
+    .select("id, storage_path, case_id")
     .eq("id", id.data)
     .maybeSingle();
   if (!doc) return;
@@ -262,4 +262,9 @@ export async function deleteDocument(formData: FormData): Promise<void> {
   await supabase.from("documents").delete().eq("id", doc.id);
   await supabase.storage.from("documents").remove([doc.storage_path]);
   revalidatePath("/app/documents", "layout");
+  // Retirer une pièce recompose la complétude et rafraîchit la page dossier.
+  if (doc.case_id) {
+    await recomputeCaseProgress(doc.case_id);
+    revalidatePath(`/app/dossiers/${doc.case_id}`);
+  }
 }

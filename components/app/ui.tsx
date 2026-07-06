@@ -2,6 +2,8 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { euros, relativeDays } from "@/lib/format";
 import { CASE_TYPE_LABEL, STATUS_META } from "@/lib/cases/constants";
+import { PhaseTrail } from "@/components/app/phase-trail";
+import type { Phase } from "@/lib/cases/phases";
 
 export type CaseRow = {
   id: string;
@@ -13,6 +15,7 @@ export type CaseRow = {
   amount_recovered_cents: number;
   stage: number;
   stage_total: number;
+  phase: number;
   next_action_label: string | null;
   next_action_at: string | null;
   expected_recovery_at: string | null;
@@ -154,7 +157,7 @@ export function CaseCard({ c }: { c: CaseRow }) {
           <p className="text-lg font-bold tracking-tight">
             {euros(c.status === "resolved" ? c.amount_recovered_cents : remaining)}
           </p>
-          <StageDots stage={c.stage} total={c.stage_total} />
+          <PhaseTrail variant="compact" phase={(c.phase ?? 1) as Phase} />
         </div>
       </div>
       <div className="mt-3 flex items-center justify-end text-sm font-medium text-brand opacity-0 transition-opacity duration-300 group-hover:opacity-100">

@@ -29,7 +29,7 @@ export default async function AppHomePage() {
     supabase
       .from("cases")
       .select(
-        "id, case_type, title, status, debtor_name, amount_claimed_cents, amount_recovered_cents, stage, stage_total, next_action_label, next_action_at, expected_recovery_at, is_sample",
+        "id, case_type, title, status, debtor_name, amount_claimed_cents, amount_recovered_cents, stage, stage_total, phase, next_action_label, next_action_at, expected_recovery_at, is_sample",
       )
       .neq("status", "closed")
       .order("next_action_at", { ascending: true, nullsFirst: false })

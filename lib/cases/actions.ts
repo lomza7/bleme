@@ -86,6 +86,8 @@ export async function createCaseFromDraft(
       summary_md: summaryParts.join("\n\n") || null,
       weak_points_md: d.devilAnswer.trim() || null,
       stage: 1,
+      phase: 1,
+      next_letter_kind: isUnpaid ? "reminder_1" : "response",
       next_action_label: isUnpaid
         ? "Ajouter vos preuves (facture, devis…)"
         : "Ajouter vos preuves (devis, échanges, photos…)",
@@ -124,6 +126,46 @@ export async function createCaseFromDraft(
 
   revalidatePath("/app");
   redirect(`/app/dossiers/${created.id}`);
+}
+
+/* ── Demande (Phase 1) : récap éditable, la correction utilisateur prime ───── */
+
+const requestSchema = z.object({
+  caseId: z.uuid(),
+  debtorName: z.string().trim().min(1).max(200),
+  amount: z.string().optional().default(""),
+  subject: z.string().trim().max(2000).optional().default(""),
+});
+
+export async function updateCaseRequest(
+  _prev: { error?: string; success?: string },
+  formData: FormData,
+): Promise<{ error?: string; success?: string }> {
+  const parsed = requestSchema.safeParse({
+    caseId: formData.get("caseId"),
+    debtorName: formData.get("debtorName"),
+    amount: formData.get("amount"),
+    subject: formData.get("subject"),
+  });
+  if (!parsed.success) return { error: "Vérifiez les informations saisies." };
+  const org = await currentOrgId();
+  if ("error" in org) return { error: org.error };
+
+  const supabase = await createClient();
+  const cents = parseAmountToCents(parsed.data.amount);
+  const { error } = await supabase
+    .from("cases")
+    .update({
+      debtor_name: parsed.data.debtorName,
+      amount_claimed_cents: cents,
+      summary_md: parsed.data.subject || null,
+    })
+    .eq("id", parsed.data.caseId);
+  if (error) return { error: "Impossible d’enregistrer. Réessayez." };
+
+  revalidatePath(`/app/dossiers/${parsed.data.caseId}`);
+  revalidatePath("/app");
+  return { success: "Demande mise à jour." };
 }
 
 /* ── Paiement reçu ────────────────────────────────────────────────────────── */
@@ -196,6 +238,7 @@ export async function createSampleCases(): Promise<void> {
       debtor_name: "SARL Bâti Concept",
       amount_claimed_cents: 240000,
       stage: 3,
+      phase: 2,
       next_action_label: "Valider la mise en demeure",
       next_action_at: days(1),
       expected_recovery_at: days(18),
@@ -218,6 +261,7 @@ export async function createSampleCases(): Promise<void> {
       debtor_name: "Menuiserie Roux",
       amount_claimed_cents: 585000,
       stage: 2,
+      phase: 2,
       next_action_label: "Relance ferme programmée",
       next_action_at: days(4),
       expected_recovery_at: days(32),
@@ -237,6 +281,7 @@ export async function createSampleCases(): Promise<void> {
       debtor_name: "Dubois Rénovation",
       amount_claimed_cents: 320000,
       stage: 1,
+      phase: 1,
       next_action_label: "Ajouter la preuve de livraison et les photos",
       next_action_at: days(2),
       expected_recovery_at: null,
@@ -258,6 +303,7 @@ export async function createSampleCases(): Promise<void> {
       amount_claimed_cents: 168000,
       amount_recovered_cents: 168000,
       stage: 4,
+      phase: 3,
       next_action_label: null,
       next_action_at: null,
       expected_recovery_at: null,

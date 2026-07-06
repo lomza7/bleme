@@ -23,6 +23,7 @@ const INITIAL: LetterState = {};
 export function ReviewLetter({
   letter,
   caseId,
+  embedded = false,
 }: {
   letter: {
     id: string;
@@ -33,12 +34,18 @@ export function ReviewLetter({
     approved_at: string | null;
   };
   caseId: string;
+  embedded?: boolean;
 }) {
   const router = useRouter();
   const [state, action, pending] = useActionState(
     async (prev: LetterState, fd: FormData) => {
       const res = await approveAndSendLetter(prev, fd);
-      if (res.success) router.push(`/app/dossiers/${caseId}`);
+      // Inline : on reste dans le flux (revalidatePath rafraîchit le RSC → statut
+      // « envoyé »). Sur la page dédiée : retour au dossier.
+      if (res.success) {
+        if (embedded) router.refresh();
+        else router.push(`/app/dossiers/${caseId}`);
+      }
       return res;
     },
     INITIAL,
@@ -46,10 +53,11 @@ export function ReviewLetter({
   const [body, setBody] = useState(letter.body_md);
   const [channel, setChannel] = useState<"email" | "postal">("email");
   const sent = letter.status === "sent";
+  const wrap = embedded ? "" : "rounded-[1.75rem] border bg-card p-6 sm:p-7";
 
   if (sent) {
     return (
-      <div className="rounded-[1.75rem] border bg-card p-7">
+      <div className={embedded ? "" : "rounded-[1.75rem] border bg-card p-7"}>
         <div className="flex items-center gap-2 text-emerald-700">
           <ShieldCheck className="size-5" />
           <h2 className="font-semibold">Courrier validé et envoyé</h2>
@@ -67,7 +75,7 @@ export function ReviewLetter({
   }
 
   return (
-    <form action={action} className="rounded-[1.75rem] border bg-card p-6 sm:p-7">
+    <form action={action} className={wrap}>
       <input type="hidden" name="letterId" value={letter.id} />
       <input type="hidden" name="channel" value={channel} />
       <input type="hidden" name="body" value={body} />

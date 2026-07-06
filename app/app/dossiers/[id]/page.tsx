@@ -3,26 +3,31 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import {
   ArrowLeft,
-  ArrowRight,
-  Bot,
   CheckCircle2,
   Circle,
   CircleAlert,
-  CircleUser,
-  Cog,
-  FileText,
+  Download,
   Sparkles,
   ShieldQuestion,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { dateFr, dateLongFr, euros } from "@/lib/format";
+import { dateLongFr, euros } from "@/lib/format";
 import { CASE_TYPE_LABEL, STATUS_META } from "@/lib/cases/constants";
 import { checklistFor, completeness, DOC_KINDS } from "@/lib/cases/completeness";
+import { derivePhase, nextLetterKind } from "@/lib/cases/phases";
+import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { dossierWarnings } from "@/lib/cases/analysis";
 import { Uploader } from "@/components/app/uploader";
 import { GenerateLetterButtons, LetterRow } from "@/components/app/letters";
+import { ReviewLetter } from "@/components/app/review-letter";
 import { FactRow } from "@/components/app/fact-row";
+import { FileList } from "@/components/app/file-list";
 import { DossierSteps, type Companion } from "@/components/app/dossier-steps";
+import { CompanionCard } from "@/components/app/companion-card";
+import { CaseRequest } from "@/components/app/case-request";
+import { Phase2Flow } from "@/components/app/phase2-flow";
+import { EscalationPanel } from "@/components/app/escalation-panel";
+import { PhaseTrail } from "@/components/app/phase-trail";
 
 export const metadata: Metadata = { title: "Dossier" };
 
@@ -38,19 +43,19 @@ export default async function CaseDetailPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [{ data: c }, { data: events }, { data: docs }, { data: letters }] = await Promise.all([
+  const [{ data: c }, { data: docs }, { data: letters }, { data: replies }] = await Promise.all([
     supabase.from("cases").select("*").eq("id", id).maybeSingle(),
     supabase
-      .from("case_events")
-      .select("id, event_date, event_type, title, description, source")
-      .eq("case_id", id)
-      .order("event_date", { ascending: false }),
-    supabase.from("documents").select("id, doc_kind, doc_class").eq("case_id", id).order("created_at", { ascending: false }),
-    supabase
-      .from("letters")
-      .select("id, kind, status, subject, created_at")
+      .from("documents")
+      .select("id, doc_kind, doc_class, file_name, mime_type, size_bytes, created_at")
       .eq("case_id", id)
       .order("created_at", { ascending: false }),
+    supabase
+      .from("letters")
+      .select("id, kind, status, subject, body_md, channel, approved_at, created_at")
+      .eq("case_id", id)
+      .order("created_at", { ascending: false }),
+    supabase.from("debtor_replies").select("handled").eq("case_id", id),
   ]);
   if (!c) notFound();
 
@@ -63,12 +68,10 @@ export default async function CaseDetailPage({
     : { data: [] };
 
   const statusMeta = STATUS_META[c.status] ?? { label: c.status, tone: "muted" };
-  const remaining = c.amount_claimed_cents - c.amount_recovered_cents;
   const items = checklistFor(c.case_type);
   const { score, satisfied, missing } = completeness(c.case_type, docList);
   const satisfiedSet = new Set(satisfied);
   const factList = facts ?? [];
-  // Cohérence à l'échelle du dossier : on ne laisse plus passer un dossier bancal.
   const warnings = dossierWarnings(
     c.case_type,
     Number(c.amount_claimed_cents) || 0,
@@ -85,12 +88,134 @@ export default async function CaseDetailPage({
         })),
     })),
   );
-  const letterList = letters ?? [];
-  const pendingLetter = letterList.find((l) => l.status === "draft" || l.status === "edited");
-  const hasSent = letterList.some((l) => l.status === "sent");
-  const active = c.status !== "resolved" && c.status !== "closed";
 
-  // ── Panneaux des étapes ─────────────────────────────────────────────────────
+  const letterList = letters ?? [];
+  const sentKinds = letterList.filter((l) => l.status === "sent").map((l) => l.kind);
+  const pendingRaw = letterList.find((l) => l.status === "draft" || l.status === "edited");
+  const pendingLetter = pendingRaw
+    ? {
+        id: pendingRaw.id,
+        subject: pendingRaw.subject,
+        body_md: pendingRaw.body_md,
+        status: pendingRaw.status,
+        channel: pendingRaw.channel,
+        approved_at: pendingRaw.approved_at,
+      }
+    : null;
+  const hasUnhandledReply = (replies ?? []).some((r) => !r.handled);
+  const active = c.status !== "resolved" && c.status !== "closed";
+  const isDispute = c.case_type === "client_dispute";
+  const phase = derivePhase({ status: c.status, sentKinds });
+  const nextKind = nextLetterKind(c.case_type, sentKinds);
+  const missLabels = missing.map((m) => m.label.toLowerCase());
+
+  const header = (
+    <>
+      <Link
+        href="/app"
+        className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors duration-300 hover:text-foreground"
+      >
+        <ArrowLeft className="size-4" />
+        Tableau de bord
+      </Link>
+      <div className="mt-5">
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+              statusMeta.tone === "green"
+                ? "bg-emerald-100 text-emerald-800"
+                : statusMeta.tone === "amber"
+                  ? "bg-amber-100 text-amber-800"
+                  : statusMeta.tone === "brand"
+                    ? "bg-brand-soft text-brand-strong"
+                    : "bg-muted text-muted-foreground"
+            }`}
+          >
+            {statusMeta.label}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            {CASE_TYPE_LABEL[c.case_type]}
+            {c.is_sample ? " · dossier d’exemple" : ""} · créé le {dateLongFr(c.created_at)}
+          </span>
+        </div>
+        <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">{c.title}</h1>
+      </div>
+    </>
+  );
+
+  const piecesSection = (
+    <section className="mt-6">
+      <div className="flex flex-wrap items-baseline justify-between gap-2 px-1">
+        <h2 className="font-semibold">Pièces du dossier</h2>
+        <p className="text-xs text-muted-foreground">
+          {docList.length} document{docList.length > 1 ? "s" : ""} · téléchargez ou retirez une pièce
+        </p>
+      </div>
+      <div className="mt-4">
+        <FileList
+          docs={docList.map((d) => ({
+            id: d.id,
+            file_name: d.file_name,
+            mime_type: d.mime_type,
+            size_bytes: Number(d.size_bytes),
+            created_at: d.created_at,
+          }))}
+        />
+      </div>
+    </section>
+  );
+
+  const courriersSection =
+    letterList.length > 0 ? (
+      <section className="mt-6">
+        <h2 className="px-1 font-semibold">Courriers</h2>
+        <div className="mt-4 flex flex-col gap-2.5">
+          {letterList.map((l) => (
+            <LetterRow key={l.id} letter={l} caseId={c.id} />
+          ))}
+        </div>
+      </section>
+    ) : null;
+
+  // ── Dossier résolu / clos : vue de synthèse en lecture seule ────────────────
+  if (!active) {
+    return (
+      <div>
+        {header}
+        <div className="mt-8">
+          <PhaseTrail phase={phase} />
+        </div>
+        <section className="mt-6 rounded-[1.75rem] border bg-card p-6 sm:p-7">
+          <h2 className="text-lg font-semibold">
+            {c.status === "resolved" ? "Dossier résolu" : "Dossier clôturé"}
+          </h2>
+          {c.status === "resolved" ? (
+            <p className="mt-1 text-sm text-emerald-700">{euros(Number(c.amount_recovered_cents) || 0)} récupérés.</p>
+          ) : null}
+          <Link
+            href={`/app/dossiers/${c.id}/export`}
+            className="mt-4 inline-flex items-center gap-2 text-sm font-medium text-brand-strong"
+          >
+            <Download className="size-4" />
+            Exporter le dossier
+          </Link>
+        </section>
+        {courriersSection}
+        {piecesSection}
+      </div>
+    );
+  }
+
+  // ── Panneaux Phase 1 ────────────────────────────────────────────────────────
+  const panelDemande = (
+    <CaseRequest
+      caseId={c.id}
+      debtorName={c.debtor_name}
+      amountCents={Number(c.amount_claimed_cents) || 0}
+      subject={c.summary_md ?? ""}
+    />
+  );
+
   const panelPreuves = (
     <section className="rounded-[1.75rem] border bg-card p-6 sm:p-7">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -121,12 +246,10 @@ export default async function CaseDetailPage({
           );
         })}
       </ul>
-      {active ? (
-        <div className="mt-6 border-t pt-6">
-          <p className="mb-3 text-sm font-medium">Ajouter une pièce</p>
-          <Uploader scope={c.id} kinds={DOC_KINDS} />
-        </div>
-      ) : null}
+      <div className="mt-6 border-t pt-6">
+        <p className="mb-3 text-sm font-medium">Ajouter une pièce</p>
+        <Uploader scope={c.id} kinds={DOC_KINDS} />
+      </div>
     </section>
   );
 
@@ -166,7 +289,6 @@ export default async function CaseDetailPage({
           </ul>
         </div>
       ) : null}
-
       {c.weak_points_md ? (
         <div className="mt-5 rounded-2xl bg-brand-soft p-5 ring-1 ring-brand/25">
           <div className="flex items-center gap-2">
@@ -179,41 +301,38 @@ export default async function CaseDetailPage({
     </section>
   );
 
-  const panelCourrier = (
+  const firstKind = isDispute ? "response" : "reminder_1";
+  const panelPremierCourrier = (
     <section className="rounded-[1.75rem] border bg-card p-6 sm:p-7">
-      <h2 className="text-lg font-semibold">Rédigez et validez</h2>
+      <h2 className="text-lg font-semibold">Lancez la première relance</h2>
       <p className="mt-1 text-sm text-muted-foreground">
-        Un brouillon est préparé à partir des faits validés. Relisez-le, puis validez pour l’envoyer en votre nom.
+        Un brouillon est préparé à partir des faits validés. Relisez-le, choisissez le mode d’envoi, puis validez pour l’envoyer en votre nom.
       </p>
-      {warnings.length > 0 ? (
+      {warnings.length > 0 && !pendingLetter ? (
         <p className="mt-4 flex items-start gap-2 rounded-2xl bg-amber-50 px-4 py-3 text-[13px] text-amber-800 ring-1 ring-amber-200">
           <CircleAlert className="mt-0.5 size-4 shrink-0" />
           {warnings.length} incohérence{warnings.length > 1 ? "s" : ""} repérée{warnings.length > 1 ? "s" : ""} : vérifiez-les à l’étape « Faits » avant d’envoyer.
         </p>
       ) : null}
-      {active ? (
+      {pendingLetter ? (
+        <div className="mt-5">
+          <ReviewLetter letter={pendingLetter} caseId={c.id} embedded />
+        </div>
+      ) : (
         <div className="mt-4">
-          <GenerateLetterButtons caseId={c.id} caseType={c.case_type} />
+          <GenerateLetterButtons caseId={c.id} caseType={c.case_type} kinds={[firstKind]} primary />
+          {score < 100 ? (
+            <p className="mt-4 text-xs text-muted-foreground">
+              Astuce : complétez d’abord les preuves manquantes pour un courrier plus solide.
+            </p>
+          ) : null}
         </div>
-      ) : null}
-      {letterList.length > 0 ? (
-        <div className="mt-5 flex flex-col gap-2.5">
-          {letterList.map((l) => (
-            <LetterRow key={l.id} letter={l} caseId={c.id} />
-          ))}
-        </div>
-      ) : null}
-      {score < 100 && !hasSent ? (
-        <p className="mt-4 text-xs text-muted-foreground">
-          Astuce : complétez d’abord les preuves manquantes à l’étape 1 pour un courrier plus solide.
-        </p>
-      ) : null}
+      )}
     </section>
   );
 
-  // ── Agent compagnon par étape (réactions scriptées à l'état réel) ───────────
-  const missLabels = missing.map((m) => m.label.toLowerCase());
-  const companions: Companion[] = [
+  const companionsP1: Companion[] = [
+    { key: "marius", prenom: "Marius", role: "Agent Impayés", message: "Vérifions votre demande : à qui, combien, pour quoi. Vous pourrez tout corriger." },
     {
       key: "nora",
       prenom: "Nora",
@@ -240,113 +359,83 @@ export default async function CaseDetailPage({
       role: "Agent Impayés",
       message: pendingLetter
         ? "Votre brouillon est prêt. Relisez-le, puis validez pour l’envoyer en votre nom."
-        : hasSent
-          ? "Relance envoyée. Sacha surveille maintenant les échéances."
-          : "Je prépare votre courrier à partir des faits validés. Choisissez le ton.",
+        : "Je prépare votre première relance à partir des faits validés. Il ne partira qu’après votre validation.",
     },
   ];
 
-  const defaultStep = pendingLetter ? 2 : score < 100 ? 0 : letterList.length > 0 ? 2 : 1;
+  // ── Compagnon Phase 2 / Phase 3 ─────────────────────────────────────────────
+  const companionP2: Companion = pendingLetter
+    ? { key: "marius", prenom: "Marius", role: "Agent Impayés", message: "Votre brouillon est prêt. Relisez-le, puis validez pour l’envoyer en votre nom." }
+    : hasUnhandledReply
+      ? {
+          key: isDispute ? "lena" : "marius",
+          prenom: isDispute ? "Léna" : "Marius",
+          role: isDispute ? "Agente Litiges" : "Agent Impayés",
+          message: "Le client a répondu. Je prépare une réponse adaptée à ce qu’il dit et à vos pièces.",
+        }
+      : {
+          key: "sacha",
+          prenom: "Sacha",
+          role: "Agent Vigie",
+          message: nextKind
+            ? `Je surveille l’échéance. Prochaine relance : ${LETTER_KINDS[nextKind]?.label ?? nextKind}. Dites-moi si le client répond, on adaptera.`
+            : "Toutes les relances sont parties. On peut envisager l’escalade en phase suivante.",
+        };
 
-  const sideCard = (
-    <>
-      <section className="rounded-[1.75rem] border bg-card p-7">
-        <h2 className="font-semibold">Montants</h2>
-        <dl className="mt-4 space-y-3 text-sm">
-          <div className="flex items-center justify-between">
-            <dt className="text-muted-foreground">Réclamé</dt>
-            <dd className="font-semibold">{euros(c.amount_claimed_cents)}</dd>
-          </div>
-          <div className="flex items-center justify-between">
-            <dt className="text-muted-foreground">Récupéré</dt>
-            <dd className="font-semibold text-emerald-700">{euros(c.amount_recovered_cents)}</dd>
-          </div>
-          <div className="flex items-center justify-between border-t pt-3">
-            <dt className="text-muted-foreground">Restant</dt>
-            <dd className="font-bold">{euros(Math.max(0, remaining))}</dd>
-          </div>
-        </dl>
-      </section>
-      <Link
-        href={`/app/documents/${c.id}`}
-        className="flex items-center gap-3 rounded-[1.75rem] border bg-card p-5 transition-colors duration-300 hover:border-brand/50 hover:bg-brand-soft/40"
-      >
-        <FileText className="size-5 text-brand-strong" />
-        <div className="min-w-0">
-          <p className="text-sm font-medium">Toutes les pièces</p>
-          <p className="text-xs text-muted-foreground">
-            {docList.length} document{docList.length > 1 ? "s" : ""} dans ce dossier
-          </p>
-        </div>
-        <ArrowRight className="ml-auto size-4 text-muted-foreground" />
-      </Link>
-    </>
-  );
+  const companionP3: Companion = c.devil_review
+    ? { key: "jeanne", prenom: "Jeanne", role: "Agente Avocat du diable", message: "J’ai passé le dossier au crible. Voici les objections possibles et la pièce qui corrige chacune." }
+    : { key: "jeanne", prenom: "Jeanne", role: "Agente Avocat du diable", message: "Avant d’escalader, je peux examiner le dossier du point de vue de la partie adverse." };
+
+  const defaultStep = pendingLetter ? 3 : missing.length > 0 ? 1 : 3;
 
   return (
     <div>
-      <Link
-        href="/app"
-        className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors duration-300 hover:text-foreground"
-      >
-        <ArrowLeft className="size-4" />
-        Tableau de bord
-      </Link>
-
-      <div className="mt-5 flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <span
-              className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                statusMeta.tone === "green"
-                  ? "bg-emerald-100 text-emerald-800"
-                  : statusMeta.tone === "amber"
-                    ? "bg-amber-100 text-amber-800"
-                    : statusMeta.tone === "brand"
-                      ? "bg-brand-soft text-brand-strong"
-                      : "bg-muted text-muted-foreground"
-              }`}
-            >
-              {statusMeta.label}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              {CASE_TYPE_LABEL[c.case_type]}
-              {c.is_sample ? " · dossier d’exemple" : ""} · créé le {dateLongFr(c.created_at)}
-            </span>
-          </div>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">{c.title}</h1>
-        </div>
-      </div>
+      {header}
 
       <div className="mt-8">
-        <DossierSteps
-          stepLabels={["Preuves", "Faits", "Courrier"]}
-          panels={[panelPreuves, panelFaits, panelCourrier]}
-          companions={companions}
-          defaultStep={defaultStep}
-          side={sideCard}
-        />
+        <PhaseTrail phase={phase} />
       </div>
 
-      {/* Chronologie du dossier */}
-      <section className="mt-6 rounded-[1.75rem] border bg-card p-6 sm:p-7">
-        <h2 className="font-semibold">Chronologie</h2>
-        <ol className="relative mt-5">
-          <span aria-hidden className="absolute bottom-3 left-[15px] top-3 w-px bg-border" />
-          {(events ?? []).map((e) => (
-            <li key={e.id} className="relative flex items-start gap-4 py-3">
-              <span className="z-[1] mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-muted text-muted-foreground ring-4 ring-card">
-                {e.source === "ai" ? <Bot className="size-4" /> : e.source === "user" ? <CircleUser className="size-4" /> : <Cog className="size-4" />}
-              </span>
-              <div className="min-w-0">
-                <p className="text-[15px] font-medium">{e.title}</p>
-                {e.description ? <p className="mt-0.5 text-sm text-muted-foreground">{e.description}</p> : null}
-                <p className="mt-0.5 text-xs text-muted-foreground/80">{dateFr(e.event_date)}</p>
-              </div>
-            </li>
-          ))}
-        </ol>
-      </section>
+      <div className="mt-6">
+        {phase === 1 ? (
+          <DossierSteps
+            stepLabels={["Demande", "Preuves", "Faits", "Premier courrier"]}
+            panels={[panelDemande, panelPreuves, panelFaits, panelPremierCourrier]}
+            companions={companionsP1}
+            defaultStep={defaultStep}
+            side={null}
+          />
+        ) : (
+          <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              {phase === 2 ? (
+                <Phase2Flow
+                  caseId={c.id}
+                  caseType={c.case_type}
+                  nextKind={nextKind}
+                  nextActionAt={c.next_action_at}
+                  pendingLetter={pendingLetter}
+                  hasUnhandledReply={hasUnhandledReply}
+                />
+              ) : (
+                <EscalationPanel
+                  caseId={c.id}
+                  status={c.status}
+                  devilReview={c.devil_review ?? null}
+                  escalationSummary={c.escalation_summary_md ?? null}
+                  pendingLetter={pendingLetter}
+                />
+              )}
+            </div>
+            <aside className="lg:sticky lg:top-6">
+              <CompanionCard companion={phase === 2 ? companionP2 : companionP3} />
+            </aside>
+          </div>
+        )}
+      </div>
+
+      {courriersSection}
+      {piecesSection}
     </div>
   );
 }

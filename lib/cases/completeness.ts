@@ -1,5 +1,7 @@
 import "server-only";
 import { createClient } from "@/lib/supabase/server";
+import { LETTER_KINDS } from "@/lib/cases/letter-meta";
+import { derivePhase, nextLetterKind } from "@/lib/cases/phases";
 
 /*
  * Moteur du cockpit dossier : checklist de complétude par type, calcul du
@@ -65,58 +67,78 @@ function inDays(n: number): string {
 }
 
 /**
- * Recalcule score, stage, statut et prochaine action d'un dossier à partir de
- * ses pièces et de ses courriers. Idempotent ; ne touche jamais un dossier
- * résolu/clos. Renvoie le nouveau score (pour affichage optimiste).
+ * Recalcule score, phase, stage, statut, prochain courrier et prochaine action
+ * d'un dossier à partir de ses pièces, ses courriers et les retours du débiteur.
+ * Idempotent ; ne touche jamais un dossier résolu/clos ; le statut 'escalated'
+ * (mode escalade décidé par l'utilisateur) est « collant ». La phase (1..3) est
+ * dérivée de l'état réel (derivePhase) et persistée comme cache d'affichage.
+ * Renvoie le nouveau score (pour affichage optimiste).
  */
 export async function recomputeCaseProgress(caseId: string): Promise<number | null> {
   const supabase = await createClient();
-  const [{ data: c }, { data: docs }, { data: letters }] = await Promise.all([
+  const [{ data: c }, { data: docs }, { data: letters }, { data: replies }] = await Promise.all([
     supabase.from("cases").select("case_type, status, stage_total").eq("id", caseId).maybeSingle(),
     supabase.from("documents").select("doc_kind, doc_class").eq("case_id", caseId),
     supabase.from("letters").select("kind, status").eq("case_id", caseId).order("created_at", { ascending: false }),
+    supabase.from("debtor_replies").select("handled").eq("case_id", caseId),
   ]);
   if (!c) return null;
   if (c.status === "resolved" || c.status === "closed") return null;
 
   const { score, missing } = completeness(c.case_type, docs ?? []);
   const ls = letters ?? [];
-  const hasSent = ls.some((l) => l.status === "sent");
+  const sentKinds = ls.filter((l) => l.status === "sent").map((l) => l.kind);
+  const hasSent = sentKinds.length > 0;
   const pendingReview = ls.find((l) => l.status === "draft" || l.status === "edited");
+  const unhandledReply = (replies ?? []).some((r) => !r.handled);
 
-  // Prochaine action + stage + statut, dans l'ordre du parcours.
-  let stage = 1;
-  let status = "awaiting_user";
+  // Phase = état réel (statut + courriers envoyés), persistée en cache.
+  const phase = derivePhase({ status: c.status, sentKinds });
+  const nextKind = nextLetterKind(c.case_type, sentKinds);
+
+  // Statut : 'escalated' est collant (mode escalade décidé par l'utilisateur).
+  let status: string;
+  if (c.status === "escalated") status = "escalated";
+  else if (pendingReview || unhandledReply) status = "awaiting_user";
+  else if (hasSent) status = "awaiting_debtor";
+  else status = "awaiting_user";
+
+  // Prochaine action (label), par ordre de priorité. Indépendant du statut
+  // collant : un brouillon à valider prime toujours dans la formulation.
   let label: string;
   let at = inDays(1);
-
   if (pendingReview) {
-    // Un brouillon attend une relecture/validation → priorité absolue.
-    stage = 2;
     label = "Relisez et validez votre courrier";
-  } else if (hasSent) {
-    // Un courrier est parti : l'état dominant est « on attend le débiteur »,
-    // même si des pièces restent à compléter (visibles dans la checklist).
-    stage = 3;
-    status = "awaiting_debtor";
-    label = "En attente du client · relance de suivi bientôt";
+  } else if (unhandledReply) {
+    label = "Le client a répondu — préparez la réponse adaptée";
+  } else if (phase === 3) {
+    label =
+      c.status === "escalated"
+        ? "Escalade engagée — préparez le dossier"
+        : "Mise en demeure envoyée — sans réponse, envisagez l’escalade";
+    at = inDays(7);
+  } else if (phase === 2) {
+    label = nextKind
+      ? `Prochaine relance : ${LETTER_KINDS[nextKind]?.label ?? nextKind}`
+      : "En attente du client";
     at = inDays(7);
   } else if (missing.length > 0) {
-    // Collecte des preuves.
-    stage = 1;
     label = `Déposez : ${missing[0].label.toLowerCase()}`;
   } else {
-    // Dossier complet, prêt à rédiger.
-    stage = 2;
     label = "Générez votre première relance";
   }
+
+  // stage (1..4) legacy conservé pour StageDots : mappé sur la phase.
+  const stage = phase === 3 ? 4 : phase === 2 ? 3 : missing.length > 0 ? 1 : 2;
 
   await supabase
     .from("cases")
     .update({
       completeness_score: score,
+      phase,
       stage,
       status,
+      next_letter_kind: nextKind,
       next_action_label: label,
       next_action_at: at,
     })

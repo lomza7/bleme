@@ -9,6 +9,10 @@ export const LETTER_KINDS: Record<
   reminder_2: { label: "Relance ferme", tone: "ferme", caseTypes: ["unpaid_invoice"] },
   formal_notice: { label: "Mise en demeure", tone: "ferme", caseTypes: ["unpaid_invoice"] },
   response: { label: "Réponse à la contestation", tone: "factuel", caseTypes: ["client_dispute"] },
+  // Courriers créés par programme (réponse adaptée à un retour, modèles
+  // d'escalade P3) : jamais proposés comme bouton générique (caseTypes vide) ;
+  // le sujet du courrier porte le libellé précis.
+  custom: { label: "Courrier personnalisé", tone: "factuel", caseTypes: [] },
 };
 
 export const LETTER_STATUS_LABEL: Record<string, string> = {
