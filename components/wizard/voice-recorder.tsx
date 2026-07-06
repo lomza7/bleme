@@ -22,9 +22,11 @@ function fmt(s: number) {
 export function VoiceRecorder({
   onDone,
   onDenied,
+  light,
 }: {
   onDone: (seconds: number) => void;
   onDenied: () => void;
+  light?: boolean;
 }) {
   const [state, setState] = useState<RecState>("idle");
   const [seconds, setSeconds] = useState(0);
@@ -139,7 +141,7 @@ export function VoiceRecorder({
       <button
         type="button"
         onClick={start}
-        className="group flex w-full flex-col items-center gap-5 rounded-[1.75rem] bg-white/[0.05] px-8 py-12 ring-1 ring-white/10 transition-all duration-500 ease-fluid hover:bg-white/[0.08] hover:ring-brand/60"
+        className={`group flex w-full flex-col items-center gap-5 rounded-[1.75rem] px-8 py-12 transition-all duration-500 ease-fluid hover:ring-brand/60 ${light ? "bg-card border hover:bg-brand-soft/60" : "bg-white/[0.05] ring-1 ring-white/10 hover:bg-white/[0.08]"}`}
       >
         <span className="relative flex size-20 items-center justify-center rounded-full bg-brand text-brand-foreground transition-transform duration-500 ease-fluid group-hover:scale-105">
           <span
@@ -151,7 +153,9 @@ export function VoiceRecorder({
         <span className="text-lg font-semibold">
           Appuyez et racontez votre blème
         </span>
-        <span className="max-w-sm text-center text-sm leading-relaxed text-ink-muted">
+        <span
+          className={`max-w-sm text-center text-sm leading-relaxed ${light ? "text-muted-foreground" : "text-ink-muted"}`}
+        >
           Comme vous le raconteriez à un ami. Visez 2 à 5 minutes : plus vous
           donnez de contexte, plus le dossier sera solide.
         </span>
@@ -161,14 +165,18 @@ export function VoiceRecorder({
 
   if (state === "done") {
     return (
-      <div className="flex items-center justify-between gap-4 rounded-[1.75rem] bg-white/[0.05] px-7 py-6 ring-1 ring-white/10">
+      <div
+        className={`flex items-center justify-between gap-4 rounded-[1.75rem] px-7 py-6 ${light ? "bg-card border" : "bg-white/[0.05] ring-1 ring-white/10"}`}
+      >
         <div className="flex items-center gap-4">
           <span className="flex size-11 items-center justify-center rounded-full bg-brand/15 text-brand">
             <Mic className="size-5" />
           </span>
           <div>
             <p className="font-medium">Récit enregistré · {fmt(seconds)}</p>
-            <p className="text-sm text-ink-muted">
+            <p
+              className={`text-sm ${light ? "text-muted-foreground" : "text-ink-muted"}`}
+            >
               L’IA l’analysera à la création du dossier.
             </p>
           </div>
@@ -176,7 +184,7 @@ export function VoiceRecorder({
         <button
           type="button"
           onClick={reset}
-          className="inline-flex items-center gap-2 rounded-full bg-white/[0.07] px-4 py-2 text-sm ring-1 ring-white/10 transition-all duration-300 hover:bg-white/[0.12]"
+          className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm transition-all duration-300 ${light ? "bg-card border hover:bg-brand-soft/60" : "bg-white/[0.07] ring-1 ring-white/10 hover:bg-white/[0.12]"}`}
         >
           <RotateCcw className="size-4" />
           Recommencer
@@ -186,7 +194,9 @@ export function VoiceRecorder({
   }
 
   return (
-    <div className="rounded-[1.75rem] bg-white/[0.05] p-7 ring-1 ring-white/10">
+    <div
+      className={`rounded-[1.75rem] p-7 ${light ? "bg-card border" : "bg-white/[0.05] ring-1 ring-white/10"}`}
+    >
       <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <span className="relative flex size-3">
@@ -205,7 +215,7 @@ export function VoiceRecorder({
               type="button"
               onClick={pause}
               aria-label="Mettre en pause"
-              className="flex size-11 items-center justify-center rounded-full bg-white/[0.08] ring-1 ring-white/10 transition-all duration-300 hover:bg-white/[0.14]"
+              className={`flex size-11 items-center justify-center rounded-full transition-all duration-300 ${light ? "bg-card border hover:bg-brand-soft/60" : "bg-white/[0.08] ring-1 ring-white/10 hover:bg-white/[0.14]"}`}
             >
               <Pause className="size-4" />
             </button>
@@ -214,7 +224,7 @@ export function VoiceRecorder({
               type="button"
               onClick={resume}
               aria-label="Reprendre"
-              className="flex size-11 items-center justify-center rounded-full bg-white/[0.08] ring-1 ring-white/10 transition-all duration-300 hover:bg-white/[0.14]"
+              className={`flex size-11 items-center justify-center rounded-full transition-all duration-300 ${light ? "bg-card border hover:bg-brand-soft/60" : "bg-white/[0.08] ring-1 ring-white/10 hover:bg-white/[0.14]"}`}
             >
               <Play className="size-4" />
             </button>
@@ -237,15 +247,23 @@ export function VoiceRecorder({
       />
 
       <div className="mt-6">
-        <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
+        <div
+          className={`h-1.5 overflow-hidden rounded-full ${light ? "bg-card" : "bg-white/[0.08]"}`}
+        >
           <div
             className="h-full rounded-full bg-brand transition-all duration-1000 ease-linear"
             style={{ width: `${progress * 100}%` }}
           />
         </div>
         <div className="mt-3 flex items-center justify-between gap-4">
-          <p className="text-sm text-ink-muted">{encouragement(seconds)}</p>
-          <p className="shrink-0 text-xs text-ink-muted/70">
+          <p
+            className={`text-sm ${light ? "text-muted-foreground" : "text-ink-muted"}`}
+          >
+            {encouragement(seconds)}
+          </p>
+          <p
+            className={`shrink-0 text-xs ${light ? "text-muted-foreground" : "text-ink-muted/70"}`}
+          >
             {inTargetZone ? "Zone idéale atteinte" : "Objectif : 2 à 5 min"}
           </p>
         </div>

@@ -1,6 +1,6 @@
 export type CaseKind = "unpaid" | "dispute" | "admin";
 
-export type WizardStep = "kind" | "details" | "story" | "account";
+export type WizardStep = "kind" | "details" | "story" | "account" | "create";
 
 export type WizardData = {
   kind: CaseKind | null;

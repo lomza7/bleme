@@ -110,11 +110,25 @@ function KindBackdrop() {
 
 export function KindStep({
   onSelect,
+  light,
 }: {
   data: WizardData;
   onSelect: (kind: CaseKind) => void;
+  light?: boolean;
 }) {
   const reduce = useReducedMotion();
+
+  // Swap sombre → clair : le tunnel anonyme reste sombre, l'app authentifiée
+  // (light) s'affiche sur fond clair. La constellation brand reste inchangée.
+  const subtitleCls = light ? "text-muted-foreground" : "text-ink-muted";
+  const cardCls = light
+    ? "bg-card border hover:bg-brand-soft/60 hover:border-brand/60"
+    : "bg-white/[0.05] ring-1 ring-white/10 hover:bg-white/[0.09] hover:ring-brand/60";
+  const descCls = light ? "text-muted-foreground" : "text-ink-muted";
+  const chipCls = light
+    ? "bg-card text-foreground border"
+    : "bg-white/[0.07] text-ink-foreground/70 ring-1 ring-white/10";
+  const footerCls = light ? "text-muted-foreground" : "text-ink-muted/80";
 
   return (
     <div className="relative flex flex-1 flex-col">
@@ -133,7 +147,7 @@ export function KindStep({
           initial={reduce ? false : { opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.08, ease: EASE }}
-          className="mt-3 text-ink-muted"
+          className={`mt-3 ${subtitleCls}`}
         >
           Choisissez la situation qui vous ressemble. Deux minutes plus tard,
           votre dossier existe.
@@ -164,7 +178,7 @@ export function KindStep({
               }}
               whileHover={reduce ? undefined : { y: -6 }}
               whileTap={reduce ? undefined : { scale: 0.98 }}
-              className="group relative flex flex-col rounded-[1.75rem] bg-white/[0.05] p-7 text-left ring-1 ring-white/10 backdrop-blur-sm transition-all duration-500 ease-fluid hover:bg-white/[0.09] hover:shadow-2xl hover:shadow-brand/15 hover:ring-brand/60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand"
+              className={`group relative flex flex-col rounded-[1.75rem] p-7 text-left backdrop-blur-sm transition-all duration-500 ease-fluid hover:shadow-2xl hover:shadow-brand/15 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand ${cardCls}`}
             >
               {k.soon && (
                 <span className="absolute right-5 top-5 rounded-full bg-brand/90 px-2.5 py-0.5 text-[11px] font-medium text-brand-foreground">
@@ -175,14 +189,14 @@ export function KindStep({
                 <k.icon className="size-6" />
               </span>
               <span className="mt-5 text-lg font-semibold">{k.title}</span>
-              <span className="mt-1.5 text-sm leading-relaxed text-ink-muted">
+              <span className={`mt-1.5 text-sm leading-relaxed ${descCls}`}>
                 {k.desc}
               </span>
               <span className="mt-5 flex flex-wrap gap-1.5">
                 {k.chips.map((chip) => (
                   <span
                     key={chip}
-                    className="rounded-full bg-white/[0.07] px-2.5 py-1 text-[11px] text-ink-foreground/70 ring-1 ring-white/10"
+                    className={`rounded-full px-2.5 py-1 text-[11px] ${chipCls}`}
                   >
                     {chip}
                   </span>
@@ -200,7 +214,7 @@ export function KindStep({
           initial={reduce ? false : { opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ duration: 0.6, delay: 0.55, ease: EASE }}
-          className="mt-8 text-[13px] text-ink-muted/80"
+          className={`mt-8 text-[13px] ${footerCls}`}
         >
           Sans engagement. Votre dossier se construit d’abord, le compte vient
           après.

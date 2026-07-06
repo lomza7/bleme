@@ -11,10 +11,12 @@ export function StoryStep({
   data,
   patch,
   onNext,
+  light,
 }: {
   data: WizardData;
   patch: (p: Partial<WizardData>) => void;
   onNext: () => void;
+  light?: boolean;
 }) {
   const reduce = useReducedMotion();
   const storyDone =
@@ -28,7 +30,9 @@ export function StoryStep({
         Racontez ce qui s’est passé
         {data.partyName ? ` avec ${data.partyName}` : ""}.
       </h1>
-      <p className="mt-3 max-w-xl text-ink-muted">
+      <p
+        className={`mt-3 max-w-xl ${light ? "text-muted-foreground" : "text-ink-muted"}`}
+      >
         C’est le cœur de votre dossier : l’IA en tirera les faits, les dates et
         la chronologie.
       </p>
@@ -37,6 +41,7 @@ export function StoryStep({
         {data.storyMode !== "text" ? (
           <>
             <VoiceRecorder
+              light={light}
               onDone={(s) => patch({ storyMode: "voice", storySeconds: s })}
               onDenied={() => patch({ storyMode: "text" })}
             />
@@ -44,7 +49,7 @@ export function StoryStep({
               <button
                 type="button"
                 onClick={() => patch({ storyMode: "text" })}
-                className="mt-4 inline-flex items-center gap-2 text-sm text-ink-muted transition-colors duration-300 hover:text-ink-foreground"
+                className={`mt-4 inline-flex items-center gap-2 text-sm transition-colors duration-300 ${light ? "text-muted-foreground hover:text-foreground" : "text-ink-muted hover:text-ink-foreground"}`}
               >
                 <PenLine className="size-4" />
                 Je préfère écrire
@@ -59,17 +64,19 @@ export function StoryStep({
               value={data.storyText}
               onChange={(e) => patch({ storyText: e.target.value })}
               placeholder="Racontez comme vous le raconteriez à un ami : la mission ou le chantier, ce qui était convenu, ce qui s’est passé, où ça bloque…"
-              className="w-full rounded-[1.75rem] bg-white/[0.06] px-6 py-5 text-[15px] leading-relaxed text-ink-foreground ring-1 ring-white/10 transition-all duration-300 placeholder:text-ink-muted/60 focus:outline-none focus:ring-2 focus:ring-brand"
+              className={`w-full rounded-[1.75rem] px-6 py-5 text-[15px] leading-relaxed transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-brand ${light ? "bg-card text-foreground border placeholder:text-muted-foreground" : "bg-white/[0.06] text-ink-foreground ring-1 ring-white/10 placeholder:text-ink-muted/60"}`}
             />
             <div className="mt-2 flex items-center justify-between gap-4">
               <button
                 type="button"
                 onClick={() => patch({ storyMode: null, storyText: "" })}
-                className="text-sm text-ink-muted transition-colors duration-300 hover:text-ink-foreground"
+                className={`text-sm transition-colors duration-300 ${light ? "text-muted-foreground hover:text-foreground" : "text-ink-muted hover:text-ink-foreground"}`}
               >
                 Revenir au vocal
               </button>
-              <p className="text-xs text-ink-muted/70">
+              <p
+                className={`text-xs ${light ? "text-muted-foreground" : "text-ink-muted/70"}`}
+              >
                 {data.storyText.trim().length < 120
                   ? `Encore un peu de contexte (${data.storyText.trim().length}/120 caractères minimum)`
                   : "C’est bon, vous pouvez continuer"}
@@ -99,7 +106,9 @@ export function StoryStep({
                     ? "qu’est-ce que l’autre partie vous reproche, au juste ?"
                     : `qu’est-ce que ${data.partyName || "l’autre partie"} pourrait répondre pour ne pas payer ?`}
                 </p>
-                <p className="mt-1.5 text-sm leading-relaxed text-ink-muted">
+                <p
+                  className={`mt-1.5 text-sm leading-relaxed ${light ? "text-muted-foreground" : "text-ink-muted"}`}
+                >
                   Un dossier solide a anticipé la réponse d’en face. Retard,
                   malfaçon alléguée, désaccord sur le devis : dites tout, même
                   ce qui vous dessert.
@@ -109,7 +118,7 @@ export function StoryStep({
                   value={data.devilAnswer}
                   onChange={(e) => patch({ devilAnswer: e.target.value })}
                   placeholder="Soyez honnête, ça restera entre nous. C’est ce qui rend le dossier béton."
-                  className="mt-4 w-full rounded-2xl bg-white/[0.06] px-4 py-3.5 text-[15px] leading-relaxed text-ink-foreground ring-1 ring-white/10 transition-all duration-300 placeholder:text-ink-muted/60 focus:outline-none focus:ring-2 focus:ring-brand"
+                  className={`mt-4 w-full rounded-2xl px-4 py-3.5 text-[15px] leading-relaxed transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-brand ${light ? "bg-card text-foreground border placeholder:text-muted-foreground" : "bg-white/[0.06] text-ink-foreground ring-1 ring-white/10 placeholder:text-ink-muted/60"}`}
                 />
               </div>
             </div>
