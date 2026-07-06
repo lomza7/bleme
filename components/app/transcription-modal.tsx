@@ -30,6 +30,7 @@ export function TranscriptionModal({
   const [phase, setPhase] = useState<Phase>("working");
   const [full, setFull] = useState("");
   const [shown, setShown] = useState("");
+  const [edited, setEdited] = useState(""); // transcript corrigeable AVANT validation
   const [errMsg, setErrMsg] = useState("");
   const started = useRef(false);
 
@@ -55,6 +56,7 @@ export function TranscriptionModal({
         const res = await transcribeVoice(prep.path);
         if (res.transcript) {
           setFull(res.transcript);
+          setEdited(res.transcript);
           setPhase("reveal");
           return;
         }
@@ -109,7 +111,7 @@ export function TranscriptionModal({
           <div className="min-w-0 flex-1">
             <p className="text-sm font-semibold">Nora</p>
             <p className="text-xs text-muted-foreground">
-              {phase === "working" ? "écoute votre récit…" : phase === "reveal" ? (revealing ? "écrit ce que vous avez dit…" : "a transcrit votre récit") : "n’a pas pu transcrire"}
+              {phase === "working" ? "écoute votre récit…" : phase === "reveal" ? (revealing ? "écrit ce que vous avez dit…" : "relisez et corrigez, puis validez") : "n’a pas pu transcrire"}
             </p>
           </div>
           {phase === "working" || revealing ? (
@@ -139,10 +141,20 @@ export function TranscriptionModal({
               <p className="text-sm text-muted-foreground">Envoi de l’audio, puis transcription — quelques secondes.</p>
             </div>
           ) : phase === "reveal" ? (
-            <p className="whitespace-pre-wrap text-[15px] leading-relaxed">
-              {shown}
-              {revealing ? <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-brand align-middle" /> : null}
-            </p>
+            revealing ? (
+              <p className="whitespace-pre-wrap text-[15px] leading-relaxed">
+                {shown}
+                <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-brand align-middle" />
+              </p>
+            ) : (
+              <textarea
+                autoFocus
+                value={edited}
+                onChange={(e) => setEdited(e.target.value)}
+                rows={7}
+                className="w-full resize-none rounded-2xl border bg-background p-4 text-[15px] leading-relaxed outline-none transition-colors focus:border-brand"
+              />
+            )
           ) : (
             <div className="flex h-full flex-col items-center justify-center gap-3 py-6 text-center">
               <span className="flex size-11 items-center justify-center rounded-full bg-amber-100 text-amber-700">
@@ -161,8 +173,9 @@ export function TranscriptionModal({
               <div className="flex flex-wrap items-center gap-3">
                 <button
                   type="button"
-                  onClick={() => onValidate(full)}
-                  className="inline-flex items-center gap-2 rounded-full bg-brand px-5 py-2.5 text-sm font-medium text-brand-foreground transition-all duration-300 hover:bg-brand-strong active:scale-[0.98]"
+                  disabled={!edited.trim()}
+                  onClick={() => onValidate(edited.trim())}
+                  className="inline-flex items-center gap-2 rounded-full bg-brand px-5 py-2.5 text-sm font-medium text-brand-foreground transition-all duration-300 hover:bg-brand-strong active:scale-[0.98] disabled:opacity-50"
                 >
                   <Check className="size-4" />
                   Valider ce transcript
@@ -177,7 +190,7 @@ export function TranscriptionModal({
                 </button>
               </div>
               <p className="mt-3 text-xs text-muted-foreground">
-                Vous pourrez le relire et le corriger à l’écrit à tout moment — rien n’est figé.
+                Corrigez directement ci-dessus si besoin — et vous pourrez encore y revenir à l’écrit plus tard.
               </p>
             </>
           ) : phase === "error" ? (
