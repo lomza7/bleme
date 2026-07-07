@@ -10,6 +10,7 @@ import { EvidenceSources } from "@/components/landing/evidence-sources";
 import { CaseTimeline } from "@/components/landing/case-timeline";
 import { DashboardDemo } from "@/components/landing/dashboard-demo";
 import { AgentsTeam } from "@/components/landing/agents";
+import { SITE_URL } from "@/lib/site";
 
 const CTA_LABEL = "Créer mon premier dossier";
 
@@ -27,7 +28,7 @@ export default function Home() {
           "@context": "https://schema.org",
           "@type": "WebSite",
           name: "BLEME",
-          url: "https://bleme-two.vercel.app",
+          url: SITE_URL,
           inLanguage: "fr-FR",
         }}
       />

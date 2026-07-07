@@ -1,3 +1,5 @@
+import { SITE_URL } from "@/lib/site";
+
 /** Injecte un bloc JSON-LD (schema.org) dans la page. */
 export function JsonLd({ data }: { data: Record<string, unknown> }) {
   return (
@@ -12,8 +14,8 @@ export const ORG_JSONLD = {
   "@context": "https://schema.org",
   "@type": "Organization",
   name: "BLEME",
-  url: "https://bleme-two.vercel.app",
-  logo: "https://bleme-two.vercel.app/icon.png",
+  url: SITE_URL,
+  logo: `${SITE_URL}/icon.png`,
   description:
     "BLEME est l'assistant IA des artisans, freelances et TPE pour récupérer les factures impayées, gérer les litiges clients et suivre les démarches administratives.",
   sameAs: ["https://github.com/lomza7/bleme"],

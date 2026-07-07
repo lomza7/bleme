@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowRight, BookOpenText } from "lucide-react";
 import { GUIDE_CATEGORIES } from "@/lib/guides";
 import { JsonLd } from "@/components/seo/json-ld";
+import { SITE_URL } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Guides pratiques : impayés, relances, litiges, recouvrement",
@@ -19,12 +20,12 @@ export default function GuidesPage() {
           "@context": "https://schema.org",
           "@type": "CollectionPage",
           name: "Guides pratiques BLEME",
-          url: "https://bleme-two.vercel.app/guides",
+          url: `${SITE_URL}/guides`,
           hasPart: GUIDE_CATEGORIES.flatMap((c) =>
             c.guides.map((g) => ({
               "@type": "Article",
               headline: g.titre,
-              url: `https://bleme-two.vercel.app/guides/${g.slug}`,
+              url: `${SITE_URL}/guides/${g.slug}`,
             })),
           ),
         }}

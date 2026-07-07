@@ -1,8 +1,9 @@
 import type { MetadataRoute } from "next";
 import { AGENTS } from "@/lib/agents/data";
 import { GUIDES } from "@/lib/guides";
+import { SITE_URL } from "@/lib/site";
 
-const BASE = "https://bleme-two.vercel.app";
+const BASE = SITE_URL;
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const lastModified = new Date();

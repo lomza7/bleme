@@ -57,6 +57,11 @@ const REGISTRY: { name: string; service: string; usage: string; testable?: boole
     usage: "Envoi des relances email et notifications (phase 4, après le domaine).",
   },
   {
+    name: "RESEND_INBOUND_SECRET",
+    service: "Resend (email entrant)",
+    usage: "Vérifie la signature (Svix) des emails transférés à vos adresses @dossiers.bleme.fr. Signing Secret du webhook « email.received » dans Resend.",
+  },
+  {
     name: "MERCI_FACTEUR_SERVICE_ID",
     service: "Merci Facteur",
     usage: "Recommandés papier avec AR (phase 4) : Service ID du compte Pro (commence par public-…).",

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import { SITE_URL } from "@/lib/site";
 
 const geistSans = Geist({
   variable: "--font-sans",
@@ -13,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://bleme-two.vercel.app"),
+  metadataBase: new URL(SITE_URL),
   title: {
     default: "BLEME · L’IA qui s’occupe de vos impayés, litiges et démarches",
     template: "%s · BLEME",

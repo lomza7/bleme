@@ -25,6 +25,7 @@ import { CountUp } from "@/components/landing/count-up";
 import { Reveal, RevealItem, RevealStagger } from "@/components/landing/reveal";
 import { SpriteAvatar } from "@/components/landing/sprite-avatar";
 import { JsonLd } from "@/components/seo/json-ld";
+import { SITE_URL } from "@/lib/site";
 
 /*
  * Fiche agent /agents/[slug] : bandeau de sélection de l'équipe, identité,
@@ -33,7 +34,7 @@ import { JsonLd } from "@/components/seo/json-ld";
  * blanches + tuile d'icône flottante), garde-fous. Contenu : lib/agents/data.ts.
  */
 
-const BASE = "https://bleme-two.vercel.app";
+const BASE = SITE_URL;
 
 const ICONES: Record<SavoirIcone, LucideIcon> = {
   code: BookMarked,

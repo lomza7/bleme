@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowRight, ChevronRight } from "lucide-react";
+import { SITE_URL } from "@/lib/site";
 
 /*
  * Coquille des guides : header léger, fil d'Ariane, article en prose,
@@ -142,7 +143,7 @@ export function guideJsonLd({
   updated: string;
   faq: { q: string; r: string }[];
 }) {
-  const base = "https://bleme-two.vercel.app";
+  const base = SITE_URL;
   return [
     {
       "@context": "https://schema.org",
