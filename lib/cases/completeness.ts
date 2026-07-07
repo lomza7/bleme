@@ -1,7 +1,9 @@
 import "server-only";
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { derivePhase, nextLetterKind } from "@/lib/cases/phases";
+import { refreshLivingBrief } from "@/lib/cases/brief";
 
 /*
  * Moteur du cockpit dossier : checklist de complétude par type, calcul du
@@ -143,6 +145,15 @@ export async function recomputeCaseProgress(caseId: string): Promise<number | nu
       next_action_at: at,
     })
     .eq("id", caseId);
+
+  // Synthèse vivante rafraîchie en tâche de fond (après la réponse), pour ne pas
+  // ralentir l'action utilisateur. `after` garde la fonction serverless en vie
+  // le temps du run ; hors contexte requête (script), on ignore simplement.
+  try {
+    after(() => refreshLivingBrief(caseId));
+  } catch {
+    /* pas de contexte requête : le cahier se rafraîchira à la prochaine mutation */
+  }
 
   return score;
 }
