@@ -4,11 +4,13 @@ import { redirect } from "next/navigation";
 import {
   Archive,
   ArchiveRestore,
+  Download,
   FileText,
   FolderCheck,
   Inbox,
   Mail,
   MessageCircle,
+  Paperclip,
   StickyNote,
   Trash2,
 } from "lucide-react";
@@ -42,6 +44,11 @@ const SOURCE_META = {
 function formatWhen(iso: string): string {
   const d = new Date(iso);
   return `${d.toLocaleDateString("fr-FR", { day: "numeric", month: "short" })} · ${d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
+  return `${Math.max(1, Math.round(bytes / 1024))} Ko`;
 }
 
 export default async function InboxPage({
@@ -87,6 +94,21 @@ export default async function InboxPage({
   ]);
 
   const all = items ?? [];
+  // Pièces jointes des emails reçus (affichées + téléchargeables dans le détail).
+  const itemIds = all.map((i) => i.id);
+  const { data: attachments } = itemIds.length
+    ? await supabase
+        .from("inbox_attachments")
+        .select("id, inbox_item_id, file_name, mime_type, size_bytes")
+        .in("inbox_item_id", itemIds)
+    : { data: [] };
+  const attByItem = new Map<string, { id: string; file_name: string; mime_type: string; size_bytes: number }[]>();
+  for (const a of attachments ?? []) {
+    const list = attByItem.get(a.inbox_item_id) ?? [];
+    list.push(a);
+    attByItem.set(a.inbox_item_id, list);
+  }
+
   const hasSamples = all.some((i) => i.is_sample);
   const active = all.filter((i) => !i.is_archived);
   const list = (showArchived ? all.filter((i) => i.is_archived) : active).filter(
@@ -232,6 +254,7 @@ export default async function InboxPage({
             const label = item.label_id ? labelById.get(item.label_id) : null;
             const labelColor = label ? (LABEL_COLORS[label.color] ?? LABEL_COLORS.sable) : null;
             const assignedCase = item.case_id ? caseById.get(item.case_id) : null;
+            const itemAtts = attByItem.get(item.id) ?? [];
             return (
               <details key={item.id} className={`group ${idx > 0 ? "border-t" : ""}`}>
                 <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3.5 transition-colors hover:bg-muted/50 sm:gap-4 sm:px-5 [&::-webkit-details-marker]:hidden">
@@ -266,6 +289,15 @@ export default async function InboxPage({
                       {label.name}
                     </span>
                   ) : null}
+                  {itemAtts.length > 0 ? (
+                    <span
+                      className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground"
+                      title={`${itemAtts.length} pièce${itemAtts.length > 1 ? "s" : ""} jointe${itemAtts.length > 1 ? "s" : ""}`}
+                    >
+                      <Paperclip className="size-3.5" />
+                      {itemAtts.length}
+                    </span>
+                  ) : null}
                   {assignedCase ? (
                     <span className="hidden shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium text-emerald-700 ring-1 ring-emerald-200 sm:inline-flex">
                       <FolderCheck className="size-3" />
@@ -282,6 +314,32 @@ export default async function InboxPage({
                     <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap rounded-xl bg-white p-4 font-sans text-[13px] leading-relaxed text-foreground/90 ring-1 ring-black/5">
                       {item.body_text}
                     </pre>
+                  ) : null}
+                  {itemAtts.length > 0 ? (
+                    <div className="flex flex-col gap-2">
+                      <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-[0.1em] text-muted-foreground">
+                        <Paperclip className="size-3.5" />
+                        {itemAtts.length} pièce{itemAtts.length > 1 ? "s" : ""} jointe{itemAtts.length > 1 ? "s" : ""}
+                      </p>
+                      {itemAtts.map((a) => (
+                        <a
+                          key={a.id}
+                          href={`/app/inbox/fichier/${a.id}`}
+                          className="flex items-center gap-3 rounded-xl border bg-card px-3.5 py-2.5 text-sm transition-colors hover:border-brand/50 hover:bg-brand-soft/25"
+                        >
+                          <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand-strong">
+                            <FileText className="size-4.5" />
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium">{a.file_name}</span>
+                            <span className="block text-xs text-muted-foreground">
+                              {(a.mime_type.split("/")[1] ?? "fichier").toUpperCase()} · {formatSize(a.size_bytes)}
+                            </span>
+                          </span>
+                          <Download className="size-4 shrink-0 text-muted-foreground" />
+                        </a>
+                      ))}
+                    </div>
                   ) : null}
                   {assignedCase ? (
                     <p className="text-sm text-muted-foreground">
