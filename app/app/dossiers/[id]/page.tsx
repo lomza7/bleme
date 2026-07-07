@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Circle,
   CircleAlert,
+  Clock,
   Download,
   Sparkles,
   ShieldQuestion,
@@ -28,6 +29,8 @@ import { CaseRequest } from "@/components/app/case-request";
 import { Phase2Flow } from "@/components/app/phase2-flow";
 import { EscalationPanel } from "@/components/app/escalation-panel";
 import { PhaseTrail } from "@/components/app/phase-trail";
+import { Markdown } from "@/components/app/markdown";
+import { CaseEventsTimeline } from "@/components/app/case-events-timeline";
 
 export const metadata: Metadata = { title: "Dossier" };
 
@@ -43,20 +46,26 @@ export default async function CaseDetailPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [{ data: c }, { data: docs }, { data: letters }, { data: replies }] = await Promise.all([
-    supabase.from("cases").select("*").eq("id", id).maybeSingle(),
-    supabase
-      .from("documents")
-      .select("id, doc_kind, doc_class, file_name, mime_type, size_bytes, created_at")
-      .eq("case_id", id)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("letters")
-      .select("id, kind, status, subject, body_md, channel, approved_at, created_at")
-      .eq("case_id", id)
-      .order("created_at", { ascending: false }),
-    supabase.from("debtor_replies").select("handled").eq("case_id", id),
-  ]);
+  const [{ data: c }, { data: docs }, { data: letters }, { data: replies }, { data: events }] =
+    await Promise.all([
+      supabase.from("cases").select("*").eq("id", id).maybeSingle(),
+      supabase
+        .from("documents")
+        .select("id, doc_kind, doc_class, file_name, mime_type, size_bytes, created_at")
+        .eq("case_id", id)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("letters")
+        .select("id, kind, status, subject, body_md, channel, approved_at, created_at")
+        .eq("case_id", id)
+        .order("created_at", { ascending: false }),
+      supabase.from("debtor_replies").select("handled").eq("case_id", id),
+      supabase
+        .from("case_events")
+        .select("event_date, event_type, title, description, source")
+        .eq("case_id", id)
+        .order("event_date", { ascending: false }),
+    ]);
   if (!c) notFound();
 
   const docList = docs ?? [];
@@ -177,6 +186,42 @@ export default async function CaseDetailPage({
       </section>
     ) : null;
 
+  // ── Cahier vivant : synthèse consolidée + chronologie (visibles en toutes phases) ──
+  const caseEvents = (events ?? []).map((e) => ({
+    date: e.event_date,
+    type: e.event_type,
+    title: e.title,
+    description: e.description,
+    source: e.source,
+  }));
+  const cahierSections = (
+    <>
+      {c.living_brief_md ? (
+        <section className="mt-6 rounded-[1.75rem] border bg-card p-6 sm:p-7">
+          <div className="flex items-center gap-2">
+            <Sparkles className="size-5 text-brand-strong" />
+            <h2 className="text-lg font-semibold">Synthèse du dossier</h2>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Ce que vos agents ont compris et consigné, tenu à jour à chaque étape.
+          </p>
+          <Markdown content={c.living_brief_md} className="mt-4" />
+        </section>
+      ) : null}
+      {caseEvents.length > 0 ? (
+        <section className="mt-6 rounded-[1.75rem] border bg-card p-6 sm:p-7">
+          <div className="flex items-center gap-2">
+            <Clock className="size-5 text-brand-strong" />
+            <h2 className="text-lg font-semibold">Chronologie</h2>
+          </div>
+          <div className="mt-4">
+            <CaseEventsTimeline events={caseEvents} />
+          </div>
+        </section>
+      ) : null}
+    </>
+  );
+
   // ── Dossier résolu / clos : vue de synthèse en lecture seule ────────────────
   if (!active) {
     return (
@@ -185,6 +230,7 @@ export default async function CaseDetailPage({
         <div className="mt-8">
           <PhaseTrail phase={phase} />
         </div>
+        {cahierSections}
         <section className="mt-6 rounded-[1.75rem] border bg-card p-6 sm:p-7">
           <h2 className="text-lg font-semibold">
             {c.status === "resolved" ? "Dossier résolu" : "Dossier clôturé"}
@@ -395,6 +441,8 @@ export default async function CaseDetailPage({
       <div className="mt-8">
         <PhaseTrail phase={phase} />
       </div>
+
+      {cahierSections}
 
       <div className="mt-6">
         {phase === 1 ? (
