@@ -44,6 +44,7 @@ export type CaseContext = {
   debtorName: string | null;
   debtorCompany: unknown | null;
   devilReview: unknown | null;
+  livingBriefMd: string | null;
   briefVersion: number;
   facts: CaseFact[];
   timeline: CaseTimelineItem[];
@@ -59,7 +60,7 @@ export async function buildCaseContext(
   const { data: row } = await sb
     .from("cases")
     .select(
-      "id, organization_id, title, case_type, status, phase, summary_md, weak_points_md, escalation_summary_md, closed_reason, completeness_score, amount_claimed_cents, amount_recovered_cents, debtor_name, debtor_company, devil_review, living_brief_version",
+      "id, organization_id, title, case_type, status, phase, summary_md, weak_points_md, escalation_summary_md, closed_reason, completeness_score, amount_claimed_cents, amount_recovered_cents, debtor_name, debtor_company, devil_review, living_brief_md, living_brief_version",
     )
     .eq("id", caseId)
     .maybeSingle();
@@ -178,6 +179,7 @@ export async function buildCaseContext(
     debtorName: row.debtor_name,
     debtorCompany: row.debtor_company ?? null,
     devilReview: row.devil_review ?? null,
+    livingBriefMd: row.living_brief_md ?? null,
     briefVersion: row.living_brief_version ?? 0,
     facts,
     timeline,

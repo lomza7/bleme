@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { recomputeCaseProgress } from "@/lib/cases/completeness";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { runAgent } from "@/lib/ai/client";
+import { caseMemo } from "@/lib/cases/memo";
 
 /*
  * Phase 2 — le client a répondu. On capture le TEXTE réel de sa réponse
@@ -125,12 +126,14 @@ export async function generateAdaptedResponse(
   let subject = tplSubject;
   let body = gabarit;
   const isDispute = c.case_type === "client_dispute";
+  const memo = await caseMemo(supabase, c.id);
   try {
     const { data: m } = await runAgent({
       key: isDispute ? "lena" : "marius",
       input: {
         consigne:
-          "Rédige une réponse en français au message reçu du client, à partir des seuls faits fournis. Réponds point par point au message. N'invente aucun montant, date ni fait. Ton factuel, professionnel, jamais menaçant. Aucun conseil juridique, aucun pronostic, aucune évaluation de chances. Réponds en JSON { subject, body_md }.",
+          "Rédige une réponse en français au message reçu du client, à partir des seuls faits fournis. Réponds point par point au message. N'invente aucun montant, date ni fait. Appuie-toi sur le contexte consolidé du dossier (contexte_dossier) sans le recopier. Ton factuel, professionnel, jamais menaçant. Aucun conseil juridique, aucun pronostic, aucune évaluation de chances. Réponds en JSON { subject, body_md }.",
+        contexte_dossier: memo,
         type: "Réponse adaptée au retour du client",
         destinataire: c.debtor_name,
         montant_reclame_cents: c.amount_claimed_cents,

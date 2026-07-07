@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { recomputeCaseProgress, completeness } from "@/lib/cases/completeness";
 import { buildEscalation, ESCALATION_MODELS, type EscalationModel } from "@/lib/cases/escalation-templates";
 import { runAgent } from "@/lib/ai/client";
+import { caseMemo } from "@/lib/cases/memo";
 
 /*
  * Phase 3 — escalader et résoudre. Revue « avocat du diable » (Jeanne, run réel),
@@ -74,13 +75,15 @@ export async function runDevilReview(_prev: EscState, formData: FormData): Promi
     vigilances: fallbackVigilances.length ? fallbackVigilances : ["Les pièces attendues sont présentes."],
   };
 
+  const memo = await caseMemo(supabase, c.id);
   let review = fallback;
   try {
     const { data: j } = await runAgent({
       key: "jeanne",
       input: {
         consigne:
-          "Analyse ce dossier du point de vue de la partie adverse : quelles objections opposerait-elle et quelles pièces les corrigent. Formulations factuelles et documentaires uniquement. Jamais de pronostic, jamais d'évaluation de chances, jamais de conseil. JSON { points:[{objection, remede}], vigilances:[string] }.",
+          "Analyse ce dossier du point de vue de la partie adverse : quelles objections opposerait-elle et quelles pièces les corrigent. Appuie-toi sur le contexte consolidé du dossier (contexte_dossier). Formulations factuelles et documentaires uniquement. Jamais de pronostic, jamais d'évaluation de chances, jamais de conseil. JSON { points:[{objection, remede}], vigilances:[string] }.",
+        contexte_dossier: memo,
         type: c.case_type,
         resume: c.summary_md ?? "",
         points_de_vigilance: c.weak_points_md ?? "",
@@ -137,12 +140,14 @@ export async function generateEscalationDraft(_prev: EscState, formData: FormDat
   // Seuls les courriers envoyés en son nom sont rédigés par Marius ; le modèle
   // de requête (procédural, déposé par l'utilisateur) reste le gabarit tel quel.
   if (ESCALATION_MODELS[model].sends) {
+    const memo = await caseMemo(supabase, c.id);
     try {
       const { data: m } = await runAgent({
         key: "marius",
         input: {
           consigne:
-            "Rédige ce courrier en français à partir des seuls faits fournis. N'invente aucun montant, date ni fait. Garde les mentions légales du gabarit. Ton ferme, factuel, jamais menaçant. Aucun conseil, aucun pronostic. JSON { subject, body_md }.",
+            "Rédige ce courrier en français à partir des seuls faits fournis. N'invente aucun montant, date ni fait. Garde les mentions légales du gabarit. Appuie-toi sur le contexte consolidé du dossier (contexte_dossier) sans le recopier. Ton ferme, factuel, jamais menaçant. Aucun conseil, aucun pronostic. JSON { subject, body_md }.",
+          contexte_dossier: memo,
           type: ESCALATION_MODELS[model].label,
           destinataire: c.debtor_name,
           montant_reclame_cents: c.amount_claimed_cents,
@@ -207,13 +212,15 @@ export async function escalateCase(_prev: EscState, formData: FormData): Promise
     `${c.summary_md ?? ""}\n\n` +
     `Courriers envoyés : ${(letters ?? []).length}. Cette synthèse récapitule les faits et les démarches déjà effectuées.`;
 
+  const memo = await caseMemo(supabase, c.id);
   let summary = fallback;
   try {
     const { data: m } = await runAgent({
       key: "marius",
       input: {
         consigne:
-          "Rédige une synthèse factuelle du dossier pour préparer une escalade : faits, montants, démarches déjà effectuées. Aucun conseil, aucun pronostic, aucune évaluation de chances. JSON { summary_md }.",
+          "Rédige une synthèse factuelle du dossier pour préparer une escalade : faits, montants, démarches déjà effectuées. Appuie-toi sur le contexte consolidé du dossier (contexte_dossier). Aucun conseil, aucun pronostic, aucune évaluation de chances. JSON { summary_md }.",
+        contexte_dossier: memo,
         resume: c.summary_md ?? "",
         montant_reclame_cents: c.amount_claimed_cents,
         montant_recupere_cents: c.amount_recovered_cents,

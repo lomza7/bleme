@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { recomputeCaseProgress } from "@/lib/cases/completeness";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { runAgent } from "@/lib/ai/client";
+import { caseMemo } from "@/lib/cases/memo";
 
 /*
  * Courriers : brouillon (généré par template versionné, conforme — les
@@ -134,12 +135,14 @@ export async function generateLetter(
   let body = tpl.body;
   // Rédaction RÉELLE par Marius (run tracé dans agent_runs). Sur échec ou en
   // bêta, on retombe sur le gabarit. L'utilisateur relit et valide de toute façon.
+  const memo = await caseMemo(supabase, c.id);
   try {
     const { data: m } = await runAgent({
       key: "marius",
       input: {
         consigne:
-          "Rédige ce courrier en français à partir des seuls faits fournis. N'invente aucun montant, date ni fait. Garde les mentions légales du gabarit telles quelles. Réponds en JSON { subject, body_md }.",
+          "Rédige ce courrier en français à partir des seuls faits fournis. N'invente aucun montant, date ni fait. Garde les mentions légales du gabarit telles quelles. Appuie-toi sur le contexte consolidé du dossier (contexte_dossier) sans le recopier. Réponds en JSON { subject, body_md }.",
+        contexte_dossier: memo,
         type: LETTER_KINDS[kind].label,
         ton: LETTER_KINDS[kind].tone,
         destinataire: c.debtor_name,
