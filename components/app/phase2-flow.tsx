@@ -1,12 +1,14 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Clock, CircleAlert, LoaderCircle, MessageSquarePlus, Sparkles } from "lucide-react";
+import { Clock, CircleAlert, LoaderCircle, MessageSquarePlus, Sparkles, ShieldQuestion } from "lucide-react";
 import { relativeDays } from "@/lib/format";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { recordDebtorReply, generateAdaptedResponse, type ReplyState } from "@/lib/cases/replies";
+import { escalateCase, type EscState } from "@/lib/cases/escalation";
 import { GenerateLetterButtons } from "@/components/app/letters";
 import { ReviewLetter } from "@/components/app/review-letter";
+import { RecordPayment } from "@/components/app/record-payment";
 
 const INITIAL: ReplyState = {};
 
@@ -43,6 +45,7 @@ export function Phase2Flow({
 }) {
   const [replyState, replyAction, replyPending] = useActionState(recordDebtorReply, INITIAL);
   const [adaptState, adaptAction, adaptPending] = useActionState(generateAdaptedResponse, INITIAL);
+  const [escState, escAction, escPending] = useActionState(escalateCase, {} as EscState);
   const [showReply, setShowReply] = useState(false);
 
   // 1. Un brouillon attend la relecture/validation → envoi inline.
@@ -176,6 +179,36 @@ export function Phase2Flow({
           </form>
         ) : null}
       </div>
+
+      <div className="mt-6 border-t pt-6">
+        <RecordPayment caseId={caseId} />
+      </div>
+
+      {caseType === "client_dispute" ? (
+        <div className="mt-6 border-t pt-6">
+          <p className="text-sm font-medium">La contestation reste bloquée ?</p>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Préparez l’escalade : revue de robustesse par Jeanne, puis un modèle (médiation, conciliateur, ou dossier transmissible à un professionnel).
+          </p>
+          <form action={escAction} className="mt-3">
+            <input type="hidden" name="caseId" value={caseId} />
+            <button
+              type="submit"
+              disabled={escPending}
+              className="inline-flex items-center gap-2 rounded-full border bg-background px-4 py-2.5 text-sm font-medium transition-colors hover:border-brand/60 hover:bg-brand-soft active:scale-[0.98] disabled:opacity-60"
+            >
+              {escPending ? <LoaderCircle className="size-4 animate-spin" /> : <ShieldQuestion className="size-4 text-brand-strong" />}
+              Passer en escalade
+            </button>
+            {escState.error ? (
+              <p role="alert" className="mt-2 flex items-center gap-2 text-sm text-red-600">
+                <CircleAlert className="size-4 shrink-0" />
+                {escState.error}
+              </p>
+            ) : null}
+          </form>
+        </div>
+      ) : null}
     </section>
   );
 }

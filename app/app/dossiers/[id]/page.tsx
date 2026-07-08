@@ -28,6 +28,7 @@ import { CompanionCard } from "@/components/app/companion-card";
 import { CaseRequest } from "@/components/app/case-request";
 import { Phase2Flow } from "@/components/app/phase2-flow";
 import { EscalationPanel } from "@/components/app/escalation-panel";
+import { RecordPayment } from "@/components/app/record-payment";
 import { PhaseTrail } from "@/components/app/phase-trail";
 import { Markdown } from "@/components/app/markdown";
 import { CaseEventsTimeline } from "@/components/app/case-events-timeline";
@@ -452,13 +453,19 @@ export default async function CaseDetailPage({
 
       <div className="mt-6">
         {phase === 1 ? (
-          <DossierSteps
-            stepLabels={["Demande", "Preuves", "Faits", "Premier courrier"]}
-            panels={[panelDemande, panelPreuves, panelFaits, panelPremierCourrier]}
-            companions={companionsP1}
-            defaultStep={defaultStep}
-            side={null}
-          />
+          <div className="flex flex-col gap-6">
+            <DossierSteps
+              stepLabels={["Demande", "Preuves", "Faits", "Premier courrier"]}
+              panels={[panelDemande, panelPreuves, panelFaits, panelPremierCourrier]}
+              companions={companionsP1}
+              defaultStep={defaultStep}
+              side={null}
+            />
+            {/* Le client peut régler dès cette phase (#13) : on l'acte ici aussi. */}
+            <div className="rounded-[1.75rem] border bg-card p-6 sm:p-7">
+              <RecordPayment caseId={c.id} />
+            </div>
+          </div>
         ) : (
           <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2">
