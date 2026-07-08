@@ -4,6 +4,7 @@ import { createServiceClient } from "@/lib/supabase/server";
 import { buildCaseContext, type CaseContext } from "@/lib/cases/context";
 import { runAgent } from "@/lib/ai/client";
 import { hasAdvice } from "@/lib/ai/guardrails";
+import { STATUS_META } from "@/lib/cases/constants";
 
 /*
  * Synthèse vivante d'un dossier (Sacha). À chaque évolution notable — pièce
@@ -25,49 +26,95 @@ function shortDate(value: string): string {
   return Number.isNaN(d.getTime()) ? value : d.toLocaleDateString("fr-FR");
 }
 
-const BRIEF_SCHEMA = z.object({ synthese_md: z.string().max(4000) });
+// Les 9 sections de la synthèse vivante (clé JSON → titre markdown). L'ordre et
+// les titres « ## » sont garantis CÔTÉ SERVEUR : l'agent ne renvoie que le
+// contenu de chaque section, jamais la structure.
+const BRIEF_SECTIONS = [
+  ["point_zero", "Point zéro"],
+  ["parties", "Parties"],
+  ["montants", "Montants"],
+  ["faits_chronologie", "Faits & chronologie"],
+  ["pieces", "Pièces"],
+  ["echanges", "Échanges"],
+  ["actions_menees", "Actions menées"],
+  ["points_de_vigilance", "Points de vigilance"],
+  ["ou_on_en_est", "Où on en est"],
+] as const;
+
+type SectionKey = (typeof BRIEF_SECTIONS)[number][0];
+
+const BRIEF_SCHEMA = z.object({
+  point_zero: z.string().default(""),
+  parties: z.string().default(""),
+  montants: z.string().default(""),
+  faits_chronologie: z.string().default(""),
+  pieces: z.string().default(""),
+  echanges: z.string().default(""),
+  actions_menees: z.string().default(""),
+  points_de_vigilance: z.string().default(""),
+  ou_on_en_est: z.string().default(""),
+});
+
+/** Statut affiché d'un fait (traçabilité : pilier #3). */
+function factStatut(f: CaseContext["facts"][number]): string {
+  if (f.corrected) return "corrigé par vous";
+  if (f.confidence < 0.7) return "à vérifier";
+  return "détecté";
+}
 
 /**
- * Repli déterministe : synthèse markdown assemblée sans IA depuis le contexte.
- * Toujours factuelle — titre, parties, rappel du récit, faits et chronologie.
+ * Repli déterministe PAR SECTION : contenu markdown (sans le titre ##) assemblé
+ * sans IA depuis le contexte. Sert de socle (échec IA) ET de filet au grain fin
+ * (une section fautive/vide retombe sur sa version déterministe, pas les 9).
  */
+function buildFallbackSections(ctx: CaseContext): Record<SectionKey, string> {
+  const facts = ctx.facts.map((f) => {
+    const s = factStatut(f);
+    return `- ${f.label} : ${f.value}${s === "détecté" ? "" : ` (${s})`}`;
+  });
+  const timeline = ctx.timeline.slice(-8).map((t) => `- ${shortDate(t.date)} — ${t.title}`);
+  const vigilances: string[] = [];
+  if (ctx.weakPointsMd) vigilances.push(ctx.weakPointsMd.slice(0, 600));
+  const dr = ctx.devilReview as { points?: { objection: string; remede?: string }[] } | null;
+  for (const p of dr?.points ?? []) vigilances.push(`- ${p.objection}${p.remede ? ` — ${p.remede}` : ""}`);
+  const statusLabel = STATUS_META[ctx.status]?.label ?? ctx.status;
+
+  return {
+    point_zero: ctx.summaryMd ? ctx.summaryMd.slice(0, 600) : `Dossier « ${ctx.title} ».`,
+    parties: `- Débiteur : ${ctx.debtorName ?? "non renseigné"}`,
+    montants:
+      `- Montant réclamé : ${eur(ctx.amountClaimedCents)}` +
+      (ctx.amountRecoveredCents > 0 ? `\n- Montant recouvré : ${eur(ctx.amountRecoveredCents)}` : ""),
+    faits_chronologie: [...facts, ...timeline].join("\n"),
+    pieces: ctx.documents.map((d) => `- ${d.fileName}${d.docKind ? ` (${d.docKind})` : ""}`).join("\n"),
+    echanges: ctx.replies.slice(-5).map((r) => `- ${shortDate(r.receivedAt)} — ${r.body.slice(0, 140)}`).join("\n"),
+    actions_menees: ctx.letters
+      .map((l) => `- ${l.subject ?? l.kind}${l.sentAt ? ` (envoyé le ${shortDate(l.sentAt)})` : " (brouillon)"}`)
+      .join("\n"),
+    points_de_vigilance: vigilances.join("\n"),
+    ou_on_en_est: `Statut : ${statusLabel}${ctx.phase ? ` — phase ${ctx.phase}` : ""}.`,
+  };
+}
+
+/** Assemble le markdown final : titres et ordre côté serveur, sections vides sautées. */
+function assembleBrief(
+  ai: Partial<Record<SectionKey, string>>,
+  fallback: Record<SectionKey, string>,
+): string {
+  const parts: string[] = [];
+  for (const [key, title] of BRIEF_SECTIONS) {
+    const aiText = (ai[key] ?? "").trim();
+    // Garde-fou #2 au grain fin : une section avec conseil/pronostic retombe sur
+    // son repli déterministe, sans jeter les 8 autres.
+    const text = aiText && !hasAdvice(aiText) ? aiText : (fallback[key] ?? "").trim();
+    if (text) parts.push(`## ${title}\n${text}`);
+  }
+  return parts.join("\n\n").trim();
+}
+
+/** Repli complet (échec IA total) : les 9 sections déterministes assemblées. */
 function buildFallbackMd(ctx: CaseContext): string {
-  const lines: string[] = [];
-  lines.push(`# Synthèse — ${ctx.title}`);
-  lines.push("");
-
-  lines.push("## Parties");
-  lines.push(`- Débiteur : ${ctx.debtorName ?? "non renseigné"}`);
-  lines.push(`- Montant réclamé : ${eur(ctx.amountClaimedCents)}`);
-  if (ctx.amountRecoveredCents > 0) {
-    lines.push(`- Montant recouvré : ${eur(ctx.amountRecoveredCents)}`);
-  }
-  lines.push("");
-
-  if (ctx.summaryMd) {
-    lines.push("## Récit");
-    lines.push(ctx.summaryMd.slice(0, 800));
-    lines.push("");
-  }
-
-  if (ctx.facts.length > 0) {
-    lines.push("## Faits");
-    for (const f of ctx.facts) {
-      lines.push(`- ${f.label} : ${f.value}`);
-    }
-    lines.push("");
-  }
-
-  const recent = ctx.timeline.slice(-8);
-  if (recent.length > 0) {
-    lines.push("## Chronologie");
-    for (const t of recent) {
-      lines.push(`- ${shortDate(t.date)} — ${t.title}`);
-    }
-    lines.push("");
-  }
-
-  return lines.join("\n").trim();
+  return assembleBrief({}, buildFallbackSections(ctx));
 }
 
 /**
@@ -84,11 +131,28 @@ export async function refreshLivingBrief(caseId: string): Promise<void> {
     // de matière stable à synthétiser.
     if (ctx.status === "draft") return;
 
-    const fallbackMd = buildFallbackMd(ctx);
+    const fallbackSections = buildFallbackSections(ctx);
+    const fallbackMd = assembleBrief({}, fallbackSections);
+
+    // Faits porteurs de leur statut de traçabilité (pilier #3) : l'agent doit
+    // suffixer « (à vérifier) » et ne jamais contredire une valeur corrigée.
+    const faits = ctx.facts.map((f) => ({
+      champ: f.label,
+      valeur: f.value,
+      statut: factStatut(f),
+      source: f.sourceExcerpt,
+    }));
 
     const input = {
       consigne:
-        "Produis une SYNTHÈSE MARKDOWN neutre et factuelle du dossier, en français, avec EXACTEMENT ces sections en titres markdown « ## » : « Point zéro », « Parties », « Montants », « Faits & chronologie », « Pièces », « Échanges », « Actions menées », « Points de vigilance », « Où on en est ». Appuie-toi uniquement sur les faits fournis en entrée ; n'invente jamais une valeur ; JAMAIS de conseil, de pronostic ni d'évaluation de chances ; formulations documentaires. Réponds en JSON { \"synthese_md\": \"...\" }.",
+        "Produis la synthèse vivante du dossier. Renvoie un JSON avec EXACTEMENT ces 9 clés " +
+        "(contenu markdown court par section, SANS le titre — le serveur l'ajoute ; chaîne vide si la section n'a pas de matière) : " +
+        "point_zero, parties, montants, faits_chronologie, pieces, echanges, actions_menees, points_de_vigilance, ou_on_en_est. " +
+        "Appuie-toi UNIQUEMENT sur les données fournies ; n'invente jamais une valeur ; recopie les montants tels quels (aucun calcul). " +
+        "Suffixe « (à vérifier) » tout fait de statut « à vérifier » et ne contredis JAMAIS un fait « corrigé par vous ». " +
+        "Formulations documentaires ; aucun conseil, pronostic ni évaluation de chances.",
+      tache: "synthese_vivante",
+      date_du_jour: new Date().toLocaleDateString("fr-FR"),
       dossier: { titre: ctx.title, type: ctx.caseType, statut: ctx.status, phase: ctx.phase },
       recit: ctx.summaryMd,
       points_de_vigilance: ctx.weakPointsMd,
@@ -98,7 +162,7 @@ export async function refreshLivingBrief(caseId: string): Promise<void> {
       montant_recupere: eur(ctx.amountRecoveredCents),
       debiteur: ctx.debtorName,
       entreprise: ctx.debtorCompany,
-      faits: ctx.facts,
+      faits,
       chronologie: ctx.timeline,
       pieces: ctx.documents,
       courriers: ctx.letters,
@@ -112,12 +176,13 @@ export async function refreshLivingBrief(caseId: string): Promise<void> {
         key: "sacha",
         input,
         schema: BRIEF_SCHEMA,
-        simulation: { synthese_md: fallbackMd },
+        simulation: fallbackSections,
         organizationId: ctx.organizationId,
         caseId,
-        maxTokens: 1500,
+        maxTokens: 2000,
       });
-      md = hasAdvice(data.synthese_md) ? fallbackMd : data.synthese_md;
+      // Assemblage serveur (titres + ordre garantis) + garde-fou par section.
+      md = assembleBrief(data, fallbackSections) || fallbackMd;
     } catch {
       // run en erreur déjà tracé ; on garde le socle déterministe
       md = fallbackMd;
