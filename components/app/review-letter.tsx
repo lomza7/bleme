@@ -24,6 +24,7 @@ export function ReviewLetter({
   letter,
   caseId,
   embedded = false,
+  defaultEmail = "",
 }: {
   letter: {
     id: string;
@@ -35,6 +36,8 @@ export function ReviewLetter({
   };
   caseId: string;
   embedded?: boolean;
+  /** Email du débiteur déjà connu (préremplissage) ; l'utilisateur peut le corriger. */
+  defaultEmail?: string;
 }) {
   const router = useRouter();
   const [state, action, pending] = useActionState(
@@ -52,6 +55,7 @@ export function ReviewLetter({
   );
   const [body, setBody] = useState(letter.body_md);
   const [channel, setChannel] = useState<"email" | "postal">("email");
+  const [toEmail, setToEmail] = useState(defaultEmail);
   const sent = letter.status === "sent";
   const wrap = embedded ? "" : "rounded-[1.75rem] border bg-card p-6 sm:p-7";
 
@@ -83,6 +87,7 @@ export function ReviewLetter({
       <input type="hidden" name="letterId" value={letter.id} />
       <input type="hidden" name="channel" value={channel} />
       <input type="hidden" name="body" value={body} />
+      <input type="hidden" name="toEmail" value={channel === "email" ? toEmail : ""} />
 
       <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
         Objet
@@ -123,6 +128,26 @@ export function ReviewLetter({
           ))}
         </div>
       </div>
+
+      {channel === "email" ? (
+        <div className="mt-4">
+          <label htmlFor="toEmail" className="text-sm font-medium">
+            Email du destinataire
+          </label>
+          <input
+            id="toEmail"
+            type="email"
+            value={toEmail}
+            onChange={(e) => setToEmail(e.target.value)}
+            placeholder="destinataire@exemple.fr"
+            className="mt-1.5 w-full rounded-2xl border bg-background px-4 py-2.5 text-sm outline-none transition-colors focus:border-brand"
+          />
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            Les réponses reviennent dans votre boîte de réception BLEME. Vérifiez l’adresse : le
+            courrier part à cette adresse exacte.
+          </p>
+        </div>
+      ) : null}
 
       <p className="mt-5 rounded-2xl bg-amber-50 px-4 py-3 text-[13px] leading-relaxed text-amber-800 ring-1 ring-amber-200">
         Le courrier est envoyé <b>en votre nom</b>, jamais au nom de BLEME. En

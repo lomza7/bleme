@@ -13,6 +13,7 @@ import { caseMemo } from "@/lib/cases/memo";
 import { buildCaseContext } from "@/lib/cases/context";
 import { legalSocle, hasSources } from "@/lib/cases/legal";
 import { dispatchLetter } from "@/lib/courrier/dispatch";
+import { serverEnv } from "@/lib/env";
 
 /*
  * Courriers : brouillon (généré par template versionné, conforme — les
@@ -96,7 +97,7 @@ function buildLetter(
   };
 }
 
-async function orgFor(): Promise<{ orgId: string; orgName: string } | null> {
+async function orgFor(): Promise<{ orgId: string; orgName: string; inboxSlug: string | null } | null> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -104,13 +105,17 @@ async function orgFor(): Promise<{ orgId: string; orgName: string } | null> {
   if (!user) return null;
   const { data } = await supabase
     .from("organization_members")
-    .select("organization_id, organizations ( name )")
+    .select("organization_id, organizations ( name, inbox_slug )")
     .eq("user_id", user.id)
     .limit(1)
     .maybeSingle();
   if (!data) return null;
-  const org = data.organizations as unknown as { name: string } | null;
-  return { orgId: data.organization_id, orgName: org?.name || "Votre entreprise" };
+  const org = data.organizations as unknown as { name: string; inbox_slug: string | null } | null;
+  return {
+    orgId: data.organization_id,
+    orgName: org?.name || "Votre entreprise",
+    inboxSlug: org?.inbox_slug ?? null,
+  };
 }
 
 export async function generateLetter(
@@ -276,6 +281,7 @@ export async function generateLetter(
 }
 
 const CHANNELS = new Set(["email", "postal"]);
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 export async function approveAndSendLetter(
   _prev: LetterState,
@@ -284,9 +290,15 @@ export async function approveAndSendLetter(
   const letterId = z.uuid().safeParse(formData.get("letterId"));
   const channel = String(formData.get("channel") ?? "");
   const body = String(formData.get("body") ?? "").trim();
+  const toEmail = String(formData.get("toEmail") ?? "").trim();
   if (!letterId.success) return { error: "Courrier inconnu." };
   if (!CHANNELS.has(channel)) return { error: "Choisissez un mode d'envoi." };
   if (body.length < 20) return { error: "Le contenu du courrier est vide." };
+  // Envoi email : une adresse valide est requise (jamais devinée). Vérifié AVANT
+  // le log d'approbation pour ne pas graver une validation inexploitable.
+  if (channel === "email" && !EMAIL_RE.test(toEmail)) {
+    return { error: "Indiquez l'email du destinataire pour un envoi par email." };
+  }
 
   const org = await orgFor();
   if (!org) return { error: "Session expirée, reconnectez-vous." };
@@ -327,7 +339,8 @@ export async function approveAndSendLetter(
     channel: channel as "email" | "postal",
     subject: letter.subject ?? "Votre courrier",
     bodyMd: body,
-    toEmail: null, // TODO : coordonnées destinataire (email/adresse) à capturer
+    toEmail: channel === "email" ? toEmail : null,
+    replyTo: org.inboxSlug ? `${org.inboxSlug}@${serverEnv().CASE_EMAIL_DOMAIN}` : null,
   });
   const reallySent = dispatch.status === "sent";
 
@@ -339,6 +352,7 @@ export async function approveAndSendLetter(
       body_md: body,
       content_sha256: contentSha256,
       channel,
+      to_email: channel === "email" ? toEmail : null,
       status: "sent",
       approved_by: user?.id ?? null,
       approved_at: new Date().toISOString(),
@@ -346,6 +360,12 @@ export async function approveAndSendLetter(
     })
     .eq("id", letter.id);
   if (upErr) return { error: "Validation enregistrée mais l'envoi a échoué." };
+
+  // Mémorise l'email du destinataire sur le dossier pour le préremplir la fois
+  // suivante (saisie utilisateur — jamais deviné ; la dernière saisie prime, #3).
+  if (channel === "email" && toEmail) {
+    await supabase.from("cases").update({ debtor_email: toEmail }).eq("id", letter.case_id);
+  }
 
   await supabase.from("case_events").insert({
     case_id: letter.case_id,

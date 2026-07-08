@@ -33,6 +33,7 @@ export async function dispatchLetter(input: {
   bodyMd: string;
   toEmail?: string | null;
   toName?: string | null;
+  replyTo?: string | null;
 }): Promise<DispatchResult> {
   if (!sendEnabled()) {
     return { status: "prepared", reason: "Expédition réelle désactivée (SEND_ENABLED)." };
@@ -47,6 +48,9 @@ export async function dispatchLetter(input: {
         subject: input.subject,
         html: mdToHtml(input.bodyMd),
         text: input.bodyMd,
+        // Réponses du débiteur → boîte de réception BLEME du dossier (ingérées
+        // par le webhook inbound), pour fermer la boucle dans le dossier.
+        replyTo: input.replyTo?.trim() || undefined,
       });
       return { status: "sent", via: "email", ref: (res as { id?: string } | null)?.id ?? null };
     } catch (e) {
