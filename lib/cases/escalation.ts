@@ -10,6 +10,7 @@ import { hasAdvice } from "@/lib/ai/guardrails";
 import { caseMemo } from "@/lib/cases/memo";
 import { euros } from "@/lib/format";
 import { INDEMNITE_FORFAITAIRE, MENTION_RETARD_B2B } from "@/lib/cases/letter-meta";
+import { legalSocle } from "@/lib/cases/legal";
 
 /*
  * Phase 3 — escalader et résoudre. Revue « avocat du diable » (Jeanne, run réel),
@@ -143,12 +144,14 @@ export async function generateEscalationDraft(_prev: EscState, formData: FormDat
   if (ESCALATION_MODELS[model].sends) {
     const memo = await caseMemo(supabase, c.id);
     try {
+      const socle = await legalSocle(c.case_type, "marius", { organizationId: org.orgId, caseId: c.id });
       const { data: m } = await runAgent({
         key: "marius",
         input: {
           consigne:
-            "Rédige ce modèle d'escalade (palier 4 : informatif et ouvert à une solution ; conserve les passages « [à compléter] » du gabarit). Réponds en JSON { subject, body_md }.",
+            "Rédige ce modèle d'escalade (palier 4 : informatif et ouvert à une solution ; conserve les passages « [à compléter] » du gabarit). Appuie-toi sur le socle_juridique fourni pour citer le droit applicable. Réponds en JSON { subject, body_md }.",
           contexte_dossier: memo,
+          socle_juridique: socle,
           type: ESCALATION_MODELS[model].label,
           palier: 4,
           destinataire: c.debtor_name,

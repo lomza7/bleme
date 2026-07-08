@@ -11,6 +11,7 @@ import { runAgent } from "@/lib/ai/client";
 import { hasAdvice } from "@/lib/ai/guardrails";
 import { caseMemo } from "@/lib/cases/memo";
 import { buildCaseContext } from "@/lib/cases/context";
+import { legalSocle } from "@/lib/cases/legal";
 
 /*
  * Courriers : brouillon (généré par template versionné, conforme — les
@@ -141,6 +142,12 @@ export async function generateLetter(
   // ou en bêta, repli gabarit. L'utilisateur relit et valide de toute façon.
   const useLena = kind === "response";
   const memo = await caseMemo(supabase, c.id);
+  // Socle juridique (récupération serveur, mis en cache par type) : articles +
+  // arrêts réels fournis au rédacteur. Volet « récupération » du mode hybride.
+  const socle = await legalSocle(c.case_type, useLena ? "lena" : "marius", {
+    organizationId: org.orgId,
+    caseId: c.id,
+  });
   try {
     if (useLena) {
       const ctx = await buildCaseContext(supabase, c.id);
@@ -148,8 +155,9 @@ export async function generateLetter(
         key: "lena",
         input: {
           consigne:
-            "Rédige une RÉPONSE à la contestation, grief par grief : chaque grief reçoit une réponse factuelle adossée à une pièce du dossier (citée par nom et date). Sépare contesté / non contesté. Réponds en JSON { subject, body_md, griefs:[{grief, statut, reponse, piece_citee}] }.",
+            "Rédige une RÉPONSE à la contestation, grief par grief : chaque grief reçoit une réponse factuelle adossée à une pièce du dossier (citée par nom et date). Sépare contesté / non contesté. Appuie la réponse sur le droit du socle_juridique fourni et, si besoin, cherche une source complémentaire via les outils. Réponds en JSON { subject, body_md, griefs:[{grief, statut, reponse, piece_citee}] }.",
           contexte_dossier: memo,
+          socle_juridique: socle,
           destinataire: c.debtor_name,
           montant_reclame: c.amount_claimed_cents ? `${euros(c.amount_claimed_cents)} €` : null,
           contestation: ctx?.summaryMd ?? "",
@@ -192,8 +200,9 @@ export async function generateLetter(
         key: "marius",
         input: {
           consigne:
-            "Rédige ce courrier de recouvrement (respecte le palier et les règles de ton rôle). Réponds en JSON { subject, body_md }.",
+            "Rédige ce courrier de recouvrement (respecte le palier et les règles de ton rôle). Appuie-toi sur le socle_juridique fourni pour citer le droit applicable ; cherche une source complémentaire via les outils si le dossier le justifie. Réponds en JSON { subject, body_md }.",
           contexte_dossier: memo,
+          socle_juridique: socle,
           type: LETTER_KINDS[kind].label,
           palier: LETTER_PALIER[kind] ?? 0,
           ton: LETTER_KINDS[kind].tone,
