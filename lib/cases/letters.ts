@@ -10,6 +10,7 @@ import { LETTER_KINDS, LETTER_PALIER, LETTER_MENTIONS, INDEMNITE_FORFAITAIRE } f
 import { runAgent } from "@/lib/ai/client";
 import { hasAdvice } from "@/lib/ai/guardrails";
 import { caseMemo } from "@/lib/cases/memo";
+import { buildCaseContext } from "@/lib/cases/context";
 
 /*
  * Courriers : brouillon (généré par template versionné, conforme — les
@@ -134,40 +135,90 @@ export async function generateLetter(
   const tpl = buildLetter(kind, c, org.orgName);
   let subject = tpl.subject;
   let body = tpl.body;
-  // Rédaction RÉELLE par Marius (run tracé dans agent_runs). Sur échec ou en
-  // bêta, on retombe sur le gabarit. L'utilisateur relit et valide de toute façon.
+  let griefsCount = 0;
+  // La réponse à une contestation est écrite par Léna (litiges, grief par grief) ;
+  // le recouvrement d'impayés par Marius. Rédaction RÉELLE (run tracé). Sur échec
+  // ou en bêta, repli gabarit. L'utilisateur relit et valide de toute façon.
+  const useLena = kind === "response";
   const memo = await caseMemo(supabase, c.id);
   try {
-    const { data: m } = await runAgent({
-      key: "marius",
-      input: {
-        consigne:
-          "Rédige ce courrier de recouvrement (respecte le palier et les règles de ton rôle). Réponds en JSON { subject, body_md }.",
-        contexte_dossier: memo,
-        type: LETTER_KINDS[kind].label,
-        palier: LETTER_PALIER[kind] ?? 0,
-        ton: LETTER_KINDS[kind].tone,
-        destinataire: c.debtor_name,
-        montant_reclame: c.amount_claimed_cents ? `${euros(c.amount_claimed_cents)} €` : null,
-        indemnite_forfaitaire: INDEMNITE_FORFAITAIRE,
-        mentions_obligatoires: LETTER_MENTIONS[kind] ?? [],
-        expediteur: org.orgName,
-        gabarit: tpl.body,
-      },
-      schema: z.object({ subject: z.string().min(3).max(200), body_md: z.string().min(60) }),
-      simulation: { subject: tpl.subject, body_md: tpl.body },
-      organizationId: org.orgId,
-      caseId: c.id,
-      maxTokens: 1200,
-    });
-    // Garde-fou #2 : conseil/pronostic dans le sujet ou le corps → on garde le
-    // gabarit conforme (le courrier part au nom de l'utilisateur).
-    if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
-      subject = tpl.subject;
-      body = tpl.body;
+    if (useLena) {
+      const ctx = await buildCaseContext(supabase, c.id);
+      const { data: m } = await runAgent({
+        key: "lena",
+        input: {
+          consigne:
+            "Rédige une RÉPONSE à la contestation, grief par grief : chaque grief reçoit une réponse factuelle adossée à une pièce du dossier (citée par nom et date). Sépare contesté / non contesté. Réponds en JSON { subject, body_md, griefs:[{grief, statut, reponse, piece_citee}] }.",
+          contexte_dossier: memo,
+          destinataire: c.debtor_name,
+          montant_reclame: c.amount_claimed_cents ? `${euros(c.amount_claimed_cents)} €` : null,
+          contestation: ctx?.summaryMd ?? "",
+          derniers_messages: (ctx?.replies ?? []).slice(-3).map((r) => ({ date: r.receivedAt, texte: r.body.slice(0, 1500) })),
+          pieces: (ctx?.documents ?? []).map((d) => ({ nom: d.fileName, type: d.docKind })),
+          chronologie: (ctx?.timeline ?? []).map((t) => ({ date: t.date, evenement: t.title })),
+          revue_adverse: ctx?.devilReview ?? null,
+          expediteur: org.orgName,
+          gabarit: tpl.body,
+        },
+        schema: z.object({
+          subject: z.string().min(3).max(200),
+          body_md: z.string().min(60),
+          griefs: z
+            .array(
+              z.object({
+                grief: z.string(),
+                statut: z.string(),
+                reponse: z.string(),
+                piece_citee: z.string().nullable(),
+              }),
+            )
+            .default([]),
+        }),
+        simulation: { subject: tpl.subject, body_md: tpl.body, griefs: [] },
+        organizationId: org.orgId,
+        caseId: c.id,
+        maxTokens: 1500,
+      });
+      if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
+        subject = tpl.subject;
+        body = tpl.body;
+      } else {
+        subject = m.subject?.trim() || tpl.subject;
+        body = m.body_md?.trim() || tpl.body;
+        griefsCount = m.griefs?.length ?? 0;
+      }
     } else {
-      subject = m.subject?.trim() || tpl.subject;
-      body = m.body_md?.trim() || tpl.body;
+      const { data: m } = await runAgent({
+        key: "marius",
+        input: {
+          consigne:
+            "Rédige ce courrier de recouvrement (respecte le palier et les règles de ton rôle). Réponds en JSON { subject, body_md }.",
+          contexte_dossier: memo,
+          type: LETTER_KINDS[kind].label,
+          palier: LETTER_PALIER[kind] ?? 0,
+          ton: LETTER_KINDS[kind].tone,
+          destinataire: c.debtor_name,
+          montant_reclame: c.amount_claimed_cents ? `${euros(c.amount_claimed_cents)} €` : null,
+          indemnite_forfaitaire: INDEMNITE_FORFAITAIRE,
+          mentions_obligatoires: LETTER_MENTIONS[kind] ?? [],
+          expediteur: org.orgName,
+          gabarit: tpl.body,
+        },
+        schema: z.object({ subject: z.string().min(3).max(200), body_md: z.string().min(60) }),
+        simulation: { subject: tpl.subject, body_md: tpl.body },
+        organizationId: org.orgId,
+        caseId: c.id,
+        maxTokens: 1200,
+      });
+      // Garde-fou #2 : conseil/pronostic dans le sujet ou le corps → on garde le
+      // gabarit conforme (le courrier part au nom de l'utilisateur).
+      if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
+        subject = tpl.subject;
+        body = tpl.body;
+      } else {
+        subject = m.subject?.trim() || tpl.subject;
+        body = m.body_md?.trim() || tpl.body;
+      }
     }
   } catch {
     // run en erreur déjà tracé ; on garde le gabarit conforme
@@ -193,7 +244,10 @@ export async function generateLetter(
     organization_id: org.orgId,
     event_type: "letter_ready",
     title: `Brouillon prêt : ${LETTER_KINDS[kind].label.toLowerCase()}`,
-    description: "À relire et valider avant tout envoi.",
+    description:
+      griefsCount > 0
+        ? `${griefsCount} grief${griefsCount > 1 ? "s" : ""} traité${griefsCount > 1 ? "s" : ""} point par point. À relire et valider avant tout envoi.`
+        : "À relire et valider avant tout envoi.",
     source: "ai",
   });
 
