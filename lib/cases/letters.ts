@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { recomputeCaseProgress } from "@/lib/cases/completeness";
-import { LETTER_KINDS } from "@/lib/cases/letter-meta";
+import { LETTER_KINDS, LETTER_PALIER, LETTER_MENTIONS, INDEMNITE_FORFAITAIRE } from "@/lib/cases/letter-meta";
 import { runAgent } from "@/lib/ai/client";
 import { hasAdvice } from "@/lib/ai/guardrails";
 import { caseMemo } from "@/lib/cases/memo";
@@ -142,12 +142,15 @@ export async function generateLetter(
       key: "marius",
       input: {
         consigne:
-          "Rédige ce courrier en français à partir des seuls faits fournis. N'invente aucun montant, date ni fait. Garde les mentions légales du gabarit telles quelles. Appuie-toi sur le contexte consolidé du dossier (contexte_dossier) sans le recopier. Réponds en JSON { subject, body_md }.",
+          "Rédige ce courrier de recouvrement (respecte le palier et les règles de ton rôle). Réponds en JSON { subject, body_md }.",
         contexte_dossier: memo,
         type: LETTER_KINDS[kind].label,
+        palier: LETTER_PALIER[kind] ?? 0,
         ton: LETTER_KINDS[kind].tone,
         destinataire: c.debtor_name,
-        montant_reclame_cents: c.amount_claimed_cents,
+        montant_reclame: c.amount_claimed_cents ? `${euros(c.amount_claimed_cents)} €` : null,
+        indemnite_forfaitaire: INDEMNITE_FORFAITAIRE,
+        mentions_obligatoires: LETTER_MENTIONS[kind] ?? [],
         expediteur: org.orgName,
         gabarit: tpl.body,
       },

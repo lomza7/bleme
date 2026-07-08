@@ -8,6 +8,8 @@ import { buildEscalation, ESCALATION_MODELS, type EscalationModel } from "@/lib/
 import { runAgent } from "@/lib/ai/client";
 import { hasAdvice } from "@/lib/ai/guardrails";
 import { caseMemo } from "@/lib/cases/memo";
+import { euros } from "@/lib/format";
+import { INDEMNITE_FORFAITAIRE, MENTION_RETARD_B2B } from "@/lib/cases/letter-meta";
 
 /*
  * Phase 3 — escalader et résoudre. Revue « avocat du diable » (Jeanne, run réel),
@@ -145,11 +147,14 @@ export async function generateEscalationDraft(_prev: EscState, formData: FormDat
         key: "marius",
         input: {
           consigne:
-            "Rédige ce courrier en français à partir des seuls faits fournis. N'invente aucun montant, date ni fait. Garde les mentions légales du gabarit. Appuie-toi sur le contexte consolidé du dossier (contexte_dossier) sans le recopier. Ton ferme, factuel, jamais menaçant. Aucun conseil, aucun pronostic. JSON { subject, body_md }.",
+            "Rédige ce modèle d'escalade (palier 4 : informatif et ouvert à une solution ; conserve les passages « [à compléter] » du gabarit). Réponds en JSON { subject, body_md }.",
           contexte_dossier: memo,
           type: ESCALATION_MODELS[model].label,
+          palier: 4,
           destinataire: c.debtor_name,
-          montant_reclame_cents: c.amount_claimed_cents,
+          montant_reclame: c.amount_claimed_cents ? euros(c.amount_claimed_cents) : null,
+          indemnite_forfaitaire: INDEMNITE_FORFAITAIRE,
+          mentions_obligatoires: [MENTION_RETARD_B2B],
           expediteur: org.orgName,
           gabarit: tpl.body,
         },
@@ -225,11 +230,12 @@ export async function escalateCase(_prev: EscState, formData: FormData): Promise
       key: "marius",
       input: {
         consigne:
-          "Rédige une synthèse factuelle du dossier pour préparer une escalade : faits, montants, démarches déjà effectuées. Appuie-toi sur le contexte consolidé du dossier (contexte_dossier). Aucun conseil, aucun pronostic, aucune évaluation de chances. JSON { summary_md }.",
+          "Produis une SYNTHÈSE INTERNE (pas un courrier : ni formule d'appel ni signature) pour préparer une escalade : faits, montants, démarches déjà effectuées. Réponds en JSON { summary_md }.",
+        type: "Synthèse interne",
         contexte_dossier: memo,
         resume: c.summary_md ?? "",
-        montant_reclame_cents: c.amount_claimed_cents,
-        montant_recupere_cents: c.amount_recovered_cents,
+        montant_reclame: c.amount_claimed_cents ? euros(c.amount_claimed_cents) : null,
+        montant_recupere: c.amount_recovered_cents ? euros(c.amount_recovered_cents) : null,
         courriers_envoyes: (letters ?? []).map((l: { kind: string }) => l.kind),
       },
       schema: z.object({ summary_md: z.string().min(40) }),
