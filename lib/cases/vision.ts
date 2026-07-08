@@ -40,13 +40,21 @@ const WRAPPER_KEYS = [
   "champs",
 ];
 
-/** Aplatit un niveau d'imbrication éventuel (invoice_fields:{…} → à la racine). */
+/**
+ * Aplatit un niveau d'imbrication éventuel (invoice_fields:{…} → à la racine).
+ * La racine PRIME : une clé imbriquée ne comble que ce qui manque (absent, null
+ * ou vide) à la racine — sinon un wrapper renvoyé « en écho » écraserait une
+ * valeur correcte de la racine par un null.
+ */
 function flatten(obj: Record<string, unknown>): Record<string, unknown> {
-  let out: Record<string, unknown> = { ...obj };
+  const out: Record<string, unknown> = { ...obj };
   for (const k of WRAPPER_KEYS) {
     const nested = out[k];
     if (nested && typeof nested === "object" && !Array.isArray(nested)) {
-      out = { ...out, ...(nested as Record<string, unknown>) };
+      for (const [nk, nv] of Object.entries(nested as Record<string, unknown>)) {
+        const cur = out[nk];
+        if (cur === undefined || cur === null || cur === "") out[nk] = nv;
+      }
     }
   }
   return out;
@@ -72,12 +80,60 @@ function pick(src: Record<string, unknown>, keys: string[]): unknown {
   return null;
 }
 
-function toCents(v: unknown): number | null {
-  const s = unwrap(v);
-  if (typeof s === "number" && Number.isFinite(s)) return Math.round(s);
+/**
+ * Convertit une chaîne numérique en nombre, quelle que soit la locale :
+ * « 1 234,56 » (FR), « 1,234.56 » (EN), « 1.234,56 » (FR séparateur point).
+ * Heuristique : le séparateur le plus à DROITE (parmi . et ,) est le séparateur
+ * décimal quand les deux coexistent ; un séparateur unique suivi d'1 à 2 chiffres
+ * est décimal, sinon c'est un séparateur de milliers.
+ */
+function parseNumber(str: string): number | null {
+  const s = str.replace(/[^\d.,-]/g, "");
+  if (!s) return null;
+  const lastComma = s.lastIndexOf(",");
+  const lastDot = s.lastIndexOf(".");
+  let normalized: string;
+  if (lastComma !== -1 && lastDot !== -1) {
+    const decimal = lastComma > lastDot ? "," : ".";
+    const thousands = decimal === "," ? "." : ",";
+    normalized = s.split(thousands).join("").replace(decimal, ".");
+  } else if (lastComma !== -1) {
+    const decimals = s.length - lastComma - 1;
+    normalized =
+      s.indexOf(",") === lastComma && decimals >= 1 && decimals <= 2
+        ? s.replace(",", ".")
+        : s.split(",").join("");
+  } else if (lastDot !== -1) {
+    const decimals = s.length - lastDot - 1;
+    normalized =
+      s.indexOf(".") === lastDot && decimals >= 1 && decimals <= 2 ? s : s.split(".").join("");
+  } else {
+    normalized = s;
+  }
+  const n = parseFloat(normalized);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Montant en CENTIMES. Le modèle DEVRAIT renvoyer des centimes entiers
+ * (montant_cents), mais il dérive souvent vers des euros — surtout sous une clé
+ * nommée en euros (montant/amount) ou dès qu'il y a une partie décimale / un €.
+ * On tranche l'unité par le NOM de la clé (`keyInCents`) ET la FORME de la valeur :
+ * un entier nu sous une clé « _cents » = déjà des centimes ; tout le reste
+ * (décimale, symbole €, clé nommée en euros) = des euros → ×100. Évite le
+ * sous-comptage ×100 qui stockait « 2,52 € » pour une facture de 252 €.
+ */
+function amountToCents(raw: unknown, keyInCents: boolean): number | null {
+  const s = unwrap(raw);
+  if (typeof s === "number") {
+    if (!Number.isFinite(s)) return null;
+    return keyInCents && Number.isInteger(s) ? Math.round(s) : Math.round(s * 100);
+  }
   if (typeof s === "string") {
-    const n = parseFloat(s.replace(/[^\d.,-]/g, "").replace(/\s/g, "").replace(",", "."));
-    if (Number.isFinite(n)) return Math.round(n);
+    const n = parseNumber(s);
+    if (n === null) return null;
+    const looksLikeEuros = !keyInCents || /[.,€]/.test(s);
+    return looksLikeEuros ? Math.round(n * 100) : Math.round(n);
   }
   return null;
 }
@@ -138,7 +194,12 @@ export async function readDocumentFacts(
 
     // Normalisation tolérante (imbrication, valeurs enveloppées, alias de clés).
     const src = flatten(raw as Record<string, unknown>);
-    const montantCents = toCents(pick(src, ["montant_cents", "montant", "amount_cents", "amount", "total_ttc_cents"]));
+    // Clés en centimes d'abord (valeur = déjà des centimes si entière), puis clés
+    // nommées en euros (valeur = euros → ×100). Sépare les deux familles pour ne
+    // pas confondre l'unité (bug ×100).
+    const centsRaw = pick(src, ["montant_cents", "amount_cents", "total_ttc_cents", "montant_ttc_cents"]);
+    const euroRaw = pick(src, ["montant", "amount", "montant_ttc", "total_ttc", "total", "montant_total", "prix"]);
+    const montantCents = centsRaw !== null ? amountToCents(centsRaw, true) : amountToCents(euroRaw, false);
     const dateIso = toText(pick(src, ["date_iso", "date", "date_facture"]));
     const numero = toText(pick(src, ["numero_facture", "numero", "invoice_number", "reference", "num"]));
     const partie = toText(pick(src, ["partie", "party", "emetteur", "fournisseur", "societe", "issuer"]));
