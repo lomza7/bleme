@@ -182,6 +182,71 @@ def _chat_sync(agent: str, model: str, system: str, message: str) -> tuple[str, 
     )
 
 
+def _vision_chat(
+    model: str, system: str, user_text: str, attachments: list[dict]
+) -> tuple[str, int, int, float]:
+    """Lecture multimodale (PDF/image) via OpenRouter : on court-circuite
+    HermesCLI (texte seul) et on envoie un message avec pièces au modèle vision
+    demandé. Renvoie (texte, tokens_in, tokens_out, coût_usd)."""
+    content: list[dict] = [{"type": "text", "text": user_text}]
+    has_pdf = False
+    for a in attachments:
+        mime = str(a.get("mime") or "").lower()
+        data = a.get("data_base64") or ""
+        if not data:
+            continue
+        if mime == "application/pdf":
+            has_pdf = True
+            content.append(
+                {
+                    "type": "file",
+                    "file": {
+                        "filename": "piece.pdf",
+                        "file_data": f"data:application/pdf;base64,{data}",
+                    },
+                }
+            )
+        elif mime.startswith("image/"):
+            content.append(
+                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{data}"}}
+            )
+    body: dict = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system},
+            {"role": "user", "content": content},
+        ],
+        "max_tokens": 800,
+        "usage": {"include": True},
+    }
+    if has_pdf:
+        body["plugins"] = [{"id": "file-parser", "pdf": {"engine": "native"}}]
+    http = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=json.dumps(body).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {API_KEY}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(http, timeout=CHAT_TIMEOUT) as resp:
+        payload = json.loads(resp.read().decode("utf-8"))
+    choices = payload.get("choices") or [{}]
+    text = (choices[0].get("message") or {}).get("content") or ""
+    usage = payload.get("usage") or {}
+    try:
+        cost = float(usage.get("cost") or 0.0)
+    except (TypeError, ValueError):
+        cost = 0.0
+    return (
+        str(text).strip(),
+        int(usage.get("prompt_tokens", 0) or 0),
+        int(usage.get("completion_tokens", 0) or 0),
+        cost,
+    )
+
+
 # ── Routines liées : chaque cron appartient à un agent, avec ses skills ──────
 # Binding = {agent, skills[], system (prompt capturé au lien), input, last_fire}
 BINDINGS_FILE = Path(os.getenv("HERMES_HOME", str(Path.home() / ".hermes"))) / "routine-bindings.json"
@@ -1567,6 +1632,9 @@ class RunRequest(BaseModel):
     skills: list[str] = []
     tool_apis: list[dict] = []
     timeout_s: int | None = None
+    # Pièces à lire en VISION (PDF/image, base64). Quand non vide, on court-circuite
+    # HermesCLI (texte) et on appelle OpenRouter en multimodal avec `model`.
+    attachments: list[dict] = []
 
 
 @app.get("/health")
@@ -1606,6 +1674,31 @@ async def run(req: RunRequest) -> dict:
     total_in = total_out = 0
     total_cost = 0.0
     tool_trace: list[str] = []
+
+    # Vision : pièces jointes → lecture multimodale directe (pas de boucle outil).
+    if req.attachments:
+        try:
+            text, total_in, total_out, total_cost = await asyncio.wait_for(
+                loop.run_in_executor(
+                    None, _vision_chat, model, system, message, req.attachments
+                ),
+                timeout=req.timeout_s or CHAT_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            raise HTTPException(504, "délai vision dépassé")
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(502, f"vision: {exc}"[:300])
+        return {
+            "agent": agent,
+            "model": model,
+            "text": text,
+            "input_tokens": total_in,
+            "output_tokens": total_out,
+            "cost": round(total_cost, 6),
+            "tool_calls": [],
+            "duration_ms": int((time.perf_counter() - t0) * 1000),
+        }
+
     async with _locks[agent]:
         try:
             for _ in range(TOOL_CALLS_MAX + 1):

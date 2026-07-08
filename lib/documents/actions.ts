@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { parseWhatsAppExport, pickKeyMessages } from "@/lib/whatsapp/parser";
 import { detectFacts } from "@/lib/cases/extraction";
+import { readDocumentFacts } from "@/lib/cases/vision";
 import { recomputeCaseProgress } from "@/lib/cases/completeness";
 import { analysePiece } from "@/lib/cases/analysis";
 import type { PieceAnalysis } from "@/lib/cases/analysis-types";
@@ -233,7 +234,22 @@ export async function finalizeUpload(input: {
   // et éditable ; analyse de cohérence ; puis recalcul de la progression.
   let analysis: PieceAnalysis | undefined;
   if (caseId) {
-    const facts = detectFacts(fileText, input.fileName);
+    // Extraction texte (déterministe) + lecture VISION du contenu (Nora via le
+    // bridge, sur PDF/image). La lecture vision prime par champ (pièce réelle),
+    // le texte complète les champs manquants.
+    const textFacts = detectFacts(fileText, input.fileName);
+    const visionFacts = await readDocumentFacts(supabase, {
+      storagePath: input.path,
+      mime: finalMime,
+      fileName: input.fileName,
+      orgId,
+      caseId,
+      claimedCents,
+    });
+    const byField = new Map<string, (typeof textFacts)[number]>();
+    for (const f of textFacts) byField.set(f.field_key, f);
+    for (const f of visionFacts) byField.set(f.field_key, f);
+    const facts = [...byField.values()];
     if (facts.length > 0) {
       await supabase.from("document_extractions").insert(
         facts.map((f) => ({

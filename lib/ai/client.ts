@@ -268,6 +268,22 @@ async function logRun(run: {
  * valider `schema`. `simulation` est la valeur retournée en mode bêta sans
  * clé API (trace marquée simulated).
  */
+// Contenu du message Claude : une string simple, ou un tableau de blocs
+// (image/document lus en vision + texte) quand des pièces sont fournies.
+function buildClaudeContent(
+  input: unknown,
+  attachments?: { mime: string; dataBase64: string }[],
+): string | unknown[] {
+  const text = `${JSON.stringify(input)}\n\nRéponds UNIQUEMENT avec le JSON demandé, sans texte autour.`;
+  if (!attachments || attachments.length === 0) return text;
+  const blocks = attachments.map((a) =>
+    a.mime === "application/pdf"
+      ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: a.dataBase64 } }
+      : { type: "image", source: { type: "base64", media_type: a.mime, data: a.dataBase64 } },
+  );
+  return [...blocks, { type: "text", text }];
+}
+
 export async function runAgent<T>(opts: {
   key: string;
   input: unknown;
@@ -276,6 +292,12 @@ export async function runAgent<T>(opts: {
   organizationId?: string | null;
   caseId?: string | null;
   maxTokens?: number;
+  // Pièces à faire LIRE en vision (PDF, images). Transmises au bridge Hermes
+  // (chemin multimodal) et au runtime Claude ; ignorées par le MOA.
+  attachments?: { mime: string; dataBase64: string }[];
+  // Modèle imposé pour CET appel (ex. modèle vision OpenRouter) — surcharge
+  // hermes_model côté bridge sans changer la config par défaut de l'agent.
+  modelOverride?: string;
 }): Promise<{ data: T; simulated: boolean }> {
   const agent = await loadAgent(opts.key);
   if (!agent) {
@@ -456,9 +478,10 @@ export async function runAgent<T>(opts: {
           agent: agent.key,
           system: agent.system_prompt,
           input: JSON.stringify(opts.input),
-          model: agent.hermes_model,
+          model: opts.modelOverride ?? agent.hermes_model,
           skills,
           tool_apis: toolApis,
+          attachments: opts.attachments ?? [],
         }),
       });
       if (!response.ok) {
@@ -538,7 +561,7 @@ export async function runAgent<T>(opts: {
         messages: [
           {
             role: "user",
-            content: `${JSON.stringify(opts.input)}\n\nRéponds UNIQUEMENT avec le JSON demandé, sans texte autour.`,
+            content: buildClaudeContent(opts.input, opts.attachments),
           },
         ],
       }),
