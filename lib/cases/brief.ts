@@ -112,10 +112,6 @@ function assembleBrief(
   return parts.join("\n\n").trim();
 }
 
-/** Repli complet (échec IA total) : les 9 sections déterministes assemblées. */
-function buildFallbackMd(ctx: CaseContext): string {
-  return assembleBrief({}, buildFallbackSections(ctx));
-}
 
 /**
  * Régénère la synthèse vivante d'un dossier et l'écrit dans
