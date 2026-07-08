@@ -190,7 +190,10 @@ export async function readDocumentFacts(
       organizationId: input.orgId,
       caseId: input.caseId,
       attachments: [{ mime: input.mime, dataBase64: buf.toString("base64") }],
-      modelOverride: "google/gemini-2.5-flash-lite",
+      // Modèle vision = facteur limitant de la précision preuves. flash (et non
+      // flash-lite) : lecture plus fiable des factures/devis, coût borné (1
+      // lecture par pièce). Reste OFF du MOA (la branche MOA ignore attachments).
+      modelOverride: "google/gemini-2.5-flash",
       maxTokens: 500,
     });
 
