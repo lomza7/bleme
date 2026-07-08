@@ -19,7 +19,10 @@ const VISION_MIME = new Set([
   "image/heic",
   "image/heif",
 ]);
-const MAX_VISION_BYTES = 8 * 1024 * 1024;
+// 15 Mo (~20 Mo en base64) : couvre la quasi-totalité des photos de chantier
+// (l'upload autorise 25 Mo). Au-delà, la vision renonce et la pièce ressort en
+// « non lisible » (analysePiece) plutôt qu'en échec silencieux.
+const MAX_VISION_BYTES = 15 * 1024 * 1024;
 
 // On accepte n'importe quel objet JSON : les modèles vision « légers »
 // (gemini-flash-lite…) imbriquent souvent les champs (sous invoice_fields,
@@ -156,7 +159,7 @@ function parseNumber(str: string): number | null {
  * (décimale, symbole €, clé nommée en euros) = des euros → ×100. Évite le
  * sous-comptage ×100 qui stockait « 2,52 € » pour une facture de 252 €.
  */
-function amountToCents(raw: unknown, keyInCents: boolean): number | null {
+export function amountToCents(raw: unknown, keyInCents: boolean): number | null {
   const s = unwrap(raw);
   if (typeof s === "number") {
     if (!Number.isFinite(s)) return null;

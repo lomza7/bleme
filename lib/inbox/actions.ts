@@ -11,7 +11,7 @@ import type { PieceAnalysis } from "@/lib/cases/analysis-types";
 import { recomputeCaseProgress } from "@/lib/cases/completeness";
 import { runAgent } from "@/lib/ai/client";
 import { keepClean } from "@/lib/ai/guardrails";
-import { readDocumentFacts } from "@/lib/cases/vision";
+import { readDocumentFacts, amountToCents } from "@/lib/cases/vision";
 
 /*
  * Boîte de réception : import de fichiers et d'emails collés, libellés de
@@ -640,35 +640,57 @@ export async function confirmEmailMerge(input: {
   }
 
   // 2. Les pièces jointes deviennent des pièces du dossier (objet Storage réutilisé).
-  //    Leur contenu a déjà été lu en vision à l'analyse (analyzeEmailForCase) et
-  //    les faits, revus par l'utilisateur, sont enregistrés ci-dessus sur le corps.
+  //    Une PJ PDF/image dont un montant a été lu est classée « facture » (les faits
+  //    viennent d'elle) ; sinon « echanges ». On mémorise l'id de la facture pour y
+  //    rattacher les extractions (sinon la checklist croit la facture manquante).
+  const hasAmount = facts.some((f) => f.field_key === "amount_cents");
+  const INVOICE_MIME = /pdf|image\//i;
   const { data: attachments } = await supabase
     .from("inbox_attachments")
     .select("file_name, storage_path, mime_type, size_bytes")
     .eq("inbox_item_id", item.id);
+  let factureDocId: string | null = null;
   for (const a of attachments ?? []) {
-    const { error: aErr } = await supabase.from("documents").insert({
-      organization_id: orgId,
-      case_id: caseRow.id,
-      file_name: a.file_name,
-      storage_path: a.storage_path,
-      mime_type: a.mime_type,
-      size_bytes: a.size_bytes,
-      doc_class: "other",
-      doc_kind: null,
-    });
-    // Idempotence : une pièce déjà versée (23505) n'interrompt pas le reste.
-    if (aErr && aErr.code !== "23505") continue;
+    const isInvoiceLike = hasAmount && INVOICE_MIME.test(a.mime_type || "");
+    const { data: attDoc, error: aErr } = await supabase
+      .from("documents")
+      .insert({
+        organization_id: orgId,
+        case_id: caseRow.id,
+        file_name: a.file_name,
+        storage_path: a.storage_path,
+        mime_type: a.mime_type,
+        size_bytes: a.size_bytes,
+        doc_class: "other",
+        doc_kind: isInvoiceLike ? "facture" : "echanges",
+      })
+      .select("id")
+      .single();
+    if (aErr) {
+      // Idempotence : PJ déjà versée (23505) → on récupère son id pour les extractions.
+      if (aErr.code === "23505" && isInvoiceLike && !factureDocId) {
+        const { data: exist } = await supabase
+          .from("documents")
+          .select("id")
+          .eq("storage_path", a.storage_path)
+          .maybeSingle();
+        if (exist) factureDocId = exist.id;
+      }
+      continue;
+    }
+    if (isInvoiceLike && attDoc && !factureDocId) factureDocId = attDoc.id;
   }
 
   // 3. Valeurs extraites (sourcées) ; une correction saisie prime dès l'écriture.
+  //    Rattachées à la facture (PJ) si on l'a identifiée, sinon au corps.
+  const extractionDocId = factureDocId ?? bodyDoc.id;
   if (facts.length > 0) {
     await supabase.from("document_extractions").insert(
       facts.map((f) => {
         const corrected = f.corrected?.trim() || null;
         return {
           organization_id: orgId,
-          document_id: bodyDoc.id,
+          document_id: extractionDocId,
           field_key: f.field_key,
           value_text: f.value_text,
           value_normalized: f.value_normalized,
@@ -697,8 +719,18 @@ export async function confirmEmailMerge(input: {
   });
 
   // 5. Montant : jamais d'écrasement silencieux — posé seulement s'il est absent.
-  if (applyAmountCents && applyAmountCents > 0 && (Number(caseRow.amount_claimed_cents) || 0) === 0) {
-    await supabase.from("cases").update({ amount_claimed_cents: applyAmountCents }).eq("id", caseRow.id);
+  //    La CORRECTION utilisateur prime (pilier #3) : si le montant a été édité
+  //    dans la popup, c'est cette valeur (et non la valeur brute lue) qui est posée.
+  if (applyAmountCents !== null && (Number(caseRow.amount_claimed_cents) || 0) === 0) {
+    let effective = applyAmountCents;
+    const amountFact = facts.find((f) => f.field_key === "amount_cents");
+    if (amountFact?.corrected?.trim()) {
+      const c = amountToCents(amountFact.corrected.trim(), false); // saisi en euros
+      if (c !== null && c > 0) effective = c;
+    }
+    if (effective > 0) {
+      await supabase.from("cases").update({ amount_claimed_cents: effective }).eq("id", caseRow.id);
+    }
   }
 
   // 6. L'élément est classé (lu + archivé + rattaché).
