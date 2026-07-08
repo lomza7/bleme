@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createServiceClient } from "@/lib/supabase/server";
 import { buildCaseContext, type CaseContext } from "@/lib/cases/context";
 import { runAgent } from "@/lib/ai/client";
+import { hasAdvice } from "@/lib/ai/guardrails";
 
 /*
  * Synthèse vivante d'un dossier (Sacha). À chaque évolution notable — pièce
@@ -13,13 +14,6 @@ import { runAgent } from "@/lib/ai/client";
  * déterministe sans IA si un vocabulaire de pronostic passe. Fonction de fond :
  * elle n'échoue jamais bruyamment (toute erreur est avalée, le run étant tracé).
  */
-
-// Filet de sécurité : toute sortie contenant du vocabulaire de conseil ou de
-// pronostic est rejetée au profit du repli déterministe (rien de « juridique »).
-const ADVICE_RE = /gagner|perdre|vos?\s+chances|chances?\s+de|stratégie\s+judiciaire|vous\s+risquez|pronostic|garanti/i;
-function hasAdvice(t: string): boolean {
-  return ADVICE_RE.test(t ?? "");
-}
 
 function eur(cents: number): string {
   return `${(cents / 100).toLocaleString("fr-FR", { minimumFractionDigits: 0 })} €`;

@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { recomputeCaseProgress, completeness } from "@/lib/cases/completeness";
 import { buildEscalation, ESCALATION_MODELS, type EscalationModel } from "@/lib/cases/escalation-templates";
 import { runAgent } from "@/lib/ai/client";
+import { hasAdvice } from "@/lib/ai/guardrails";
 import { caseMemo } from "@/lib/cases/memo";
 
 /*
@@ -16,13 +17,6 @@ import { caseMemo } from "@/lib/cases/memo";
  */
 
 export type EscState = { error?: string; success?: string; letterId?: string };
-
-// Filet de sécurité : si une sortie IA contient du vocabulaire de conseil ou de
-// pronostic, on la rejette au profit du repli déterministe (rien de « juridique »).
-const ADVICE_RE = /gagner|perdre|vos?\s+chances|chances?\s+de|stratégie\s+judiciaire|vous\s+risquez|pronostic|garanti/i;
-function hasAdvice(...texts: string[]): boolean {
-  return texts.some((t) => ADVICE_RE.test(t ?? ""));
-}
 
 async function orgFor(): Promise<{ orgId: string; orgName: string } | null> {
   const supabase = await createClient();
@@ -112,6 +106,11 @@ export async function runDevilReview(_prev: EscState, formData: FormData): Promi
     description: "Points de vigilance actionnables identifiés.",
     source: "ai",
   });
+  // Refermer la boucle : la revue de Jeanne alimente la synthèse vivante
+  // (buildCaseContext → revue_adverse), pour que l'escalade de Marius, qui lit
+  // caseMemo, voie enfin ces objections. recomputeCaseProgress déclenche
+  // refreshLivingBrief en tâche de fond (after()).
+  await recomputeCaseProgress(c.id);
   revalidatePath(`/app/dossiers/${c.id}`);
   return { success: "Revue effectuée." };
 }
@@ -160,8 +159,15 @@ export async function generateEscalationDraft(_prev: EscState, formData: FormDat
         caseId: c.id,
         maxTokens: 1200,
       });
-      subject = m.subject?.trim() || tpl.subject;
-      body = hasAdvice(m.body_md ?? "") ? tpl.body : m.body_md?.trim() || tpl.body;
+      // Rejet au profit du gabarit conforme si conseil/pronostic dans le sujet
+      // OU le corps (les deux partent au débiteur).
+      if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
+        subject = tpl.subject;
+        body = tpl.body;
+      } else {
+        subject = m.subject?.trim() || tpl.subject;
+        body = m.body_md?.trim() || tpl.body;
+      }
     } catch {
       // run en erreur déjà tracé ; on garde le gabarit conforme
     }

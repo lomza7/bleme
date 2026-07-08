@@ -181,7 +181,9 @@ export async function readDocumentFacts(
           "montant_cents = montant total TTC converti en CENTIMES (entier ; ex. 252,00 € → 25200). " +
           "Mets null pour tout champ non lisible. Aucun texte autour du JSON.",
         nom_fichier: input.fileName,
-        montant_reclame_cents: input.claimedCents,
+        // Anti-ancrage (pilier #3) : la lecture vision est AVEUGLE au montant
+        // réclamé — sinon le modèle recopie l'attendu. Le contrôle de cohérence
+        // vit en aval (analysePiece, sur la passe texte), pas ici.
       },
       schema: VISION_SCHEMA,
       simulation: {},

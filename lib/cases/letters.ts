@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { recomputeCaseProgress } from "@/lib/cases/completeness";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { runAgent } from "@/lib/ai/client";
+import { hasAdvice } from "@/lib/ai/guardrails";
 import { caseMemo } from "@/lib/cases/memo";
 
 /*
@@ -156,8 +157,15 @@ export async function generateLetter(
       caseId: c.id,
       maxTokens: 1200,
     });
-    subject = m.subject?.trim() || tpl.subject;
-    body = m.body_md?.trim() || tpl.body;
+    // Garde-fou #2 : conseil/pronostic dans le sujet ou le corps → on garde le
+    // gabarit conforme (le courrier part au nom de l'utilisateur).
+    if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
+      subject = tpl.subject;
+      body = tpl.body;
+    } else {
+      subject = m.subject?.trim() || tpl.subject;
+      body = m.body_md?.trim() || tpl.body;
+    }
   } catch {
     // run en erreur déjà tracé ; on garde le gabarit conforme
   }

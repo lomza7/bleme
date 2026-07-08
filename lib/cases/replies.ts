@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { recomputeCaseProgress } from "@/lib/cases/completeness";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { runAgent } from "@/lib/ai/client";
+import { hasAdvice } from "@/lib/ai/guardrails";
 import { caseMemo } from "@/lib/cases/memo";
 
 /*
@@ -148,8 +149,14 @@ export async function generateAdaptedResponse(
       caseId: c.id,
       maxTokens: 1200,
     });
-    subject = m.subject?.trim() || tplSubject;
-    body = m.body_md?.trim() || gabarit;
+    // Garde-fou #2 : conseil/pronostic → on garde le gabarit conforme.
+    if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
+      subject = tplSubject;
+      body = gabarit;
+    } else {
+      subject = m.subject?.trim() || tplSubject;
+      body = m.body_md?.trim() || gabarit;
+    }
   } catch {
     // run en erreur déjà tracé par runAgent ; on garde le gabarit conforme
   }

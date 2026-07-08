@@ -10,6 +10,7 @@ import { analysePiece } from "@/lib/cases/analysis";
 import type { PieceAnalysis } from "@/lib/cases/analysis-types";
 import { recomputeCaseProgress } from "@/lib/cases/completeness";
 import { runAgent } from "@/lib/ai/client";
+import { keepClean } from "@/lib/ai/guardrails";
 import { readDocumentFacts } from "@/lib/cases/vision";
 
 /*
@@ -486,8 +487,9 @@ export async function analyzeEmailForCase(input: {
 
   const mergeAlertes = (alertes: string[]) => {
     const coherence = [...det.coherence];
-    for (const a of alertes) {
-      if (a.trim() && !coherence.some((c) => c.message === a)) {
+    // Garde-fou #2 : alertes IA filtrées (conseil/pronostic) avant affichage.
+    for (const a of keepClean(alertes)) {
+      if (!coherence.some((c) => c.message === a)) {
         coherence.push({ level: "warn", message: a });
       }
     }

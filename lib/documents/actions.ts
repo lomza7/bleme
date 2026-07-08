@@ -10,6 +10,7 @@ import { recomputeCaseProgress } from "@/lib/cases/completeness";
 import { analysePiece } from "@/lib/cases/analysis";
 import type { PieceAnalysis } from "@/lib/cases/analysis-types";
 import { runAgent } from "@/lib/ai/client";
+import { keepClean } from "@/lib/ai/guardrails";
 import { ALLOWED_MIME, MAX_SIZE, resolveMime } from "@/lib/documents/mime";
 
 export type DocState = { error?: string; success?: string; analysis?: PieceAnalysis };
@@ -289,8 +290,10 @@ export async function finalizeUpload(input: {
         caseId,
       });
       const coherence = [...det.coherence];
-      for (const a of nora.alertes) {
-        if (a.trim() && !coherence.some((c) => c.message === a)) coherence.push({ level: "warn", message: a });
+      // Garde-fou #2 : les alertes de Nora affichées à l'utilisateur passent le
+      // filtre anti-conseil avant fusion.
+      for (const a of keepClean(nora.alertes)) {
+        if (!coherence.some((c) => c.message === a)) coherence.push({ level: "warn", message: a });
       }
       // On reste conservateur : le type n'est « confirmé » que si le socle
       // déterministe ET l'agent le confirment (pas de fausse validation).

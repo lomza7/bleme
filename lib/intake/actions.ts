@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { runAgent } from "@/lib/ai/client";
+import { keepClean } from "@/lib/ai/guardrails";
 
 /*
  * Après le récit (transcript validé), Jeanne — l'avocate du diable — lit ce qui a
@@ -67,7 +68,10 @@ export async function intakeQuestions(input: {
       organizationId: orgId,
       maxTokens: 500,
     });
-    return { questions: data.questions.length ? data.questions : fallback };
+    // Garde-fou #2 au grain fin : on ne garde que les questions sans conseil ni
+    // pronostic ; si tout est écarté, on retombe sur le repli déterministe.
+    const clean = keepClean(data.questions);
+    return { questions: clean.length ? clean : fallback };
   } catch {
     return { questions: fallback };
   }
