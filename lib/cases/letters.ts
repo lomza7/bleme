@@ -12,6 +12,7 @@ import { hasAdvice } from "@/lib/ai/guardrails";
 import { caseMemo } from "@/lib/cases/memo";
 import { buildCaseContext } from "@/lib/cases/context";
 import { legalSocle, hasSources } from "@/lib/cases/legal";
+import { dispatchLetter } from "@/lib/courrier/dispatch";
 
 /*
  * Courriers : brouillon (généré par template versionné, conforme — les
@@ -293,7 +294,7 @@ export async function approveAndSendLetter(
   const supabase = await createClient();
   const { data: letter } = await supabase
     .from("letters")
-    .select("id, case_id, status")
+    .select("id, case_id, status, subject")
     .eq("id", letterId.data)
     .maybeSingle();
   if (!letter) return { error: "Courrier introuvable." };
@@ -320,6 +321,18 @@ export async function approveAndSendLetter(
   });
   if (logErr) return { error: "Impossible d'enregistrer votre validation." };
 
+  // Expédition réelle (gated) : ne PART que si SEND_ENABLED. Le contenu envoyé
+  // est exactement celui qui vient d'être approuvé + haché.
+  const dispatch = await dispatchLetter({
+    channel: channel as "email" | "postal",
+    subject: letter.subject ?? "Votre courrier",
+    bodyMd: body,
+    toEmail: null, // TODO : coordonnées destinataire (email/adresse) à capturer
+  });
+  const reallySent = dispatch.status === "sent";
+
+  // Statut 'sent' conservé (la progression de phase en dépend), mais sent_at
+  // n'est renseigné QUE si le courrier est réellement parti (#14 : journal honnête).
   const { error: upErr } = await supabase
     .from("letters")
     .update({
@@ -329,7 +342,7 @@ export async function approveAndSendLetter(
       status: "sent",
       approved_by: user?.id ?? null,
       approved_at: new Date().toISOString(),
-      sent_at: new Date().toISOString(),
+      sent_at: reallySent ? new Date().toISOString() : null,
     })
     .eq("id", letter.id);
   if (upErr) return { error: "Validation enregistrée mais l'envoi a échoué." };
@@ -338,12 +351,20 @@ export async function approveAndSendLetter(
     case_id: letter.case_id,
     organization_id: org.orgId,
     event_type: "letter_sent",
-    title: `Courrier validé et envoyé (${channel === "postal" ? "recommandé" : "email"})`,
-    description: "Validation loggée (hash du contenu approuvé).",
+    title: reallySent
+      ? `Courrier envoyé (${dispatch.via === "postal" ? "recommandé" : "email"})`
+      : "Courrier validé — prêt à l'envoi",
+    description: reallySent
+      ? "Validation loggée (hash du contenu approuvé)."
+      : `Validation loggée (hash du contenu approuvé). Expédition réelle à activer — ${dispatch.reason}`,
     source: "user",
   });
 
   await recomputeCaseProgress(letter.case_id);
   revalidatePath(`/app/dossiers/${letter.case_id}`);
-  return { success: "Courrier validé et envoyé." };
+  return {
+    success: reallySent
+      ? "Courrier validé et envoyé."
+      : "Courrier validé (hash enregistré). L'expédition réelle sera activée prochainement.",
+  };
 }

@@ -28,6 +28,13 @@ const serverSchema = publicSchema.extend({
   MERCI_FACTEUR_SECRET_KEY: z.string().min(1).optional(),
   MERCI_FACTEUR_WEBHOOK_SECRET: z.string().min(1).optional(),
   CASE_EMAIL_DOMAIN: z.string().min(1).default("dossiers.bleme.fr"),
+  // Interrupteur d'EXPÉDITION réelle (email/postal). Désactivé par défaut : la
+  // validation reste loggée (approval_logs + hash) mais aucun courrier ne PART
+  // tant que ce drapeau n'est pas « true ». À activer après un test contrôlé.
+  SEND_ENABLED: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((v) => v === "true"),
 });
 
 export function publicEnv() {
