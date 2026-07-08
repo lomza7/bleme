@@ -109,5 +109,7 @@ export const FIELD_LABEL: Record<string, string> = {
   amount_cents: "Montant",
   date: "Date",
   invoice_number: "N° de facture",
-  party_name: "Partie",
+  creditor_name: "Émetteur (créancier)",
+  debtor_name: "Destinataire (débiteur)",
+  party_name: "Partie", // legacy : anciennes extractions
 };

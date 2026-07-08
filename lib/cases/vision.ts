@@ -60,24 +60,57 @@ function flatten(obj: Record<string, unknown>): Record<string, unknown> {
   return out;
 }
 
-/** Déballe une valeur enveloppée ({value:…}, {amount:…}, {date:…}) en scalaire. */
+/** Déballe une valeur enveloppée ({valeur:…}, {value:…}, {amount:…}…) en scalaire. */
 function unwrap(v: unknown): unknown {
   if (v && typeof v === "object" && !Array.isArray(v)) {
     const o = v as Record<string, unknown>;
-    return o.value ?? o.amount ?? o.montant ?? o.number ?? o.date ?? o.text ?? o.name ?? null;
+    return (
+      o.valeur ?? o.value ?? o.amount ?? o.montant ?? o.number ?? o.numero ?? o.date ?? o.text ?? o.nom ?? o.name ?? null
+    );
   }
   return v;
 }
 
-/** Première clé non vide parmi des alias, valeur déballée. */
-function pick(src: Record<string, unknown>, keys: string[]): unknown {
+type FieldParts = { value: unknown; confidence: number | null; excerpt: string | null };
+
+/**
+ * Décompose un champ en { valeur, confiance, extrait } : le modèle vision renvoie
+ * souvent chaque champ enveloppé ({valeur/value, confiance/confidence,
+ * extrait/context}). On récupère ainsi la confiance et l'extrait RÉELS du modèle
+ * (au lieu de constantes en dur) — pilier #3 : chaque valeur porte sa source.
+ */
+function fieldParts(raw: unknown): FieldParts {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const o = raw as Record<string, unknown>;
+    const conf = typeof o.confiance === "number" ? o.confiance : typeof o.confidence === "number" ? o.confidence : null;
+    const exc =
+      [o.extrait, o.extrait_source, o.context, o.source, o.contexte].find(
+        (x): x is string => typeof x === "string" && x.trim().length > 0,
+      ) ?? null;
+    return { value: unwrap(raw), confidence: conf, excerpt: exc };
+  }
+  return { value: raw, confidence: null, excerpt: null };
+}
+
+/** Cherche le champ (par alias) et le décompose en parts. */
+function pickField(src: Record<string, unknown>, keys: string[]): FieldParts {
   for (const k of keys) {
-    if (k in src) {
-      const val = unwrap(src[k]);
-      if (val !== null && val !== undefined && val !== "") return val;
+    if (k in src && src[k] !== null && src[k] !== undefined && src[k] !== "") {
+      return fieldParts(src[k]);
     }
   }
-  return null;
+  return { value: null, confidence: null, excerpt: null };
+}
+
+/** Confiance bornée [0,1] ; repli sur une valeur par défaut si le modèle n'en donne pas. */
+function conf(parts: FieldParts, fallback: number): number {
+  if (parts.confidence !== null && parts.confidence >= 0 && parts.confidence <= 1) return parts.confidence;
+  return fallback;
+}
+
+/** Extrait source réel du modèle, sinon la mention générique. */
+function excerpt(parts: FieldParts): string {
+  return parts.excerpt?.trim() || "Lu dans la pièce";
 }
 
 /**
@@ -173,13 +206,18 @@ export async function readDocumentFacts(
       key: "nora",
       input: {
         consigne:
-          "Lis cette pièce et extrais UNIQUEMENT ce qui y est écrit. Réponds STRICTEMENT " +
-          "avec un objet JSON PLAT (aucune imbrication, aucune clé supplémentaire, aucun " +
-          "wrapper) exactement de cette forme : " +
-          '{"montant_cents": <entier ou null>, "date_iso": <"AAAA-MM-JJ" ou null>, ' +
-          '"numero_facture": <texte ou null>, "partie": <texte ou null>}. ' +
-          "montant_cents = montant total TTC converti en CENTIMES (entier ; ex. 252,00 € → 25200). " +
-          "Mets null pour tout champ non lisible. Aucun texte autour du JSON.",
+          "Lis cette pièce et extrais UNIQUEMENT ce qui y est écrit, sans rien deviner. " +
+          "Distingue bien l'ÉMETTEUR (en-tête, coordonnées, IBAN, « émis par ») du DESTINATAIRE " +
+          "(« Facturé à », « Client », « Adressé à »). " +
+          "Réponds STRICTEMENT avec un objet JSON à ces clés, chaque valeur étant un objet " +
+          '{valeur, confiance, extrait} : {"montant_cents":{"valeur":<entier centimes ou null>,"confiance":<0-1>,"extrait":<texte lu ou null>}, ' +
+          '"date_iso":{"valeur":<"AAAA-MM-JJ" ou null>,"confiance":<0-1>,"extrait":...}, ' +
+          '"numero_facture":{"valeur":<texte ou null>,"confiance":<0-1>,"extrait":...}, ' +
+          '"emetteur":{"valeur":<nom du créancier ou null>,"confiance":<0-1>,"extrait":...}, ' +
+          '"destinataire":{"valeur":<nom du débiteur ou null>,"confiance":<0-1>,"extrait":...}}. ' +
+          "montant_cents = montant total TTC en CENTIMES (ex. 252,00 € → 25200). " +
+          "confiance = ta certitude réelle entre 0 et 1. extrait = le texte exact d'où vient la valeur. " +
+          "Mets valeur:null pour tout champ non lisible. Aucun texte autour du JSON.",
         nom_fichier: input.fileName,
         // Anti-ancrage (pilier #3) : la lecture vision est AVEUGLE au montant
         // réclamé — sinon le modèle recopie l'attendu. Le contrôle de cohérence
@@ -199,15 +237,24 @@ export async function readDocumentFacts(
 
     // Normalisation tolérante (imbrication, valeurs enveloppées, alias de clés).
     const src = flatten(raw as Record<string, unknown>);
-    // Clés en centimes d'abord (valeur = déjà des centimes si entière), puis clés
-    // nommées en euros (valeur = euros → ×100). Sépare les deux familles pour ne
-    // pas confondre l'unité (bug ×100).
-    const centsRaw = pick(src, ["montant_cents", "amount_cents", "total_ttc_cents", "montant_ttc_cents"]);
-    const euroRaw = pick(src, ["montant", "amount", "montant_ttc", "total_ttc", "total", "montant_total", "prix"]);
-    const montantCents = centsRaw !== null ? amountToCents(centsRaw, true) : amountToCents(euroRaw, false);
-    const dateIso = toText(pick(src, ["date_iso", "date", "date_facture"]));
-    const numero = toText(pick(src, ["numero_facture", "numero", "invoice_number", "reference", "num"]));
-    const partie = toText(pick(src, ["partie", "party", "emetteur", "fournisseur", "societe", "issuer"]));
+    // Chaque champ porte sa confiance et son extrait RÉELS (via pickField) ;
+    // les montants : clés en centimes d'abord (valeur = déjà des centimes si
+    // entière), puis clés nommées en euros (×100) — pour ne pas confondre l'unité.
+    const centsF = pickField(src, ["montant_cents", "amount_cents", "total_ttc_cents", "montant_ttc_cents"]);
+    const euroF = pickField(src, ["montant", "amount", "montant_ttc", "total_ttc", "total", "montant_total", "prix"]);
+    const amountField = centsF.value !== null ? centsF : euroF;
+    const montantCents =
+      centsF.value !== null ? amountToCents(centsF.value, true) : amountToCents(euroF.value, false);
+    const dateF = pickField(src, ["date_iso", "date", "date_facture"]);
+    const dateIso = toText(dateF.value);
+    const numeroF = pickField(src, ["numero_facture", "numero", "invoice_number", "reference", "num"]);
+    const numero = toText(numeroF.value);
+    // Émetteur = créancier ; destinataire = débiteur. Séparés (fini la confusion
+    // du champ « partie » unique). Alias legacy tolérés côté émetteur.
+    const emetteurF = pickField(src, ["emetteur", "issuer", "fournisseur", "societe", "creditor", "partie", "party"]);
+    const emetteur = toText(emetteurF.value);
+    const destinataireF = pickField(src, ["destinataire", "client", "debtor", "recipient", "adresse_a"]);
+    const destinataire = toText(destinataireF.value);
 
     const facts: Fact[] = [];
     if (montantCents !== null && montantCents > 0) {
@@ -215,8 +262,8 @@ export async function readDocumentFacts(
         field_key: "amount_cents",
         value_text: eurFromCents(montantCents),
         value_normalized: { cents: montantCents },
-        confidence: 0.9,
-        source_excerpt: "Lu dans la pièce",
+        confidence: conf(amountField, 0.9),
+        source_excerpt: excerpt(amountField),
       });
     }
     if (dateIso && /^\d{4}-\d{2}-\d{2}$/.test(dateIso)) {
@@ -224,8 +271,8 @@ export async function readDocumentFacts(
         field_key: "date",
         value_text: dateIso,
         value_normalized: { iso: dateIso },
-        confidence: 0.85,
-        source_excerpt: "Lu dans la pièce",
+        confidence: conf(dateF, 0.85),
+        source_excerpt: excerpt(dateF),
       });
     }
     if (numero) {
@@ -233,17 +280,26 @@ export async function readDocumentFacts(
         field_key: "invoice_number",
         value_text: numero,
         value_normalized: { number: numero },
-        confidence: 0.85,
-        source_excerpt: "Lu dans la pièce",
+        confidence: conf(numeroF, 0.85),
+        source_excerpt: excerpt(numeroF),
       });
     }
-    if (partie) {
+    if (emetteur) {
       facts.push({
-        field_key: "party_name",
-        value_text: partie,
-        value_normalized: { name: partie },
-        confidence: 0.8,
-        source_excerpt: "Lu dans la pièce",
+        field_key: "creditor_name",
+        value_text: emetteur,
+        value_normalized: { name: emetteur },
+        confidence: conf(emetteurF, 0.8),
+        source_excerpt: excerpt(emetteurF),
+      });
+    }
+    if (destinataire) {
+      facts.push({
+        field_key: "debtor_name",
+        value_text: destinataire,
+        value_normalized: { name: destinataire },
+        confidence: conf(destinataireF, 0.8),
+        source_excerpt: excerpt(destinataireF),
       });
     }
     return facts;
