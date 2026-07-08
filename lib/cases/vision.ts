@@ -21,12 +21,73 @@ const VISION_MIME = new Set([
 ]);
 const MAX_VISION_BYTES = 8 * 1024 * 1024;
 
-const VISION_SCHEMA = z.object({
-  montant_cents: z.number().nullable(),
-  date_iso: z.string().nullable(),
-  numero_facture: z.string().nullable(),
-  partie: z.string().nullable(),
-});
+// On accepte n'importe quel objet JSON : les modèles vision « légers »
+// (gemini-flash-lite…) imbriquent souvent les champs (sous invoice_fields,
+// data…) ou renvoient chaque valeur enveloppée ({value:…}). La normalisation
+// ci-dessous ramène tout ça à des scalaires — plus robuste qu'un schéma rigide
+// qui rejetterait silencieusement une extraction pourtant correcte.
+const VISION_SCHEMA = z.record(z.string(), z.unknown());
+
+// Clés sous lesquelles un modèle peut imbriquer les champs plutôt que de les
+// mettre à plat.
+const WRAPPER_KEYS = [
+  "invoice_fields",
+  "fields",
+  "data",
+  "result",
+  "facture",
+  "extraction",
+  "champs",
+];
+
+/** Aplatit un niveau d'imbrication éventuel (invoice_fields:{…} → à la racine). */
+function flatten(obj: Record<string, unknown>): Record<string, unknown> {
+  let out: Record<string, unknown> = { ...obj };
+  for (const k of WRAPPER_KEYS) {
+    const nested = out[k];
+    if (nested && typeof nested === "object" && !Array.isArray(nested)) {
+      out = { ...out, ...(nested as Record<string, unknown>) };
+    }
+  }
+  return out;
+}
+
+/** Déballe une valeur enveloppée ({value:…}, {amount:…}, {date:…}) en scalaire. */
+function unwrap(v: unknown): unknown {
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    const o = v as Record<string, unknown>;
+    return o.value ?? o.amount ?? o.montant ?? o.number ?? o.date ?? o.text ?? o.name ?? null;
+  }
+  return v;
+}
+
+/** Première clé non vide parmi des alias, valeur déballée. */
+function pick(src: Record<string, unknown>, keys: string[]): unknown {
+  for (const k of keys) {
+    if (k in src) {
+      const val = unwrap(src[k]);
+      if (val !== null && val !== undefined && val !== "") return val;
+    }
+  }
+  return null;
+}
+
+function toCents(v: unknown): number | null {
+  const s = unwrap(v);
+  if (typeof s === "number" && Number.isFinite(s)) return Math.round(s);
+  if (typeof s === "string") {
+    const n = parseFloat(s.replace(/[^\d.,-]/g, "").replace(/\s/g, "").replace(",", "."));
+    if (Number.isFinite(n)) return Math.round(n);
+  }
+  return null;
+}
+
+function toText(v: unknown): string | null {
+  const s = unwrap(v);
+  if (typeof s === "string" && s.trim()) return s.trim();
+  if (typeof s === "number") return String(s);
+  return null;
+}
 
 function eurFromCents(cents: number): string {
   return `${(cents / 100).toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`;
@@ -52,16 +113,22 @@ export async function readDocumentFacts(
 
     // Nora, via le bridge Hermes, mais sur un modèle VISION OpenRouter pour CET
     // appel (le bridge route le multimodal) — aucune API directe depuis l'app.
-    const { data } = await runAgent({
+    const { data: raw } = await runAgent({
       key: "nora",
       input: {
         consigne:
-          "Lis cette pièce et extrais UNIQUEMENT ce qui y est écrit : montant total TTC en centimes (montant_cents), date de la pièce (date_iso, AAAA-MM-JJ), numéro de facture (numero_facture), nom de la partie émettrice ou débitrice (partie). Mets null pour tout champ non lisible. JSON { montant_cents, date_iso, numero_facture, partie }.",
+          "Lis cette pièce et extrais UNIQUEMENT ce qui y est écrit. Réponds STRICTEMENT " +
+          "avec un objet JSON PLAT (aucune imbrication, aucune clé supplémentaire, aucun " +
+          "wrapper) exactement de cette forme : " +
+          '{"montant_cents": <entier ou null>, "date_iso": <"AAAA-MM-JJ" ou null>, ' +
+          '"numero_facture": <texte ou null>, "partie": <texte ou null>}. ' +
+          "montant_cents = montant total TTC converti en CENTIMES (entier ; ex. 252,00 € → 25200). " +
+          "Mets null pour tout champ non lisible. Aucun texte autour du JSON.",
         nom_fichier: input.fileName,
         montant_reclame_cents: input.claimedCents,
       },
       schema: VISION_SCHEMA,
-      simulation: { montant_cents: null, date_iso: null, numero_facture: null, partie: null },
+      simulation: {},
       organizationId: input.orgId,
       caseId: input.caseId,
       attachments: [{ mime: input.mime, dataBase64: buf.toString("base64") }],
@@ -69,41 +136,46 @@ export async function readDocumentFacts(
       maxTokens: 500,
     });
 
+    // Normalisation tolérante (imbrication, valeurs enveloppées, alias de clés).
+    const src = flatten(raw as Record<string, unknown>);
+    const montantCents = toCents(pick(src, ["montant_cents", "montant", "amount_cents", "amount", "total_ttc_cents"]));
+    const dateIso = toText(pick(src, ["date_iso", "date", "date_facture"]));
+    const numero = toText(pick(src, ["numero_facture", "numero", "invoice_number", "reference", "num"]));
+    const partie = toText(pick(src, ["partie", "party", "emetteur", "fournisseur", "societe", "issuer"]));
+
     const facts: Fact[] = [];
-    if (typeof data.montant_cents === "number" && data.montant_cents > 0) {
+    if (montantCents !== null && montantCents > 0) {
       facts.push({
         field_key: "amount_cents",
-        value_text: eurFromCents(data.montant_cents),
-        value_normalized: { cents: data.montant_cents },
+        value_text: eurFromCents(montantCents),
+        value_normalized: { cents: montantCents },
         confidence: 0.9,
         source_excerpt: "Lu dans la pièce",
       });
     }
-    if (data.date_iso && /^\d{4}-\d{2}-\d{2}$/.test(data.date_iso)) {
+    if (dateIso && /^\d{4}-\d{2}-\d{2}$/.test(dateIso)) {
       facts.push({
         field_key: "date",
-        value_text: data.date_iso,
-        value_normalized: { iso: data.date_iso },
+        value_text: dateIso,
+        value_normalized: { iso: dateIso },
         confidence: 0.85,
         source_excerpt: "Lu dans la pièce",
       });
     }
-    if (data.numero_facture && data.numero_facture.trim()) {
-      const v = data.numero_facture.trim();
+    if (numero) {
       facts.push({
         field_key: "invoice_number",
-        value_text: v,
-        value_normalized: { number: v },
+        value_text: numero,
+        value_normalized: { number: numero },
         confidence: 0.85,
         source_excerpt: "Lu dans la pièce",
       });
     }
-    if (data.partie && data.partie.trim()) {
-      const v = data.partie.trim();
+    if (partie) {
       facts.push({
         field_key: "party_name",
-        value_text: v,
-        value_normalized: { name: v },
+        value_text: partie,
+        value_normalized: { name: partie },
         confidence: 0.8,
         source_excerpt: "Lu dans la pièce",
       });
