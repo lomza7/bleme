@@ -64,9 +64,12 @@ const SUBJECT_BY_TYPE: Record<string, string> = {
     "décision de principe pertinente. Ne cite que ce que les outils renvoient.",
 };
 
-// Cache global par type (la loi est universelle) ; fraîcheur 6 h.
-const cache = new Map<string, { at: number; data: LegalSocle }>();
-const TTL_MS = 6 * 60 * 60 * 1000;
+// Cache global par type (la loi est universelle). Un socle NON VIDE est gardé 6 h ;
+// un socle vide (PISTE indisponible, JSON partiel) n'est gardé que brièvement pour
+// ne pas marteler le bridge tout en s'auto-guérissant dès que les sources reviennent.
+const cache = new Map<string, { at: number; ttl: number; data: LegalSocle }>();
+const TTL_OK = 6 * 60 * 60 * 1000;
+const TTL_EMPTY = 5 * 60 * 1000;
 
 /**
  * Récupère (et met en cache) le socle juridique applicable à un type de dossier.
@@ -82,7 +85,7 @@ export async function legalSocle(
   if (!subject) return EMPTY;
 
   const cached = cache.get(caseType);
-  if (cached && Date.now() - cached.at < TTL_MS) return cached.data;
+  if (cached && Date.now() - cached.at < cached.ttl) return cached.data;
 
   try {
     const { data } = await runAgent({
@@ -107,7 +110,7 @@ export async function legalSocle(
       articles: data.articles.filter((a) => a.numero.trim()),
       arrets: data.arrets.filter((a) => a.numero.trim() || a.date.trim()),
     };
-    cache.set(caseType, { at: Date.now(), data: clean });
+    cache.set(caseType, { at: Date.now(), ttl: hasSources(clean) ? TTL_OK : TTL_EMPTY, data: clean });
     return clean;
   } catch {
     return EMPTY;

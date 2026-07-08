@@ -55,7 +55,8 @@ export function pieceCoherence(
 
   // Le type déclaré est-il crédible au vu du contenu ?
   if (docKind === "facture") {
-    if (hasText && !readable) {
+    if (hasText && !readable && cents === null && facts.length === 0) {
+      // Non lisible ET aucune donnée extraite (ni texte, ni vision) : à confirmer.
       out.push({ level: "warn", message: "Contenu non lisible automatiquement (image ou PDF scanné) : type « Facture » à confirmer, pas encore vérifié." });
     } else if (readable && !looksInvoice && cents === null) {
       out.push({ level: "warn", message: "Ce document ne ressemble pas à une facture : ni montant ni mention de facture repérés." });
@@ -89,10 +90,12 @@ export function analysePiece(
   claimedCents: number,
   text: string,
 ): PieceAnalysis {
-  const readable = text.trim().length >= 20;
   const looksInvoice = INVOICE_RE.test(text);
-  // Le classement est « confirmé » seulement si le contenu le corrobore.
-  const confirmed = docKind !== "facture" || (readable && (looksInvoice || facts.some((f) => f.field_key === "amount_cents")));
+  // Le classement « facture » est corroboré par le texte OU par un montant lu en
+  // vision (readable n'est plus requis : une facture scannée dont la vision a lu
+  // le montant est bien une facture).
+  const confirmed =
+    docKind !== "facture" || looksInvoice || facts.some((f) => f.field_key === "amount_cents");
   return {
     fileName,
     kindLabel: KIND_LABEL[docKind ?? "autre"] ?? "Pièce",

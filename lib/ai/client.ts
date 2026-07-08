@@ -32,6 +32,13 @@ type AgentConfig = {
   moa_reference_max_tokens: number | null;
 };
 
+// Bornes de temps par appel : un fournisseur lent/bloqué devient une erreur
+// LEVÉE (→ catch → repli déterministe/gabarit), jamais un hang qui ferait tuer
+// l'action serveur par Vercel sans avoir rien produit. Le bridge (boucle
+// agentique + outils juridiques) a droit à davantage que les appels directs.
+const AI_FETCH_TIMEOUT_MS = 60_000;
+const BRIDGE_FETCH_TIMEOUT_MS = 110_000;
+
 // microcentimes (1 € = 1 000 000) par token, estimation des tarifs publics.
 const RATES: Record<string, { input: number; output: number }> = {
   "claude-sonnet-5": { input: 3, output: 15 },
@@ -109,6 +116,7 @@ async function openRouterChat(opts: {
 }> {
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
+    signal: AbortSignal.timeout(AI_FETCH_TIMEOUT_MS),
     headers: {
       Authorization: `Bearer ${opts.apiKey}`,
       "content-type": "application/json",
@@ -470,6 +478,7 @@ export async function runAgent<T>(opts: {
     try {
       const response = await fetch(`${bridgeUrl.replace(/\/$/, "")}/run`, {
         method: "POST",
+        signal: AbortSignal.timeout(BRIDGE_FETCH_TIMEOUT_MS),
         headers: {
           Authorization: `Bearer ${bridgeToken}`,
           "content-type": "application/json",
@@ -553,6 +562,7 @@ export async function runAgent<T>(opts: {
   try {
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
+      signal: AbortSignal.timeout(AI_FETCH_TIMEOUT_MS),
       headers: {
         "x-api-key": apiKey,
         "anthropic-version": "2023-06-01",

@@ -312,7 +312,7 @@ export async function finalizeUpload(input: {
 /** Corrige une valeur extraite : la correction utilisateur prime toujours. */
 export async function correctExtraction(formData: FormData): Promise<void> {
   const id = z.uuid().safeParse(formData.get("id"));
-  const caseId = String(formData.get("caseId") ?? "");
+  const caseIdParsed = z.uuid().safeParse(formData.get("caseId"));
   const value = String(formData.get("value") ?? "").trim();
   if (!id.success || !value) return;
   const supabase = await createClient();
@@ -320,7 +320,12 @@ export async function correctExtraction(formData: FormData): Promise<void> {
     .from("document_extractions")
     .update({ corrected_value: value, is_user_corrected: true })
     .eq("id", id.data);
-  if (caseId) revalidatePath(`/app/dossiers/${caseId}`);
+  if (caseIdParsed.success) {
+    // La correction prime (pilier #3) : on recompute → refreshLivingBrief (after)
+    // régénère la synthèse et le memo servis aux agents sur la valeur corrigée.
+    await recomputeCaseProgress(caseIdParsed.data);
+    revalidatePath(`/app/dossiers/${caseIdParsed.data}`);
+  }
 }
 
 export async function deleteDocument(formData: FormData): Promise<void> {

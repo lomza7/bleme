@@ -11,7 +11,7 @@ import { runAgent } from "@/lib/ai/client";
 import { hasAdvice } from "@/lib/ai/guardrails";
 import { caseMemo } from "@/lib/cases/memo";
 import { buildCaseContext } from "@/lib/cases/context";
-import { legalSocle } from "@/lib/cases/legal";
+import { legalSocle, hasSources } from "@/lib/cases/legal";
 
 /*
  * Courriers : brouillon (généré par template versionné, conforme — les
@@ -148,6 +148,11 @@ export async function generateLetter(
     organizationId: org.orgId,
     caseId: c.id,
   });
+  // Anti-hallucination (#7) : sans source vérifiée, on INTERDIT toute référence
+  // numérotée (on ne peut pas la recouper) ; avec socle, on cite précisément.
+  const groundingRule = hasSources(socle)
+    ? " Cite précisément les références du socle_juridique fourni (numéros d'articles, et pour un arrêt sa juridiction/date/numéro EXACTS) ; ne cite jamais une référence absente du socle et non renvoyée par un outil."
+    : " Aucune source juridique vérifiée n'est disponible : n'écris AUCUN numéro d'article ni d'arrêt ; exprime le droit applicable en termes généraux, sans référence numérotée.";
   try {
     if (useLena) {
       const ctx = await buildCaseContext(supabase, c.id);
@@ -155,7 +160,9 @@ export async function generateLetter(
         key: "lena",
         input: {
           consigne:
-            "Rédige une RÉPONSE à la contestation, grief par grief : chaque grief reçoit une réponse factuelle adossée à une pièce du dossier (citée par nom et date). Sépare contesté / non contesté. Appuie la réponse sur le droit du socle_juridique fourni et, si besoin, cherche une source complémentaire via les outils. Réponds en JSON { subject, body_md, griefs:[{grief, statut, reponse, piece_citee}] }.",
+            "Rédige une RÉPONSE à la contestation, grief par grief : chaque grief reçoit une réponse factuelle adossée à une pièce du dossier (citée par nom et date). Sépare contesté / non contesté. Appuie la réponse sur le droit du socle_juridique fourni et, si besoin, cherche une source complémentaire via les outils." +
+            groundingRule +
+            " Réponds en JSON { subject, body_md, griefs:[{grief, statut, reponse, piece_citee}] }.",
           contexte_dossier: memo,
           socle_juridique: socle,
           destinataire: c.debtor_name,
@@ -200,7 +207,9 @@ export async function generateLetter(
         key: "marius",
         input: {
           consigne:
-            "Rédige ce courrier de recouvrement (respecte le palier et les règles de ton rôle). Appuie-toi sur le socle_juridique fourni pour citer le droit applicable ; cherche une source complémentaire via les outils si le dossier le justifie. Réponds en JSON { subject, body_md }.",
+            "Rédige ce courrier de recouvrement (respecte le palier et les règles de ton rôle). Appuie-toi sur le socle_juridique fourni pour citer le droit applicable ; cherche une source complémentaire via les outils si le dossier le justifie." +
+            groundingRule +
+            " Réponds en JSON { subject, body_md }.",
           contexte_dossier: memo,
           socle_juridique: socle,
           type: LETTER_KINDS[kind].label,

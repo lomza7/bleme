@@ -34,6 +34,12 @@ import { CaseEventsTimeline } from "@/components/app/case-events-timeline";
 
 export const metadata: Metadata = { title: "Dossier" };
 
+// Les actions de ce segment (génération de courrier, escalade) enchaînent une
+// récupération juridique + une rédaction agentiques : on laisse de la marge
+// (le plan Vercel borne à sa propre limite). Les fetch IA sont eux-mêmes bornés
+// (AbortSignal dans lib/ai/client.ts) → à défaut, repli gabarit conforme.
+export const maxDuration = 300;
+
 export default async function CaseDetailPage({
   params,
 }: {
