@@ -481,7 +481,11 @@ export async function runAgent<T>(opts: {
           model: opts.modelOverride ?? agent.hermes_model,
           skills,
           tool_apis: toolApis,
-          attachments: opts.attachments ?? [],
+          // clés snake_case attendues par le bridge (_vision_chat).
+          attachments: (opts.attachments ?? []).map((a) => ({
+            mime: a.mime,
+            data_base64: a.dataBase64,
+          })),
         }),
       });
       if (!response.ok) {

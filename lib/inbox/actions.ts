@@ -456,7 +456,29 @@ export async function analyzeEmailForCase(input: {
   const text = item.body_text ?? "";
   const subject = item.subject ?? "Email";
   const claimedCents = Number(caseRow.amount_claimed_cents) || 0;
-  const facts = detectFacts(text, subject);
+
+  // Faits du corps (texte) + lecture VISION des pièces jointes (Nora via bridge),
+  // fusionnés (la lecture de la pièce prime par champ) : l'utilisateur voit et
+  // corrige les infos lues DANS le PDF avant de verser.
+  const textFacts = detectFacts(text, subject);
+  const { data: atts } = await supabase
+    .from("inbox_attachments")
+    .select("file_name, storage_path, mime_type")
+    .eq("inbox_item_id", itemId.data);
+  const byField = new Map<string, (typeof textFacts)[number]>();
+  for (const f of textFacts) byField.set(f.field_key, f);
+  for (const a of atts ?? []) {
+    const vf = await readDocumentFacts(supabase, {
+      storagePath: a.storage_path,
+      mime: a.mime_type,
+      fileName: a.file_name,
+      orgId,
+      caseId: caseRow.id,
+      claimedCents,
+    });
+    for (const f of vf) byField.set(f.field_key, f);
+  }
+  const facts = [...byField.values()];
   const det = analysePiece(subject, "echanges", facts, claimedCents, text);
 
   const isDispute = caseRow.case_type === "client_dispute";
@@ -615,51 +637,26 @@ export async function confirmEmailMerge(input: {
     return { error: "Échec du versement. Réessayez." };
   }
 
-  // 2. Les pièces jointes deviennent des pièces du dossier (objet Storage réutilisé),
-  //    et leur CONTENU est lu en vision (Nora via le bridge) → faits sourcés.
-  const claimedForVision = Number(caseRow.amount_claimed_cents) || 0;
+  // 2. Les pièces jointes deviennent des pièces du dossier (objet Storage réutilisé).
+  //    Leur contenu a déjà été lu en vision à l'analyse (analyzeEmailForCase) et
+  //    les faits, revus par l'utilisateur, sont enregistrés ci-dessus sur le corps.
   const { data: attachments } = await supabase
     .from("inbox_attachments")
     .select("file_name, storage_path, mime_type, size_bytes")
     .eq("inbox_item_id", item.id);
   for (const a of attachments ?? []) {
-    const { data: attDoc, error: aErr } = await supabase
-      .from("documents")
-      .insert({
-        organization_id: orgId,
-        case_id: caseRow.id,
-        file_name: a.file_name,
-        storage_path: a.storage_path,
-        mime_type: a.mime_type,
-        size_bytes: a.size_bytes,
-        doc_class: "other",
-        doc_kind: null,
-      })
-      .select("id")
-      .single();
-    // Idempotence : une pièce déjà versée (23505) n'est pas relue.
-    if (aErr || !attDoc) continue;
-    const vf = await readDocumentFacts(supabase, {
-      storagePath: a.storage_path,
-      mime: a.mime_type,
-      fileName: a.file_name,
-      orgId,
-      caseId: caseRow.id,
-      claimedCents: claimedForVision,
+    const { error: aErr } = await supabase.from("documents").insert({
+      organization_id: orgId,
+      case_id: caseRow.id,
+      file_name: a.file_name,
+      storage_path: a.storage_path,
+      mime_type: a.mime_type,
+      size_bytes: a.size_bytes,
+      doc_class: "other",
+      doc_kind: null,
     });
-    if (vf.length > 0) {
-      await supabase.from("document_extractions").insert(
-        vf.map((f) => ({
-          organization_id: orgId,
-          document_id: attDoc.id,
-          field_key: f.field_key,
-          value_text: f.value_text,
-          value_normalized: f.value_normalized,
-          confidence: f.confidence,
-          source_excerpt: f.source_excerpt,
-        })),
-      );
-    }
+    // Idempotence : une pièce déjà versée (23505) n'interrompt pas le reste.
+    if (aErr && aErr.code !== "23505") continue;
   }
 
   // 3. Valeurs extraites (sourcées) ; une correction saisie prime dès l'écriture.
