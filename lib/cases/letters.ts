@@ -160,6 +160,23 @@ function buildLetter(
   };
 }
 
+/**
+ * Un run de rédaction peut échouer sur un JSON mal formé (l'agent épuise ses
+ * tours d'outils sans conclure — vu en prod : 79 s de recherches puis une
+ * réponse sans subject/body_md). On retente UNE fois avant le repli gabarit :
+ * la seconde passe aboutit presque toujours, et chaque tentative reste tracée
+ * dans agent_runs.
+ */
+async function runWriterWithRetry<T>(
+  run: () => Promise<{ data: T; simulated: boolean }>,
+): Promise<{ data: T; simulated: boolean }> {
+  try {
+    return await run();
+  } catch {
+    return await run();
+  }
+}
+
 async function orgFor(): Promise<{ orgId: string; orgName: string; inboxSlug: string | null } | null> {
   const supabase = await createClient();
   const {
@@ -243,7 +260,7 @@ export async function generateLetter(
   try {
     if (useLena) {
       const ctx = await buildCaseContext(supabase, c.id);
-      const { data: m, simulated } = await runAgent({
+      const { data: m, simulated } = await runWriterWithRetry(() => runAgent({
         key: "lena",
         input: {
           consigne:
@@ -263,7 +280,8 @@ export async function generateLetter(
           gabarit: tpl.body,
         },
         schema: z.object({
-          subject: z.string().min(3).max(200),
+          // Sujet manquant/invalide → celui du gabarit (le corps seul est vital).
+          subject: z.string().min(3).max(200).catch(tpl.subject),
           body_md: z.string().min(60),
           griefs: z
             .array(
@@ -280,7 +298,7 @@ export async function generateLetter(
         organizationId: org.orgId,
         caseId: c.id,
         maxTokens: 2000,
-      });
+      }));
       if (simulated) {
         redaction = { mode: "simulation", reason: "clé du modèle non configurée (run simulé)" };
       } else if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
@@ -295,7 +313,7 @@ export async function generateLetter(
       }
     } else if (useBasile) {
       const ctx = await buildCaseContext(supabase, c.id);
-      const { data: m, simulated } = await runAgent({
+      const { data: m, simulated } = await runWriterWithRetry(() => runAgent({
         key: "basile",
         input: {
           consigne:
@@ -303,6 +321,7 @@ export async function generateLetter(
             "INTERDIT ABSOLU : aucun crochet [à préciser] ni champ à trous dans le corps — si une donnée indispensable manque au dossier, rédige la phrase sans elle et liste-la dans informations_manquantes (l'utilisateur complètera avant envoi). " +
             "Renseigne AUSSI destinataires_suggeres : la ou les autorités compétentes à saisir (le NOM exact du service, pas d'adresse — l'adresse officielle est récupérée séparément) avec le motif de chacune ; s'il y a une voie principale et une copie utile (ex. autorité compétente + juridiction en cas de rejet), liste-les." +
             groundingRule +
+            " IMPÉRATIF : tes recherches d'outils ne sont pas la réponse — tu dois TOUJOURS conclure par le JSON final complet, même si une recherche a échoué ou s'il te reste des doutes (marque-les « à vérifier »)." +
             " Réponds en JSON { subject, body_md, demarche, references_utilisees:[{reference, intitule, source, verifie}], destinataires_suggeres:[{nom, motif}], informations_manquantes:[string] }.",
           contexte_dossier: memo,
           recit: ctx?.summaryMd ?? null,
@@ -328,9 +347,10 @@ export async function generateLetter(
           expediteur: org.orgName,
         },
         schema: z.object({
-          subject: z.string().min(3).max(200),
+          // Sujet manquant/invalide → celui du gabarit (le corps seul est vital).
+          subject: z.string().min(3).max(200).catch(tpl.subject),
           body_md: z.string().min(60),
-          demarche: z.string().default(""),
+          demarche: z.string().catch(""),
           references_utilisees: z
             .array(
               z.object({
@@ -357,7 +377,7 @@ export async function generateLetter(
         organizationId: org.orgId,
         caseId: c.id,
         maxTokens: 2600,
-      });
+      }));
       if (simulated) {
         redaction = { mode: "simulation", reason: "clé du modèle non configurée (run simulé)" };
       } else if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
@@ -391,14 +411,28 @@ export async function generateLetter(
         });
       }
     } else {
-      const { data: m, simulated } = await runAgent({
+      const ctx = await buildCaseContext(supabase, c.id);
+      const { data: m, simulated } = await runWriterWithRetry(() => runAgent({
         key: "marius",
         input: {
           consigne:
-            "Rédige ce courrier de recouvrement (respecte le palier et les règles de ton rôle). Appuie-toi sur le socle_juridique fourni pour citer le droit applicable ; cherche une source complémentaire via les outils si le dossier le justifie." +
+            "Rédige ce courrier de recouvrement COMPLET et PRÊT À ENVOYER (respecte le palier et les règles de ton rôle) : reprends les faits RÉELS du dossier — récit, faits extraits, contenu des pièces — avec leurs dates, numéros de facture et prestations. Appuie-toi sur le socle_juridique fourni pour citer le droit applicable ; cherche une source complémentaire via les outils si le dossier le justifie. INTERDIT : crochets [à préciser] ou champs à trous — si une donnée manque, rédige la phrase sans elle." +
             groundingRule +
+            " IMPÉRATIF : conclus TOUJOURS par le JSON final complet, même si une recherche d'outil a échoué." +
             " Réponds en JSON { subject, body_md }.",
           contexte_dossier: memo,
+          recit: ctx?.summaryMd ?? null,
+          faits_extraits: (ctx?.facts ?? []).map((f) => ({
+            champ: f.label,
+            valeur: f.value,
+            corrige_par_utilisateur: f.corrected,
+          })),
+          pieces: (ctx?.documents ?? []).map((d) => ({
+            nom: d.fileName,
+            type: d.docKind,
+            resume: d.summary,
+          })),
+          chronologie: (ctx?.timeline ?? []).map((t) => ({ date: t.date, evenement: t.title })),
           socle_juridique: socle,
           type: LETTER_KINDS[kind].label,
           palier: LETTER_PALIER[kind] ?? 0,
@@ -408,14 +442,17 @@ export async function generateLetter(
           indemnite_forfaitaire: INDEMNITE_FORFAITAIRE,
           mentions_obligatoires: LETTER_MENTIONS[kind] ?? [],
           expediteur: org.orgName,
-          gabarit: tpl.body,
         },
-        schema: z.object({ subject: z.string().min(3).max(200), body_md: z.string().min(60) }),
+        schema: z.object({
+          // Sujet manquant/invalide → celui du gabarit (le corps seul est vital).
+          subject: z.string().min(3).max(200).catch(tpl.subject),
+          body_md: z.string().min(60),
+        }),
         simulation: { subject: tpl.subject, body_md: tpl.body },
         organizationId: org.orgId,
         caseId: c.id,
         maxTokens: 1800,
-      });
+      }));
       // Garde-fou #2 : conseil/pronostic dans le sujet ou le corps → on garde le
       // gabarit conforme (le courrier part au nom de l'utilisateur).
       if (simulated) {

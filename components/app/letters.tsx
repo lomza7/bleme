@@ -1,10 +1,11 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, CircleAlert, FileText, LoaderCircle, PenLine } from "lucide-react";
 import { generateLetter, type LetterState } from "@/lib/cases/letters";
 import { LETTER_KINDS, LETTER_STATUS_LABEL } from "@/lib/cases/letter-meta";
+import { AgentThinkingOverlay, writerFor } from "@/components/app/agent-thinking";
 
 const INITIAL: LetterState = {};
 
@@ -26,15 +27,18 @@ export function GenerateLetterButtons({
   primary?: boolean;
 }) {
   const [state, action, pending] = useActionState(generateLetter, INITIAL);
+  // Kind soumis : détermine quel agent afficher dans la superposition d'attente.
+  const [activeKind, setActiveKind] = useState<string | null>(null);
   const entries: [string, { label: string }][] = kinds
     ? kinds.filter((k) => LETTER_KINDS[k]).map((k): [string, { label: string }] => [k, LETTER_KINDS[k]])
     : Object.entries(LETTER_KINDS).filter(([, m]) => m.caseTypes.includes(caseType));
 
   return (
     <div className="flex flex-col gap-3">
+      <AgentThinkingOverlay agent={writerFor(caseType, activeKind ?? undefined)} open={pending} />
       <div className="flex flex-wrap gap-2">
         {entries.map(([kind, meta]) => (
-          <form key={kind} action={action}>
+          <form key={kind} action={action} onSubmit={() => setActiveKind(kind)}>
             <input type="hidden" name="caseId" value={caseId} />
             <input type="hidden" name="kind" value={kind} />
             <button

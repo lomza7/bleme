@@ -26,6 +26,7 @@ import { recordPayment } from "@/lib/cases/actions";
 import { ESCALATION_MODELS, type EscalationModel } from "@/lib/cases/escalation-templates";
 import { ReviewLetter } from "@/components/app/review-letter";
 import { PrintButton } from "@/components/app/print-button";
+import { AgentThinkingOverlay, THINKING_WRITERS } from "@/components/app/agent-thinking";
 import type { AttachableDoc } from "@/lib/courrier/attachment-rules";
 
 const INITIAL: EscState = {};
@@ -150,6 +151,7 @@ export function EscalationPanel({
           </div>
         ) : (
           <form action={devilAction} className="mt-5">
+            <AgentThinkingOverlay agent={THINKING_WRITERS.jeanne} open={devilPending} />
             <input type="hidden" name="caseId" value={caseId} />
             <button
               type="submit"

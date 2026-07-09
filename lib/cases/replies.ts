@@ -131,7 +131,9 @@ export async function generateAdaptedResponse(
   const isAdmin = c.case_type === "admin_request";
   const memo = await caseMemo(supabase, c.id);
   try {
-    const { data: m } = await runAgent({
+    // Retry ×1 : un JSON mal formé (agent qui conclut mal ses tours d'outils)
+    // ne doit pas suffire à dégrader vers le gabarit.
+    const run = () => runAgent({
       key: isDispute ? "lena" : isAdmin ? "basile" : "marius",
       input: {
         consigne:
@@ -145,12 +147,16 @@ export async function generateAdaptedResponse(
         expediteur: org.orgName,
         gabarit,
       },
-      schema: z.object({ subject: z.string().min(3).max(200), body_md: z.string().min(60) }),
+      schema: z.object({
+        subject: z.string().min(3).max(200).catch(tplSubject),
+        body_md: z.string().min(60),
+      }),
       simulation: { subject: tplSubject, body_md: gabarit },
       organizationId: org.orgId,
       caseId: c.id,
       maxTokens: 1800,
     });
+    const { data: m } = await run().catch(run);
     // Garde-fou #2 : conseil/pronostic → on garde le gabarit conforme.
     if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
       subject = tplSubject;

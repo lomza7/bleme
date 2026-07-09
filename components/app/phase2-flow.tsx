@@ -8,6 +8,7 @@ import { recordDebtorReply, generateAdaptedResponse, type ReplyState } from "@/l
 import { escalateCase, type EscState } from "@/lib/cases/escalation";
 import { GenerateLetterButtons } from "@/components/app/letters";
 import { ReviewLetter, type AddressDefaults, type SuggestedRecipient } from "@/components/app/review-letter";
+import { AgentThinkingOverlay, writerFor } from "@/components/app/agent-thinking";
 import type { AttachableDoc } from "@/lib/courrier/attachment-rules";
 
 const INITIAL: ReplyState = {};
@@ -99,6 +100,7 @@ export function Phase2Flow({
             ? "Sa réponse est enregistrée. On prépare la suite adaptée à partir de ce qu’elle dit et des faits de votre dossier."
             : "Son message est enregistré. On rédige une réponse adaptée à partir de ce qu’il dit et des faits de votre dossier."}
         </p>
+        <AgentThinkingOverlay agent={writerFor(caseType)} open={adaptPending} />
         <form action={adaptAction} className="mt-5">
           <input type="hidden" name="caseId" value={caseId} />
           <button
