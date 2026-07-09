@@ -22,6 +22,9 @@ export type WizardData = {
   storySeconds: number;
   storyText: string;
   devilAnswer: string;
+  // Contexte ajouté après les questions de Jeanne (elles ravivent des
+  // souvenirs) : rejoint le récit du dossier à la création.
+  extraContext: string;
 };
 
 export const EMPTY_DATA: WizardData = {
@@ -38,6 +41,7 @@ export const EMPTY_DATA: WizardData = {
   storySeconds: 0,
   storyText: "",
   devilAnswer: "",
+  extraContext: "",
 };
 
 export const KIND_META: Record<

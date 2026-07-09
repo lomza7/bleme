@@ -54,6 +54,8 @@ const draftSchema = z.object({
   storySeconds: z.number().optional().default(0),
   storyText: z.string().optional().default(""),
   devilAnswer: z.string().optional().default(""),
+  // Précisions ajoutées après les questions de Jeanne (étape « Regard adverse »).
+  extraContext: z.string().optional().default(""),
 });
 
 function parseAmountToCents(raw: string): number {
@@ -95,6 +97,9 @@ export async function createCaseFromDraft(
   // Le récit (dicté → transcrit, ou écrit) arrive toujours en texte : on l'utilise
   // tel quel (plus de placeholder « analyse à venir »).
   if (d.storyText.trim()) summaryParts.push(d.storyText.trim());
+  // Les questions de Jeanne ravivent des souvenirs : ces précisions font partie
+  // du récit (les agents les lisent au même titre que le reste).
+  if (d.extraContext.trim()) summaryParts.push(`Précisions complémentaires : ${d.extraContext.trim()}`);
   if (isUnpaid && d.age) summaryParts.push(`Impayé depuis : ${d.age.toLowerCase()}.`);
   if (d.kind === "dispute" && d.subject) summaryParts.push(`Objet du litige : ${d.subject}. Où ça en est : ${d.stage || "non précisé"}.`);
   if (isAdmin && d.subject) summaryParts.push(`Objet de la démarche : ${d.subject}. Où ça en est : ${d.stage || "non précisé"}.`);

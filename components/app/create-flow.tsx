@@ -11,12 +11,14 @@ import {
   Landmark,
   LoaderCircle,
   Scale,
+  ShieldQuestion,
 } from "lucide-react";
+import { SpriteAvatar } from "@/components/landing/sprite-avatar";
 import { CompanionCard, type Companion } from "@/components/app/companion-card";
 import { CompanySearch } from "@/components/app/company-search";
 import { AdminSearch } from "@/components/app/admin-search";
 import { VoiceCapture } from "@/components/app/voice-capture";
-import { IntakeQuestions } from "@/components/app/intake-questions";
+import { intakeQuestions } from "@/lib/intake/actions";
 import { createCaseFromDraft } from "@/lib/cases/actions";
 import { EMPTY_DATA, KIND_META, type CaseKind, type WizardData } from "@/components/wizard/types";
 
@@ -32,6 +34,7 @@ const STEPS = [
   { key: "kind", label: "Votre blème" },
   { key: "details", label: "Les faits" },
   { key: "story", label: "Votre récit" },
+  { key: "devil", label: "Regard adverse" },
   { key: "create", label: "Créer" },
 ] as const;
 
@@ -70,12 +73,56 @@ export function CreateFlow() {
   const [dir, setDir] = useState(1);
   const [data, setData] = useState<WizardData>(EMPTY_DATA);
   const [state, action, pending] = useActionState(createCaseFromDraft, {} as { error?: string });
+  // Étape « Regard adverse » : questions de Jeanne + réponses, TENUES ICI pour
+  // survivre aux allers-retours du stepper (le panneau est démonté/remonté).
+  const [devil, setDevil] = useState<{ loading: boolean; questions: string[]; answers: string[] }>({
+    loading: false,
+    questions: [],
+    answers: [],
+  });
 
   const patch = (p: Partial<WizardData>) => setData((d) => ({ ...d, ...p }));
+
+  // Jeanne se lance automatiquement à l'ARRIVÉE sur son étape (plus de bouton
+  // « Vérifier ») ; une seule fois — revenir en arrière ne relance pas le run.
+  async function askJeanne(current: WizardData) {
+    setDevil((d) => (d.loading || d.questions.length ? d : { ...d, loading: true }));
+    try {
+      const { questions } = await intakeQuestions({
+        transcript: current.storyText,
+        kind: current.kind ?? "unpaid",
+        partyName: current.partyName,
+      });
+      setDevil({ loading: false, questions, answers: questions.map(() => "") });
+    } catch {
+      setDevil({ loading: false, questions: [], answers: [] });
+    }
+  }
+
   const go = (n: number) => {
-    setDir(n > step ? 1 : -1);
-    setStep(Math.min(Math.max(0, n), STEPS.length - 1));
+    const next = Math.min(Math.max(0, n), STEPS.length - 1);
+    setDir(next > step ? 1 : -1);
+    setStep(next);
+    if (STEPS[next].key === "devil" && !devil.loading && devil.questions.length === 0) {
+      void askJeanne(data);
+    }
   };
+
+  // Une réponse saisie → agrégat remonté dans devilAnswer (points de vigilance
+  // du dossier) ; aucune réponse → rien (le champ reste vide).
+  function setDevilAnswer(i: number, v: string) {
+    setDevil((prev) => {
+      const answers = [...prev.answers];
+      answers[i] = v;
+      const answered = answers.some((a) => a.trim());
+      patch({
+        devilAnswer: answered
+          ? prev.questions.map((q, k) => `• ${q}\n${answers[k]?.trim() || "—"}`).join("\n\n")
+          : "",
+      });
+      return { ...prev, answers };
+    });
+  }
 
   const isUnpaid = data.kind === "unpaid";
   const isAdmin = data.kind === "admin";
@@ -95,6 +142,7 @@ export function CreateFlow() {
     { ...guide, message: "Choisissez la situation : je monte le dossier avec vous, étape par étape." },
     { ...guide, message: isUnpaid ? "Juste l’essentiel pour ouvrir : qui, combien, depuis quand." : isAdmin ? "Juste l’essentiel : quelle administration, à propos de quoi, où ça en est." : "Juste l’essentiel : avec qui, sur quoi, où ça en est." },
     { key: "nora", prenom: "Nora", role: "Agente Preuves", message: "Racontez librement — j’en tirerai les faits, les dates et la chronologie. C’est optionnel, vous pourrez compléter après." },
+    { key: "jeanne", prenom: "Jeanne", role: "Agente Avocat du diable", message: "Je lis votre récit avec les yeux d’en face : mes questions comblent ce qu’on pourrait vous opposer. Répondez même brièvement — et si un détail vous revient, notez-le." },
     { ...guide, message: "Tout est prêt. À la création, le dossier s’ouvre et les agents se mettent au travail. Rien ne part sans votre validation." },
   ];
 
@@ -197,16 +245,77 @@ export function CreateFlow() {
       <div className="mt-5">
         <VoiceCapture value={data.storyText} onChange={(t) => patch({ storyMode: "text", storyText: t })} />
       </div>
-      {data.storyText.trim().length >= 40 ? (
-        <div className="mt-6 border-t pt-6">
-          <IntakeQuestions
-            transcript={data.storyText}
-            kind={data.kind ?? "unpaid"}
-            partyName={data.partyName}
-            onChange={(a) => patch({ devilAnswer: a })}
-          />
+    </section>
+  );
+
+  // ── Étape « Regard adverse » : Jeanne au travail dès l'arrivée ──────────────
+  const panelDevil = (
+    <section className="rounded-[1.75rem] border bg-card p-6 sm:p-7">
+      <div className="flex items-center gap-3">
+        <span className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-brand-soft to-brand/15 ring-1 ring-brand/25">
+          <SpriteAvatar src="/agents/jeanne.webp" alt="Jeanne" className="h-9" />
+        </span>
+        <div>
+          <h2 className="text-lg font-semibold">Le regard adverse</h2>
+          <p className="text-sm text-muted-foreground">
+            Jeanne lit votre récit avec les yeux de la partie adverse et pose les questions qui comblent les trous.
+          </p>
         </div>
-      ) : null}
+      </div>
+
+      {devil.loading ? (
+        <div className="mt-6 flex items-center gap-3 rounded-2xl bg-brand-soft/50 p-5 ring-1 ring-brand/20">
+          <LoaderCircle className="size-5 animate-spin text-brand-strong" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">Jeanne lit votre récit…</p>
+            <div className="mt-2 flex flex-col gap-1.5" aria-hidden>
+              <span className="h-2.5 w-3/4 animate-pulse rounded bg-brand/15" />
+              <span className="h-2.5 w-1/2 animate-pulse rounded bg-brand/15" />
+            </div>
+          </div>
+        </div>
+      ) : devil.questions.length > 0 ? (
+        <div className="mt-6 rounded-2xl bg-brand-soft/40 p-5 ring-1 ring-brand/20">
+          <div className="flex items-center gap-2">
+            <ShieldQuestion className="size-4 text-brand-strong" />
+            <p className="text-sm font-semibold">Les questions de Jeanne</p>
+          </div>
+          <p className="mt-1 text-[13px] text-muted-foreground">Répondez même brièvement — c’est ce qui rend le dossier béton. Optionnel.</p>
+          <div className="mt-4 flex flex-col gap-4">
+            {devil.questions.map((q, i) => (
+              <div key={i} className="flex flex-col gap-1.5">
+                <p className="text-[13px] font-medium">{q}</p>
+                <textarea
+                  rows={2}
+                  value={devil.answers[i] ?? ""}
+                  onChange={(e) => setDevilAnswer(i, e.target.value)}
+                  placeholder="Votre réponse (ou laissez vide)"
+                  className="w-full rounded-xl border bg-background p-3 text-sm leading-relaxed outline-none transition-colors focus:border-brand"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <p className="mt-6 rounded-2xl bg-muted/50 px-4 py-5 text-sm text-muted-foreground">
+          Pas de question cette fois — vous pouvez continuer, ou compléter votre récit à l’étape précédente.
+        </p>
+      )}
+
+      {/* Ses questions ravivent des souvenirs : zone libre, versée au récit. */}
+      <div className="mt-6 border-t pt-6">
+        <p className="text-sm font-medium">Un détail vous revient ?</p>
+        <p className="mt-1 text-[13px] text-muted-foreground">
+          Les questions de Jeanne rappellent souvent un fait, une date, un échange. Notez-le ici : il rejoint votre récit.
+        </p>
+        <textarea
+          rows={3}
+          value={data.extraContext}
+          onChange={(e) => patch({ extraContext: e.target.value })}
+          placeholder="Ex. : « en relisant, je me souviens qu’il avait validé le devis par SMS le 12 mars »"
+          className="mt-3 w-full rounded-xl border bg-background p-3 text-sm leading-relaxed outline-none transition-colors focus:border-brand"
+        />
+      </div>
     </section>
   );
 
@@ -252,7 +361,7 @@ export function CreateFlow() {
     </section>
   );
 
-  const panels = [panelKind, panelDetails, panelStory, panelCreate];
+  const panels = [panelKind, panelDetails, panelStory, panelDevil, panelCreate];
   const canNext = step === 0 ? Boolean(data.kind) : step === 1 ? detailsReady : true;
 
   return (
@@ -299,7 +408,7 @@ export function CreateFlow() {
             </button>
             {step > 0 && step < STEPS.length - 1 ? (
               <button type="button" onClick={() => canNext && go(step + 1)} disabled={!canNext} className="inline-flex items-center gap-2 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-white transition-all duration-300 hover:bg-ink-soft active:scale-[0.98] disabled:pointer-events-none disabled:opacity-40">
-                {step === 2 ? "Voir le récapitulatif" : "Continuer"}
+                {STEPS[step].key === "devil" ? "Voir le récapitulatif" : "Continuer"}
                 <ArrowRight className="size-4" />
               </button>
             ) : null}
