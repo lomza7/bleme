@@ -14,6 +14,7 @@ import {
   ShieldQuestion,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { serverEnv } from "@/lib/env";
 import { dateLongFr, euros } from "@/lib/format";
 import { CASE_TYPE_LABEL, STATUS_META } from "@/lib/cases/constants";
 import { checklistFor, completeness } from "@/lib/cases/completeness";
@@ -118,13 +119,15 @@ export default async function CaseDetailPage({
   // de l'organisation (expéditeur), préremplies dans l'écran de validation.
   const { data: orgRow } = await supabase
     .from("organizations")
-    .select("name, address_json")
+    .select("name, address_json, inbox_slug")
     .eq("id", c.organization_id)
     .maybeSingle();
   const defaultToAddress: AddressDefaults =
     (c.debtor_address as AddressDefaults) ?? (c.debtor_name ? { societe: c.debtor_name } : null);
   const defaultFromAddress: AddressDefaults =
     (orgRow?.address_json as AddressDefaults) ?? (orgRow?.name ? { societe: orgRow.name } : null);
+  // Adresse de transfert de l'espace (org) : proposée dans la popup « Par email ».
+  const caseEmail = `${orgRow?.inbox_slug ?? "b-votreadresse"}@${serverEnv().CASE_EMAIL_DOMAIN}`;
   const suggestedRecipients = (
     (c.suggested_recipients as SuggestedRecipient[] | null) ?? []
   ).filter((r) => r && typeof r.nom === "string");
@@ -399,7 +402,7 @@ export default async function CaseDetailPage({
         <p className="mb-3 text-xs text-muted-foreground">
           Déposez le document tel quel : Nora le lit et le classe automatiquement.
         </p>
-        <Uploader scope={c.id} />
+        <Uploader scope={c.id} caseEmail={caseEmail} />
       </div>
     </section>
   );
