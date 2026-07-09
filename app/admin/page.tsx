@@ -4,6 +4,8 @@ import { ArrowRight } from "lucide-react";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { BarChart, Donut, Funnel, HBars } from "@/components/admin/charts";
 import { SpriteAvatar } from "@/components/landing/sprite-avatar";
+import { TOOL_APIS } from "@/lib/tool-apis";
+import { getToolApiReadiness } from "@/lib/admin/hermes-actions";
 
 export const metadata: Metadata = { title: "Vue d’ensemble" };
 
@@ -237,6 +239,76 @@ export default async function AdminOverview({
     byAgent.set(r.agent_key, a);
   }
 
+  // ── APIs outils : qui appelle quoi, et lesquelles ne le sont JAMAIS ─────────
+  // Trace persistée par run (agent_runs.tool_calls, renvoyée par le bridge).
+  // Fenêtre 12 mois pour le « dernier appel » / « jamais appelée », indépendante
+  // de la période choisie ; le graphe, lui, suit la période.
+  const d365 = new Date(now - 365 * 24 * 3600 * 1000).toISOString();
+  const [toolRunsRes, scopesRes, readiness] = await Promise.all([
+    service
+      .from("agent_runs")
+      .select("agent_key, status, tool_calls, created_at")
+      .gte("created_at", d365)
+      .order("created_at", { ascending: false }),
+    service.from("agent_tool_apis").select("api_name, agent_key"),
+    getToolApiReadiness(),
+  ]);
+  // Défense de déploiement : colonne pas encore migrée → section vide, pas de crash.
+  const toolRuns = (toolRunsRes.error ? [] : (toolRunsRes.data ?? []))
+    .map((r) => ({
+      ...r,
+      calls: (Array.isArray(r.tool_calls) ? r.tool_calls : []).filter(
+        (c): c is string => typeof c === "string",
+      ),
+    }))
+    .filter((r) => r.calls.length > 0);
+  const toolColumnMissing = Boolean(toolRunsRes.error);
+
+  // Activation : api → portées (null = commune à tous les agents).
+  const scopesByApi = new Map<string, Set<string | null>>();
+  for (const s of scopesRes.data ?? []) {
+    const set = scopesByApi.get(s.api_name) ?? new Set<string | null>();
+    set.add(s.agent_key);
+    scopesByApi.set(s.api_name, set);
+  }
+
+  // Agrégats par référence "api.action" (12 mois) : total, dernier appel, agents.
+  const byRef = new Map<string, { count: number; last: string; agents: Set<string> }>();
+  const callsByBucket = new Map<string, number>();
+  let callsPeriode = 0;
+  for (const r of toolRuns) {
+    for (const ref of r.calls) {
+      const e = byRef.get(ref) ?? { count: 0, last: r.created_at, agents: new Set<string>() };
+      e.count += 1;
+      if (r.created_at > e.last) e.last = r.created_at;
+      e.agents.add(r.agent_key);
+      byRef.set(ref, e);
+      if (r.created_at >= dPeriode) {
+        callsPeriode += 1;
+        const k = bucketKey(new Date(r.created_at));
+        callsByBucket.set(k, (callsByBucket.get(k) ?? 0) + 1);
+      }
+    }
+  }
+  // Par API : lignes du tableau, construites depuis le CATALOGUE (toutes les
+  // APIs, y compris jamais appelées — c'est le but).
+  const apiRows = TOOL_APIS.map((api) => {
+    const refs = api.actions.map((a) => {
+      const e = byRef.get(`${api.name}.${a}`);
+      return { action: a, count: e?.count ?? 0, last: e?.last ?? null };
+    });
+    const count = refs.reduce((s, r) => s + r.count, 0);
+    const last = refs.reduce<string | null>((m, r) => (r.last && (!m || r.last > m) ? r.last : m), null);
+    const agents = new Set<string>();
+    for (const a of api.actions) for (const g of byRef.get(`${api.name}.${a}`)?.agents ?? []) agents.add(g);
+    const scopes = scopesByApi.get(api.name);
+    return { api, refs, count, last, agents, scopes };
+  }).sort((a, b) => b.count - a.count);
+  const neverCalled = apiRows.filter((r) => r.count === 0).length;
+  const recentToolRuns = toolRuns.slice(0, 10);
+  const fmtCallDate = (iso: string) =>
+    `${new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short", timeZone: "Europe/Paris" })} ${new Date(iso).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" })}`;
+
   // ── Funnel d'activation ─────────────────────────────────────────────────────
   const orgsAvecDossier = new Set(reels.map((c) => c.organization_id)).size;
   const orgsAvecPaiement = new Set(
@@ -337,6 +409,9 @@ export default async function AdminOverview({
         <div className="flex flex-wrap items-center justify-between gap-3 px-1">
           <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
             Consommation IA · {PERIODES.find((p) => p.jours === periode)?.label}
+            <span className="ml-2 font-normal normal-case tracking-normal text-muted-foreground/70">
+              · actualisé à {new Date(now).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit", timeZone: "Europe/Paris" })}
+            </span>
           </h2>
           <div className="flex gap-1">
             {PERIODES.map((p) => (
@@ -393,7 +468,7 @@ export default async function AdminOverview({
                   }))}
               />
               {byModel.size === 0 ? (
-                <p className="text-xs text-muted-foreground">Aucun run sur 30 jours.</p>
+                <p className="text-xs text-muted-foreground">Aucun run sur la période.</p>
               ) : null}
             </div>
           </div>
@@ -410,10 +485,148 @@ export default async function AdminOverview({
                   }))}
               />
               {byAgent.size === 0 ? (
-                <p className="text-xs text-muted-foreground">Aucun run sur 30 jours.</p>
+                <p className="text-xs text-muted-foreground">Aucun run sur la période.</p>
               ) : null}
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* APIs outils : qui appelle quoi — et lesquelles ne le sont jamais */}
+      <section>
+        <h2 className="px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          APIs outils · {PERIODES.find((p) => p.jours === periode)?.label}
+        </h2>
+        {toolColumnMissing ? (
+          <p className="mt-3 rounded-2xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200">
+            La trace des appels n’est pas encore activée en base (migration `agent_runs.tool_calls` à appliquer).
+          </p>
+        ) : null}
+        <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {/* Volume d'appels sur la période */}
+          <div className="rounded-[1.75rem] border bg-card p-6">
+            <p className="text-2xl font-bold tabular-nums tracking-tight">
+              {callsPeriode.toLocaleString("fr-FR")}
+              <span className="ml-1.5 text-sm font-normal text-muted-foreground">
+                appel{callsPeriode > 1 ? "s" : ""} d’outils
+              </span>
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {toolRuns.filter((r) => r.created_at >= dPeriode).length.toLocaleString("fr-FR")} run
+              {toolRuns.filter((r) => r.created_at >= dPeriode).length > 1 ? "s" : ""} avec outils · par {granularite}
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground/80">
+              Appels réels exécutés par le bridge pendant les boucles agentiques (Légifrance, JUDILIBRE, Pappers…).
+            </p>
+            <div className="mt-4">
+              <BarChart
+                ariaLabel={`Appels d’APIs outils par ${granularite}`}
+                points={buckets.map((k) => ({ label: bucketLabel(k), value: callsByBucket.get(k) ?? 0 }))}
+              />
+            </div>
+            {neverCalled > 0 ? (
+              <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800 ring-1 ring-amber-200">
+                {neverCalled} API{neverCalled > 1 ? "s" : ""} du catalogue jamais appelée{neverCalled > 1 ? "s" : ""} sur 12 mois.
+              </p>
+            ) : null}
+          </div>
+          {/* Tableau : TOUTES les APIs du catalogue, appelées ou non */}
+          <div className="rounded-[1.75rem] border bg-card p-6 lg:col-span-2">
+            <h3 className="text-sm font-semibold">Par API — catalogue complet</h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              Appels sur 12 mois · les actions jamais appelées sont signalées.
+            </p>
+            <div className="mt-4 flex flex-col divide-y">
+              {apiRows.map(({ api, refs, count, last, agents, scopes }) => (
+                <div key={api.name} className="py-3 first:pt-0 last:pb-0">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+                    <p className="text-sm font-medium">
+                      {api.label}
+                      <span className="ml-2 font-mono text-[11px] text-muted-foreground">{api.name}</span>
+                    </p>
+                    <p className="text-xs tabular-nums">
+                      {count > 0 ? (
+                        <>
+                          <span className="font-semibold">{count.toLocaleString("fr-FR")}</span>
+                          <span className="text-muted-foreground"> appel{count > 1 ? "s" : ""} · dernier {last ? fmtCallDate(last) : "—"}</span>
+                        </>
+                      ) : (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 font-medium text-amber-800">jamais appelée</span>
+                      )}
+                    </p>
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                    {/* Portée d'activation + clés */}
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${scopes ? "bg-emerald-100 text-emerald-800" : "bg-muted text-muted-foreground"}`}>
+                      {scopes ? (scopes.has(null) ? "activée · commune" : `activée · ${[...scopes].filter(Boolean).join(", ")}`) : "non activée"}
+                    </span>
+                    {!readiness[api.name] && api.secrets.length > 0 ? (
+                      <span className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">clés manquantes</span>
+                    ) : null}
+                    {agents.size > 0 ? (
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                        appelée par {[...agents].join(", ")}
+                      </span>
+                    ) : null}
+                    {/* Détail par action */}
+                    {refs.map((r) => (
+                      <span
+                        key={r.action}
+                        className={`rounded-full px-2 py-0.5 font-mono text-[10px] ${
+                          r.count > 0 ? "bg-brand-soft text-brand-strong" : "bg-amber-50 text-amber-700 ring-1 ring-amber-200"
+                        }`}
+                        title={r.count > 0 ? `${r.count} appel(s) · dernier ${r.last ? fmtCallDate(r.last) : ""}` : "jamais appelée"}
+                      >
+                        {r.action}{r.count > 0 ? ` ×${r.count}` : " · 0"}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        {/* Derniers appels : quand, quel agent, quels outils */}
+        <div className="mt-4 rounded-[1.75rem] border bg-card p-6">
+          <h3 className="text-sm font-semibold">Derniers runs avec outils</h3>
+          {recentToolRuns.length === 0 ? (
+            <p className="mt-3 text-sm text-muted-foreground">
+              Aucun run n’a encore appelé d’outil{toolColumnMissing ? " (trace à activer)" : " — générez un courrier avec socle juridique pour voir la chaîne en action"}.
+            </p>
+          ) : (
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full min-w-[560px] text-sm">
+                <thead>
+                  <tr className="border-b text-left text-xs text-muted-foreground">
+                    <th className="py-2 pr-4 font-medium">Quand</th>
+                    <th className="py-2 pr-4 font-medium">Agent</th>
+                    <th className="py-2 pr-4 font-medium">Statut</th>
+                    <th className="py-2 font-medium">Outils appelés (dans l’ordre)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {recentToolRuns.map((r, i) => (
+                    <tr key={i}>
+                      <td className="py-2.5 pr-4 text-xs tabular-nums text-muted-foreground">{fmtCallDate(r.created_at)}</td>
+                      <td className="py-2.5 pr-4 font-medium">{r.agent_key}</td>
+                      <td className="py-2.5 pr-4">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${r.status === "ok" ? "bg-emerald-100 text-emerald-800" : "bg-red-100 text-red-700"}`}>
+                          {r.status}
+                        </span>
+                      </td>
+                      <td className="py-2.5">
+                        <span className="flex flex-wrap gap-1">
+                          {r.calls.map((c, k) => (
+                            <span key={k} className="rounded-full bg-brand-soft px-2 py-0.5 font-mono text-[10px] text-brand-strong">{c}</span>
+                          ))}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </section>
 

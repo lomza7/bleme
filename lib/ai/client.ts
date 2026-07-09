@@ -266,9 +266,26 @@ async function logRun(run: {
   cost_microcents?: number;
   duration_ms?: number;
   error?: string;
+  tool_calls?: string[];
 }) {
   const supabase = createServiceClient();
-  await supabase.from("agent_runs").insert(run);
+  const { error } = await supabase.from("agent_runs").insert(run);
+  // Défense de déploiement : si la colonne tool_calls n'existe pas encore
+  // (migration pas appliquée), on ne PERD PAS le run — on le retrace sans.
+  if (error && run.tool_calls) {
+    const { tool_calls: _omit, ...rest } = run;
+    await supabase.from("agent_runs").insert(rest);
+  }
+}
+
+/** Trace des outils renvoyée par le bridge : liste bornée de "api.action". */
+function parseToolCalls(raw: unknown): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const calls = raw
+    .filter((c): c is string => typeof c === "string" && c.length > 0)
+    .map((c) => c.slice(0, 80))
+    .slice(0, 12);
+  return calls.length > 0 ? calls : undefined;
 }
 
 /**
@@ -475,6 +492,10 @@ export async function runAgent<T>(opts: {
         "Runtime Hermes non configuré : renseignez BLEME_BRIDGE_URL et BLEME_BRIDGE_TOKEN dans le coffre.",
       );
     }
+    // Trace des outils appelés pendant la boucle agentique (renvoyée par le
+    // bridge) : capturée AVANT le parsing du JSON pour survivre aux runs en
+    // erreur de schéma — les appels ont bien eu lieu, on les journalise.
+    let bridgeToolCalls: string[] | undefined;
     try {
       const response = await fetch(`${bridgeUrl.replace(/\/$/, "")}/run`, {
         method: "POST",
@@ -501,6 +522,7 @@ export async function runAgent<T>(opts: {
         throw new Error(`bridge ${response.status} : ${(await response.text()).slice(0, 300)}`);
       }
       const payload = await response.json();
+      bridgeToolCalls = parseToolCalls(payload.tool_calls);
       const text: string = payload.text ?? "";
       const jsonText = text.slice(text.indexOf("{"), text.lastIndexOf("}") + 1);
       const data = opts.schema.parse(JSON.parse(jsonText));
@@ -531,6 +553,7 @@ export async function runAgent<T>(opts: {
         output_tokens: outputTokens,
         cost_microcents: cost,
         duration_ms: Date.now() - started,
+        tool_calls: bridgeToolCalls,
       });
       return { data, simulated: false };
     } catch (err) {
@@ -540,6 +563,7 @@ export async function runAgent<T>(opts: {
         status: "error",
         duration_ms: Date.now() - started,
         error: err instanceof Error ? err.message.slice(0, 500) : "Erreur inconnue",
+        tool_calls: bridgeToolCalls,
       });
       throw err;
     }

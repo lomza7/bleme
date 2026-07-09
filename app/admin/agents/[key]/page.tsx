@@ -278,7 +278,19 @@ export default async function AgentAdminPage({
                           </span>
                         ) : null}
                       </td>
-                      <td className="px-5 py-3 font-mono text-xs">{r.model}</td>
+                      <td className="px-5 py-3 font-mono text-xs">
+                        {r.model}
+                        {/* Outils appelés pendant la boucle agentique (trace du bridge) */}
+                        {Array.isArray(r.tool_calls) && r.tool_calls.length > 0 ? (
+                          <span className="mt-1 flex max-w-64 flex-wrap gap-1">
+                            {(r.tool_calls as string[]).map((c, k) => (
+                              <span key={k} className="rounded-full bg-brand-soft px-1.5 py-0.5 text-[10px] text-brand-strong">
+                                {c}
+                              </span>
+                            ))}
+                          </span>
+                        ) : null}
+                      </td>
                       <td className="px-5 py-3 text-right tabular-nums">
                         {r.input_tokens.toLocaleString("fr-FR")} / {r.output_tokens.toLocaleString("fr-FR")}
                       </td>
