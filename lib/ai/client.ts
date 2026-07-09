@@ -323,6 +323,11 @@ export async function runAgent<T>(opts: {
   // Modèle imposé pour CET appel (ex. modèle vision OpenRouter) — surcharge
   // hermes_model côté bridge sans changer la config par défaut de l'agent.
   modelOverride?: string;
+  // Repli sur l'API Anthropic directe si le run bridge échoue (HTTP, timeout,
+  // JSON hors schéma). OPT-IN et réservé aux appels dont le grounding est déjà
+  // fourni en entrée (socle vérifié) : un repli SANS outils ne doit jamais
+  // servir à récupérer des sources (il en inventerait).
+  fallbackDirect?: boolean;
 }): Promise<{ data: T; simulated: boolean; toolCalls?: string[] }> {
   const agent = await loadAgent(opts.key);
   if (!agent) {
@@ -567,7 +572,10 @@ export async function runAgent<T>(opts: {
         error: err instanceof Error ? err.message.slice(0, 500) : "Erreur inconnue",
         tool_calls: bridgeToolCalls,
       });
-      throw err;
+      // Repli direct opt-in : le run bridge (tracé en erreur ci-dessus) laisse
+      // la main au runtime Claude ci-dessous — deuxième chance sans outils,
+      // avec le grounding déjà fourni en entrée.
+      if (!opts.fallbackDirect) throw err;
     }
   }
 

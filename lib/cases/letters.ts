@@ -329,6 +329,7 @@ export async function generateLetter(
         organizationId: org.orgId,
         caseId: c.id,
         maxTokens: 2000,
+        fallbackDirect: true,
         }),
         () => void progress("Première rédaction incomplète — Léna reprend", "nouvelle tentative en cours"),
       );
@@ -413,6 +414,7 @@ export async function generateLetter(
         organizationId: org.orgId,
         caseId: c.id,
         maxTokens: 2600,
+        fallbackDirect: true,
         }),
         () => void progress("Première rédaction incomplète — Basile reprend", "nouvelle tentative en cours"),
       );
@@ -496,6 +498,7 @@ export async function generateLetter(
         organizationId: org.orgId,
         caseId: c.id,
         maxTokens: 1800,
+        fallbackDirect: true,
         }),
         () => void progress("Première rédaction incomplète — Marius reprend", "nouvelle tentative en cours"),
       );
@@ -528,6 +531,12 @@ export async function generateLetter(
     sourcesConsultees ? `sources consultées : ${sourcesConsultees}` : null,
   );
 
+  // Provenance portée par le courrier lui-même (affichée à la relecture).
+  const redactionNote =
+    redaction.mode === "agent"
+      ? `Rédigé par ${writerName}.${sourcesConsultees ? ` Sources consultées : ${sourcesConsultees}.` : ""}${infosManquantes.length ? ` À compléter avant envoi : ${infosManquantes.join(" ; ")}.` : ""}`
+      : `⚠️ Gabarit de secours — la rédaction par ${writerName} n'a pas abouti${redaction.reason ? ` (${redaction.reason})` : ""}. Régénérez le courrier ou complétez-le à la main.`;
+
   const { data: created, error } = await supabase
     .from("letters")
     .insert({
@@ -538,6 +547,7 @@ export async function generateLetter(
       status: "draft",
       subject,
       body_md: body,
+      redaction_note: redactionNote,
     })
     .select("id")
     .single();

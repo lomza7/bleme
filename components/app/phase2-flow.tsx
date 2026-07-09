@@ -20,6 +20,8 @@ type PendingLetter = {
   status: string;
   channel: string | null;
   approved_at: string | null;
+  kind?: string | null;
+  redaction_note?: string | null;
 };
 
 /*
@@ -75,6 +77,7 @@ export function Phase2Flow({
           <ReviewLetter
             letter={pendingLetter}
             caseId={caseId}
+            caseType={caseType}
             embedded
             defaultEmail={defaultEmail}
             defaultToAddress={defaultToAddress}

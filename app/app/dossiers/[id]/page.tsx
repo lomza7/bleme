@@ -67,7 +67,7 @@ export default async function CaseDetailPage({
         .order("created_at", { ascending: false }),
       supabase
         .from("letters")
-        .select("id, kind, status, subject, body_md, channel, approved_at, created_at")
+        .select("id, kind, status, subject, body_md, channel, approved_at, created_at, redaction_note")
         .eq("case_id", id)
         .order("created_at", { ascending: false }),
       supabase.from("debtor_replies").select("handled").eq("case_id", id),
@@ -176,6 +176,8 @@ export default async function CaseDetailPage({
         status: pendingRaw.status,
         channel: pendingRaw.channel,
         approved_at: pendingRaw.approved_at,
+        kind: pendingRaw.kind,
+        redaction_note: pendingRaw.redaction_note,
       }
     : null;
   const hasUnhandledReply = (replies ?? []).some((r) => !r.handled);
@@ -476,6 +478,7 @@ export default async function CaseDetailPage({
           <ReviewLetter
             letter={pendingLetter}
             caseId={c.id}
+            caseType={c.case_type}
             embedded
             defaultEmail={c.debtor_email ?? ""}
             defaultToAddress={defaultToAddress}

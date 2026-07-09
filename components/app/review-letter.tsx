@@ -12,10 +12,12 @@ import {
   LoaderCircle,
   Mail,
   Paperclip,
+  RefreshCw,
   ShieldCheck,
   Stamp,
 } from "lucide-react";
-import { approveAndSendLetter, type LetterState } from "@/lib/cases/letters";
+import { approveAndSendLetter, generateLetter, type LetterState } from "@/lib/cases/letters";
+import { AgentThinkingOverlay, writerFor } from "@/components/app/agent-thinking";
 import {
   postalAttachable,
   EMAIL_ATTACHMENTS_MAX_BYTES,
@@ -51,6 +53,7 @@ export function ReviewLetter({
   defaultFromAddress = null,
   suggestedRecipients = [],
   documents = [],
+  caseType = "",
 }: {
   letter: {
     id: string;
@@ -61,9 +64,15 @@ export function ReviewLetter({
     approved_at: string | null;
     /** Renseigné UNIQUEMENT si le courrier est réellement parti (journal honnête). */
     sent_at?: string | null;
+    /** Type de courrier (permet de régénérer le même brouillon). */
+    kind?: string | null;
+    /** Provenance : « Rédigé par Basile… » ou explication du repli gabarit. */
+    redaction_note?: string | null;
   };
   caseId: string;
   embedded?: boolean;
+  /** Type de dossier (choix de l'agent pour la régénération). */
+  caseType?: string;
   /** Email du débiteur déjà connu (préremplissage) ; l'utilisateur peut le corriger. */
   defaultEmail?: string;
   /** Adresses postales déjà connues (dossier / organisation), corrigeables. */
@@ -130,8 +139,29 @@ export function ReviewLetter({
     );
   }
 
+  const fallbackDraft = Boolean(letter.redaction_note?.startsWith("⚠️"));
+
   return (
-    <form action={action} className={wrap}>
+    <div className={wrap}>
+      {/* Provenance du brouillon : qui l'a écrit, avec quelles sources — ou
+          pourquoi c'est un gabarit de secours (et le bouton pour relancer). */}
+      {letter.redaction_note ? (
+        <div
+          className={
+            fallbackDraft
+              ? "mb-5 rounded-2xl bg-amber-50 px-4 py-3 ring-1 ring-amber-200"
+              : "mb-5 rounded-2xl bg-emerald-50 px-4 py-3 ring-1 ring-emerald-200"
+          }
+        >
+          <p className={`text-[13px] leading-relaxed ${fallbackDraft ? "text-amber-800" : "text-emerald-800"}`}>
+            {letter.redaction_note}
+          </p>
+          {letter.kind ? (
+            <RegenerateButton caseId={caseId} kind={letter.kind} caseType={caseType} prominent={fallbackDraft} />
+          ) : null}
+        </div>
+      ) : null}
+    <form action={action}>
       <input type="hidden" name="letterId" value={letter.id} />
       <input type="hidden" name="channel" value={channel} />
       <input type="hidden" name="body" value={body} />
@@ -292,6 +322,59 @@ export function ReviewLetter({
           </span>
         ) : null}
       </div>
+    </form>
+    </div>
+  );
+}
+
+/**
+ * Relance la rédaction du MÊME courrier (nouveau brouillon, nouvel essai de
+ * l'agent) — indispensable quand le brouillon affiché est un gabarit de
+ * secours : l'écran de relecture remplace les boutons de génération.
+ */
+function RegenerateButton({
+  caseId,
+  kind,
+  caseType,
+  prominent,
+}: {
+  caseId: string;
+  kind: string;
+  caseType: string;
+  prominent: boolean;
+}) {
+  const router = useRouter();
+  const [state, action, pending] = useActionState(
+    async (prev: LetterState, fd: FormData) => {
+      const res = await generateLetter(prev, fd);
+      if (res.success) router.refresh();
+      return res;
+    },
+    INITIAL,
+  );
+  return (
+    <form action={action} className="mt-2.5">
+      <AgentThinkingOverlay agent={writerFor(caseType, kind)} open={pending} caseId={caseId} />
+      <input type="hidden" name="caseId" value={caseId} />
+      <input type="hidden" name="kind" value={kind} />
+      <button
+        type="submit"
+        disabled={pending}
+        className={
+          prominent
+            ? "inline-flex items-center gap-2 rounded-full bg-brand px-4 py-2 text-sm font-medium text-brand-foreground transition-all duration-300 hover:bg-brand-strong active:scale-[0.98] disabled:opacity-60"
+            : "inline-flex items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm font-medium transition-colors hover:border-brand/60 hover:bg-brand-soft disabled:opacity-60"
+        }
+      >
+        {pending ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+        Régénérer le brouillon
+      </button>
+      {state.error ? (
+        <p role="alert" className="mt-2 flex items-center gap-2 text-sm text-red-600">
+          <CircleAlert className="size-4 shrink-0" />
+          {state.error}
+        </p>
+      ) : null}
     </form>
   );
 }

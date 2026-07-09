@@ -162,6 +162,7 @@ export async function generateAdaptedResponse(
       organizationId: org.orgId,
       caseId: c.id,
       maxTokens: 1800,
+      fallbackDirect: true,
     });
     const { data: m } = await run().catch(() => {
       void progress(`Première rédaction incomplète — ${writerName} reprend`, "nouvelle tentative en cours");

@@ -22,7 +22,7 @@ export default async function LetterReviewPage({
 
   const { data: letter } = await supabase
     .from("letters")
-    .select("id, subject, body_md, status, channel, approved_at, sent_at, case_id")
+    .select("id, kind, subject, body_md, status, channel, approved_at, sent_at, case_id, redaction_note")
     .eq("id", letterId)
     .eq("case_id", id)
     .maybeSingle();
@@ -33,7 +33,7 @@ export default async function LetterReviewPage({
   const [{ data: c }, { data: docs }] = await Promise.all([
     supabase
       .from("cases")
-      .select("debtor_name, debtor_email, debtor_address, suggested_recipients, organization_id")
+      .select("case_type, debtor_name, debtor_email, debtor_address, suggested_recipients, organization_id")
       .eq("id", id)
       .maybeSingle(),
     supabase
@@ -75,6 +75,7 @@ export default async function LetterReviewPage({
         <ReviewLetter
           letter={letter}
           caseId={id}
+          caseType={c?.case_type ?? ""}
           defaultEmail={c?.debtor_email ?? ""}
           defaultToAddress={defaultToAddress}
           defaultFromAddress={defaultFromAddress}
