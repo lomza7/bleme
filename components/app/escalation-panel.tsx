@@ -26,6 +26,7 @@ import { recordPayment } from "@/lib/cases/actions";
 import { ESCALATION_MODELS, type EscalationModel } from "@/lib/cases/escalation-templates";
 import { ReviewLetter } from "@/components/app/review-letter";
 import { PrintButton } from "@/components/app/print-button";
+import type { AttachableDoc } from "@/lib/courrier/attachment-rules";
 
 const INITIAL: EscState = {};
 
@@ -54,12 +55,15 @@ export function EscalationPanel({
   devilReview,
   escalationSummary,
   pendingLetter,
+  documents = [],
 }: {
   caseId: string;
   status: string;
   devilReview: DevilReview | null;
   escalationSummary: string | null;
   pendingLetter: PendingLetter | null;
+  /** Pièces du dossier proposées en annexes dans l'écran de validation. */
+  documents?: AttachableDoc[];
 }) {
   const [devilState, devilAction, devilPending] = useActionState(runDevilReview, INITIAL);
   const [draftState, draftAction, draftPending] = useActionState(generateEscalationDraft, INITIAL);
@@ -96,7 +100,7 @@ export function EscalationPanel({
                 Relisez, choisissez le mode d’envoi, puis validez pour l’envoyer en votre nom.
               </p>
               <div className="mt-5">
-                <ReviewLetter letter={pendingLetter} caseId={caseId} embedded />
+                <ReviewLetter letter={pendingLetter} caseId={caseId} embedded documents={documents} />
               </div>
             </>
           )}

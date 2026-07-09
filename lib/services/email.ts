@@ -30,6 +30,7 @@ export async function sendEmail({
   text,
   replyTo,
   from = DEFAULT_FROM,
+  attachments,
 }: {
   to: string | string[];
   subject: string;
@@ -37,6 +38,8 @@ export async function sendEmail({
   text?: string;
   replyTo?: string;
   from?: string;
+  /** Pièces jointes (contenu en base64). Resend borne l'email complet à 40 Mo. */
+  attachments?: { filename: string; content: string; contentType?: string }[];
 }) {
   const { data, error } = await resend().emails.send({
     from,
@@ -45,6 +48,7 @@ export async function sendEmail({
     html,
     text,
     replyTo,
+    attachments,
   });
   if (error) {
     throw new Error(`Échec d'envoi email (${subject}) : ${error.message}`);

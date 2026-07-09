@@ -1,5 +1,5 @@
 import "server-only";
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import type { LetterAddress } from "@/lib/courrier/merci-facteur";
 
 /*
@@ -136,6 +136,48 @@ export async function buildLetterPdf(input: {
     newPageIfNeeded();
     drawLine(l, font, SIZE);
   }
+
+  return doc.saveAsBase64();
+}
+
+/**
+ * Met en page une annexe IMAGE (JPEG/PNG) en PDF A4 imprimable, avec le nom
+ * de la pièce en en-tête (le destinataire sait ce qu'il regarde). Les annexes
+ * déjà en PDF sont jointes telles quelles, sans passer par ici.
+ */
+export async function imageToPdfBase64(input: {
+  fileName: string;
+  mimeType: string;
+  base64: string;
+}): Promise<string> {
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const bytes = Buffer.from(input.base64, "base64");
+  const image =
+    input.mimeType === "image/png" ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+
+  const page = doc.addPage(A4);
+  const caption = wrap(sanitize(`Pièce jointe — ${input.fileName}`), font, 9, A4[0] - MARGIN * 2)[0] ?? "";
+  page.drawText(caption, {
+    x: MARGIN,
+    y: A4[1] - MARGIN,
+    size: 9,
+    font,
+    color: rgb(0.35, 0.35, 0.35),
+  });
+
+  // Image ajustée dans la zone utile (ratio conservé), centrée horizontalement.
+  const maxW = A4[0] - MARGIN * 2;
+  const maxH = A4[1] - MARGIN * 2 - 24;
+  const scale = Math.min(maxW / image.width, maxH / image.height);
+  const w = image.width * scale;
+  const h = image.height * scale;
+  page.drawImage(image, {
+    x: MARGIN + (maxW - w) / 2,
+    y: A4[1] - MARGIN - 24 - h,
+    width: w,
+    height: h,
+  });
 
   return doc.saveAsBase64();
 }

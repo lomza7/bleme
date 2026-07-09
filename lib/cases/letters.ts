@@ -14,6 +14,16 @@ import { buildCaseContext } from "@/lib/cases/context";
 import { legalSocle, hasSources } from "@/lib/cases/legal";
 import { resolveAdministration } from "@/lib/administrations/annuaire";
 import { dispatchLetter } from "@/lib/courrier/dispatch";
+import {
+  loadCaseAttachments,
+  attachmentSnapshots,
+  type LoadedAttachment,
+} from "@/lib/courrier/attachments";
+import {
+  postalAttachable,
+  MAX_ATTACHMENTS,
+  EMAIL_ATTACHMENTS_MAX_BYTES,
+} from "@/lib/courrier/attachment-rules";
 import { serverEnv } from "@/lib/env";
 
 /*
@@ -23,7 +33,13 @@ import { serverEnv } from "@/lib/env";
  * possible sans une ligne d'approbation au hash exact : pilier juridique #1.
  */
 
-export type LetterState = { error?: string; success?: string; letterId?: string };
+export type LetterState = {
+  error?: string;
+  success?: string;
+  letterId?: string;
+  /** Averti quand le brouillon affiché est un gabarit de secours (IA en échec). */
+  notice?: string;
+};
 
 function euros(cents: number): string {
   return (cents / 100).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -204,6 +220,14 @@ export async function generateLetter(
   const useLena = kind === "response";
   const useBasile = c.case_type === "admin_request";
   const writerKey = useLena ? "lena" : useBasile ? "basile" : "marius";
+  const writerName = useLena ? "Léna" : useBasile ? "Basile" : "Marius";
+  // Issue de la rédaction — FINI la dégradation silencieuse : si l'utilisateur
+  // lit un gabarit de secours, il le sait, et la cause est tracée.
+  let redaction: { mode: "agent" | "simulation" | "gabarit"; reason: string | null } = {
+    mode: "gabarit",
+    reason: null,
+  };
+  let infosManquantes: string[] = [];
   const memo = await caseMemo(supabase, c.id);
   // Socle juridique (récupération serveur, mis en cache par type) : articles +
   // arrêts réels fournis au rédacteur. Volet « récupération » du mode hybride.
@@ -219,7 +243,7 @@ export async function generateLetter(
   try {
     if (useLena) {
       const ctx = await buildCaseContext(supabase, c.id);
-      const { data: m } = await runAgent({
+      const { data: m, simulated } = await runAgent({
         key: "lena",
         input: {
           consigne:
@@ -255,26 +279,38 @@ export async function generateLetter(
         simulation: { subject: tpl.subject, body_md: tpl.body, griefs: [] },
         organizationId: org.orgId,
         caseId: c.id,
-        maxTokens: 1500,
+        maxTokens: 2000,
       });
-      if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
+      if (simulated) {
+        redaction = { mode: "simulation", reason: "clé du modèle non configurée (run simulé)" };
+      } else if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
         subject = tpl.subject;
         body = tpl.body;
+        redaction = { mode: "gabarit", reason: "garde-fou anti-conseil : proposition écartée" };
       } else {
         subject = m.subject?.trim() || tpl.subject;
         body = m.body_md?.trim() || tpl.body;
         griefsCount = m.griefs?.length ?? 0;
+        redaction = { mode: "agent", reason: null };
       }
     } else if (useBasile) {
       const ctx = await buildCaseContext(supabase, c.id);
-      const { data: m } = await runAgent({
+      const { data: m, simulated } = await runAgent({
         key: "basile",
         input: {
           consigne:
-            "Rédige le BROUILLON de ce courrier adressé à l'administration. Qualifie d'abord la démarche (recours gracieux, hiérarchique, réclamation, rectification après décision de justice, relance après silence) à partir du dossier, puis rédige : identification du demandeur, références du dossier, exposé des faits daté, demande expresse, motivation, pièces jointes numérotées. Appuie-toi sur le socle_juridique fourni et cherche les textes propres au cas via les outils (Légifrance, justice administrative, Service-Public). Renseigne AUSSI destinataires_suggeres : la ou les autorités compétentes à saisir (le NOM du service, pas d'adresse — l'adresse officielle est récupérée séparément) avec le motif de chacune. S'il y a une voie principale et une copie utile (ex. autorité compétente + juridiction en cas de rejet), liste-les." +
+            "Rédige le courrier COMPLET et PRÊT À POSTER adressé à l'administration — le niveau d'exigence d'un excellent rédacteur administratif. Qualifie d'abord la démarche (recours gracieux, hiérarchique, réclamation, rectification après décision de justice, relance après silence), puis rédige intégralement : rappel des références du dossier, exposé des faits COMPLET et daté (reprends le récit et les faits fournis, dans l'ordre chronologique, sans en omettre), motivation juridique appuyée sur le socle_juridique et les outils (cite chaque fondement et explique en une phrase pourquoi il s'applique aux faits), demande expresse et précise (ce qui doit être retiré, restitué, rectifié), énumération numérotée des pièces jointes (reprends les pièces fournies), mention du délai de réponse attendu et des suites envisagées à défaut (factuel, jamais menaçant). " +
+            "INTERDIT ABSOLU : aucun crochet [à préciser] ni champ à trous dans le corps — si une donnée indispensable manque au dossier, rédige la phrase sans elle et liste-la dans informations_manquantes (l'utilisateur complètera avant envoi). " +
+            "Renseigne AUSSI destinataires_suggeres : la ou les autorités compétentes à saisir (le NOM exact du service, pas d'adresse — l'adresse officielle est récupérée séparément) avec le motif de chacune ; s'il y a une voie principale et une copie utile (ex. autorité compétente + juridiction en cas de rejet), liste-les." +
             groundingRule +
-            " Réponds en JSON { subject, body_md, demarche, references_utilisees:[{reference, intitule, source, verifie}], destinataires_suggeres:[{nom, motif}] }.",
+            " Réponds en JSON { subject, body_md, demarche, references_utilisees:[{reference, intitule, source, verifie}], destinataires_suggeres:[{nom, motif}], informations_manquantes:[string] }.",
           contexte_dossier: memo,
+          recit: ctx?.summaryMd ?? null,
+          faits_extraits: (ctx?.facts ?? []).map((f) => ({
+            champ: f.label,
+            valeur: f.value,
+            corrige_par_utilisateur: f.corrected,
+          })),
           socle_juridique: socle,
           type: LETTER_KINDS[kind].label,
           palier: LETTER_PALIER[kind] ?? 0,
@@ -283,10 +319,13 @@ export async function generateLetter(
           destinataire_a_determiner:
             !c.debtor_name || c.debtor_name === "Administration à déterminer",
           montant_en_jeu: c.amount_claimed_cents ? `${euros(c.amount_claimed_cents)} €` : null,
-          pieces: (ctx?.documents ?? []).map((d) => ({ nom: d.fileName, type: d.docKind })),
+          pieces: (ctx?.documents ?? []).map((d) => ({
+            nom: d.fileName,
+            type: d.docKind,
+            resume: d.summary,
+          })),
           chronologie: (ctx?.timeline ?? []).map((t) => ({ date: t.date, evenement: t.title })),
           expediteur: org.orgName,
-          gabarit: tpl.body,
         },
         schema: z.object({
           subject: z.string().min(3).max(200),
@@ -305,6 +344,7 @@ export async function generateLetter(
           destinataires_suggeres: z
             .array(z.object({ nom: z.string(), motif: z.string().default("") }))
             .default([]),
+          informations_manquantes: z.array(z.string()).default([]),
         }),
         simulation: {
           subject: tpl.subject,
@@ -312,18 +352,24 @@ export async function generateLetter(
           demarche: "",
           references_utilisees: [],
           destinataires_suggeres: [],
+          informations_manquantes: [],
         },
         organizationId: org.orgId,
         caseId: c.id,
-        maxTokens: 1800,
+        maxTokens: 2600,
       });
-      if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
+      if (simulated) {
+        redaction = { mode: "simulation", reason: "clé du modèle non configurée (run simulé)" };
+      } else if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
         subject = tpl.subject;
         body = tpl.body;
+        redaction = { mode: "gabarit", reason: "garde-fou anti-conseil : proposition écartée" };
       } else {
         subject = m.subject?.trim() || tpl.subject;
         body = m.body_md?.trim() || tpl.body;
         adminRefs = (m.references_utilisees ?? []).filter((r) => r.reference.trim());
+        infosManquantes = (m.informations_manquantes ?? []).filter((s) => s.trim()).slice(0, 6);
+        redaction = { mode: "agent", reason: null };
       }
       // Destinataires proposés par l'agent → résolus en adresses RÉELLES via
       // l'annuaire officiel (Basile ne rédige jamais une adresse). Anti-doublon
@@ -345,7 +391,7 @@ export async function generateLetter(
         });
       }
     } else {
-      const { data: m } = await runAgent({
+      const { data: m, simulated } = await runAgent({
         key: "marius",
         input: {
           consigne:
@@ -368,20 +414,29 @@ export async function generateLetter(
         simulation: { subject: tpl.subject, body_md: tpl.body },
         organizationId: org.orgId,
         caseId: c.id,
-        maxTokens: 1200,
+        maxTokens: 1800,
       });
       // Garde-fou #2 : conseil/pronostic dans le sujet ou le corps → on garde le
       // gabarit conforme (le courrier part au nom de l'utilisateur).
-      if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
+      if (simulated) {
+        redaction = { mode: "simulation", reason: "clé du modèle non configurée (run simulé)" };
+      } else if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
         subject = tpl.subject;
         body = tpl.body;
+        redaction = { mode: "gabarit", reason: "garde-fou anti-conseil : proposition écartée" };
       } else {
         subject = m.subject?.trim() || tpl.subject;
         body = m.body_md?.trim() || tpl.body;
+        redaction = { mode: "agent", reason: null };
       }
     }
-  } catch {
-    // run en erreur déjà tracé ; on garde le gabarit conforme
+  } catch (e) {
+    // run en erreur déjà tracé côté agent_runs ; on garde le gabarit conforme
+    // mais on remonte la CAUSE à l'utilisateur (fini l'échec silencieux).
+    redaction = {
+      mode: "gabarit",
+      reason: e instanceof Error ? e.message.slice(0, 160) : "run de rédaction en erreur",
+    };
   }
 
   const { data: created, error } = await supabase
@@ -406,6 +461,14 @@ export async function generateLetter(
         .map((r) => `${r.reference}${r.verifie ? " (vérifiée)" : " (à vérifier)"}`)
         .join(" ; ")}.`
     : "";
+  const infosNote = infosManquantes.length
+    ? ` Informations à compléter avant envoi : ${infosManquantes.join(" ; ")}.`
+    : "";
+  // Provenance du brouillon, tracée noir sur blanc dans la chronologie.
+  const provenance =
+    redaction.mode === "agent"
+      ? `Rédigé par ${writerName}.`
+      : `⚠️ Gabarit de secours affiché — la rédaction par ${writerName} n'a pas abouti${redaction.reason ? ` (${redaction.reason})` : ""}.`;
 
   await supabase.from("case_events").insert({
     case_id: c.id,
@@ -414,8 +477,8 @@ export async function generateLetter(
     title: `Brouillon prêt : ${LETTER_KINDS[kind].label.toLowerCase()}`,
     description:
       griefsCount > 0
-        ? `${griefsCount} grief${griefsCount > 1 ? "s" : ""} traité${griefsCount > 1 ? "s" : ""} point par point. À relire et valider avant tout envoi.`
-        : `À relire et valider avant tout envoi.${refsNote}`,
+        ? `${provenance} ${griefsCount} grief${griefsCount > 1 ? "s" : ""} traité${griefsCount > 1 ? "s" : ""} point par point. À relire et valider avant tout envoi.`
+        : `${provenance} À relire et valider avant tout envoi.${refsNote}${infosNote}`,
     source: "ai",
   });
 
@@ -452,7 +515,16 @@ export async function generateLetter(
 
   await touchCase(c.id, { type: "letter_draft", label: `Brouillon préparé : ${LETTER_KINDS[kind].label}` });
   revalidatePath(`/app/dossiers/${c.id}`);
-  return { success: "Brouillon généré.", letterId: created.id };
+  return {
+    success: "Brouillon généré.",
+    letterId: created.id,
+    notice:
+      redaction.mode === "agent"
+        ? infosManquantes.length
+          ? `Rédigé par ${writerName}. À compléter avant envoi : ${infosManquantes.join(" ; ")}.`
+          : undefined
+        : `La rédaction par ${writerName} n'a pas abouti${redaction.reason ? ` (${redaction.reason})` : ""} : un brouillon de secours conforme est affiché. Régénérez le courrier ou corrigez-le à la main.`,
+  };
 }
 
 const CHANNELS = new Set(["email", "postal"]);
@@ -480,6 +552,18 @@ function parseAddress(formData: FormData, prefix: string) {
   });
 }
 
+// Annexes cochées dans l'écran de validation : ids de pièces du dossier,
+// transmis en JSON dans un champ caché (dédupliqués, bornés).
+function parseAttachmentIds(formData: FormData): string[] | null {
+  const raw = String(formData.get("attachmentIds") ?? "[]");
+  try {
+    const parsed = z.array(z.uuid()).max(MAX_ATTACHMENTS).parse(JSON.parse(raw));
+    return [...new Set(parsed)];
+  } catch {
+    return null;
+  }
+}
+
 export async function approveAndSendLetter(
   _prev: LetterState,
   formData: FormData,
@@ -488,9 +572,11 @@ export async function approveAndSendLetter(
   const channel = String(formData.get("channel") ?? "");
   const body = String(formData.get("body") ?? "").trim();
   const toEmail = String(formData.get("toEmail") ?? "").trim();
+  const attachmentIds = parseAttachmentIds(formData);
   if (!letterId.success) return { error: "Courrier inconnu." };
   if (!CHANNELS.has(channel)) return { error: "Choisissez un mode d'envoi." };
   if (body.length < 20) return { error: "Le contenu du courrier est vide." };
+  if (attachmentIds === null) return { error: "Sélection d'annexes invalide." };
   // Envoi email : une adresse valide est requise (jamais devinée). Vérifié AVANT
   // le log d'approbation pour ne pas graver une validation inexploitable.
   if (channel === "email" && !EMAIL_RE.test(toEmail)) {
@@ -525,6 +611,37 @@ export async function approveAndSendLetter(
   if (!letter) return { error: "Courrier introuvable." };
   if (letter.status === "sent") return { error: "Ce courrier a déjà été envoyé." };
 
+  // Annexes : chargées, vérifiées (appartenance au dossier, formats, poids) et
+  // hachées AVANT le log d'approbation — même principe que l'email/l'adresse :
+  // on ne grave jamais une validation inexploitable, et la preuve gravée liste
+  // exactement les fichiers qui partent (sha256 pièce par pièce).
+  let attachments: LoadedAttachment[] = [];
+  if (attachmentIds.length > 0) {
+    const loaded = await loadCaseAttachments(supabase, letter.case_id, attachmentIds);
+    if ("error" in loaded) return { error: loaded.error };
+    attachments = loaded.attachments;
+    if (channel === "postal") {
+      const bad = attachments.filter((a) => !postalAttachable(a.mimeType));
+      if (bad.length > 0) {
+        return {
+          error: `Annexe${bad.length > 1 ? "s" : ""} non imprimable${bad.length > 1 ? "s" : ""} en recommandé : ${bad
+            .map((b) => b.fileName)
+            .join(", ")}. Retirez-la de la sélection ou envoyez par email.`,
+        };
+      }
+    }
+    if (channel === "email") {
+      const total = attachments.reduce((sum, a) => sum + a.sizeBytes, 0);
+      if (total > EMAIL_ATTACHMENTS_MAX_BYTES) {
+        return {
+          error:
+            "Annexes trop lourdes pour un email (25 Mo maximum au total). Retirez-en ou envoyez par lettre recommandée.",
+        };
+      }
+    }
+  }
+  const snapshots = attachmentSnapshots(attachments);
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -543,6 +660,8 @@ export async function approveAndSendLetter(
     channel,
     ip: h.get("x-forwarded-for")?.split(",")[0]?.trim() || null,
     user_agent: h.get("user-agent")?.slice(0, 300) || null,
+    // La preuve couvre AUSSI les annexes : nom + sha256 de chaque fichier joint.
+    ...(snapshots.length > 0 ? { attachments: snapshots } : {}),
   });
   if (logErr) return { error: "Impossible d'enregistrer votre validation." };
 
@@ -557,6 +676,7 @@ export async function approveAndSendLetter(
     toAddress,
     fromAddress,
     reference: letter.id,
+    attachments,
   });
   const reallySent = dispatch.status === "sent";
 
@@ -570,6 +690,7 @@ export async function approveAndSendLetter(
       channel,
       to_email: channel === "email" ? toEmail : null,
       to_address: toAddress,
+      ...(snapshots.length > 0 ? { attachments: snapshots } : {}),
       postal_envoi_id: reallySent && dispatch.via === "postal" ? dispatch.ref : null,
       status: "sent",
       approved_by: user?.id ?? null,
@@ -592,6 +713,12 @@ export async function approveAndSendLetter(
     }
   }
 
+  const annexesNote =
+    attachments.length > 0
+      ? ` ${attachments.length} annexe${attachments.length > 1 ? "s" : ""} jointe${attachments.length > 1 ? "s" : ""} : ${attachments
+          .map((a) => a.fileName)
+          .join(", ")}.`
+      : "";
   await supabase.from("case_events").insert({
     case_id: letter.case_id,
     organization_id: org.orgId,
@@ -600,8 +727,8 @@ export async function approveAndSendLetter(
       ? `Courrier envoyé (${dispatch.via === "postal" ? "recommandé" : "email"})`
       : "Courrier validé — prêt à l'envoi",
     description: reallySent
-      ? "Validation loggée (hash du contenu approuvé)."
-      : `Validation loggée (hash du contenu approuvé). Expédition réelle à activer — ${dispatch.reason}`,
+      ? `Validation loggée (hash du contenu approuvé).${annexesNote}`
+      : `Validation loggée (hash du contenu approuvé).${annexesNote} Expédition réelle à activer — ${dispatch.reason}`,
     source: "user",
   });
 
@@ -609,7 +736,9 @@ export async function approveAndSendLetter(
   revalidatePath(`/app/dossiers/${letter.case_id}`);
   return {
     success: reallySent
-      ? "Courrier validé et envoyé."
+      ? attachments.length > 0
+        ? `Courrier validé et envoyé avec ${attachments.length} annexe${attachments.length > 1 ? "s" : ""}.`
+        : "Courrier validé et envoyé."
       : "Courrier validé (hash enregistré). L'expédition réelle sera activée prochainement.",
   };
 }

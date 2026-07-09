@@ -62,6 +62,12 @@ export function GenerateLetterButtons({
           {state.error}
         </p>
       ) : null}
+      {state.notice ? (
+        <p role="status" className="flex items-start gap-2 rounded-2xl bg-amber-50 px-4 py-3 text-[13px] leading-relaxed text-amber-800 ring-1 ring-amber-200">
+          <CircleAlert className="mt-0.5 size-4 shrink-0" />
+          {state.notice}
+        </p>
+      ) : null}
       {state.success && state.letterId ? (
         <Link
           href={`?`}

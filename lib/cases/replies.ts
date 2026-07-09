@@ -126,16 +126,18 @@ export async function generateAdaptedResponse(
 
   let subject = tplSubject;
   let body = gabarit;
+  // Litige → Léna ; démarche admin → Basile ; impayé → Marius.
   const isDispute = c.case_type === "client_dispute";
+  const isAdmin = c.case_type === "admin_request";
   const memo = await caseMemo(supabase, c.id);
   try {
     const { data: m } = await runAgent({
-      key: isDispute ? "lena" : "marius",
+      key: isDispute ? "lena" : isAdmin ? "basile" : "marius",
       input: {
         consigne:
-          "Rédige une réponse au message reçu, point par point sur les seuls faits et pièces du dossier (respecte les règles de ton rôle). Réponds en JSON { subject, body_md }.",
+          "Rédige une réponse au message reçu, point par point sur les seuls faits et pièces du dossier (respecte les règles de ton rôle). Réponse complète, sans crochet ni champ à trous. Réponds en JSON { subject, body_md }.",
         contexte_dossier: memo,
-        type: "Réponse à un message du débiteur",
+        type: isAdmin ? "Réponse à un courrier de l'administration" : "Réponse à un message du débiteur",
         destinataire: c.debtor_name,
         montant_reclame: c.amount_claimed_cents ? `${euros(c.amount_claimed_cents)} €` : null,
         message_recu: reply.body_text.slice(0, 4000),
@@ -147,7 +149,7 @@ export async function generateAdaptedResponse(
       simulation: { subject: tplSubject, body_md: gabarit },
       organizationId: org.orgId,
       caseId: c.id,
-      maxTokens: 1200,
+      maxTokens: 1800,
     });
     // Garde-fou #2 : conseil/pronostic → on garde le gabarit conforme.
     if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {

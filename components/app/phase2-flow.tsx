@@ -8,6 +8,7 @@ import { recordDebtorReply, generateAdaptedResponse, type ReplyState } from "@/l
 import { escalateCase, type EscState } from "@/lib/cases/escalation";
 import { GenerateLetterButtons } from "@/components/app/letters";
 import { ReviewLetter, type AddressDefaults, type SuggestedRecipient } from "@/components/app/review-letter";
+import type { AttachableDoc } from "@/lib/courrier/attachment-rules";
 
 const INITIAL: ReplyState = {};
 
@@ -38,6 +39,7 @@ export function Phase2Flow({
   defaultToAddress = null,
   defaultFromAddress = null,
   suggestedRecipients = [],
+  documents = [],
 }: {
   caseId: string;
   caseType: string;
@@ -49,6 +51,8 @@ export function Phase2Flow({
   defaultToAddress?: AddressDefaults;
   defaultFromAddress?: AddressDefaults;
   suggestedRecipients?: SuggestedRecipient[];
+  /** Pièces du dossier proposées en annexes dans l'écran de validation. */
+  documents?: AttachableDoc[];
 }) {
   const [replyState, replyAction, replyPending] = useActionState(recordDebtorReply, INITIAL);
   const [adaptState, adaptAction, adaptPending] = useActionState(generateAdaptedResponse, INITIAL);
@@ -75,6 +79,7 @@ export function Phase2Flow({
             defaultToAddress={defaultToAddress}
             defaultFromAddress={defaultFromAddress}
             suggestedRecipients={suggestedRecipients}
+            documents={documents}
           />
         </div>
       </section>

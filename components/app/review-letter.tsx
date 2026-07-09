@@ -3,15 +3,26 @@
 import { useActionState, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
+  Check,
   CircleAlert,
   CircleCheck,
+  FileText,
+  Image as ImageIcon,
   Landmark,
   LoaderCircle,
   Mail,
+  Paperclip,
   ShieldCheck,
   Stamp,
 } from "lucide-react";
 import { approveAndSendLetter, type LetterState } from "@/lib/cases/letters";
+import {
+  postalAttachable,
+  EMAIL_ATTACHMENTS_MAX_BYTES,
+  MAX_ATTACHMENTS,
+  type AttachableDoc,
+} from "@/lib/courrier/attachment-rules";
+import { fileSize } from "@/lib/format";
 
 const INITIAL: LetterState = {};
 
@@ -39,6 +50,7 @@ export function ReviewLetter({
   defaultToAddress = null,
   defaultFromAddress = null,
   suggestedRecipients = [],
+  documents = [],
 }: {
   letter: {
     id: string;
@@ -59,6 +71,8 @@ export function ReviewLetter({
   defaultFromAddress?: AddressDefaults;
   /** Destinataires proposés par Basile (démarche admin) : choix en un clic. */
   suggestedRecipients?: SuggestedRecipient[];
+  /** Pièces du dossier proposées en annexes (rien n'est joint sans sélection). */
+  documents?: AttachableDoc[];
 }) {
   const router = useRouter();
   const [state, action, pending] = useActionState(
@@ -79,6 +93,14 @@ export function ReviewLetter({
   const [toEmail, setToEmail] = useState(defaultEmail);
   const [toAddr, setToAddr] = useState<AddrState>(() => toAddrState(defaultToAddress));
   const [fromAddr, setFromAddr] = useState<AddrState>(() => toAddrState(defaultFromAddress));
+  // Annexes cochées (opt-in : rien ne part sans geste explicite). Une pièce non
+  // imprimable reste cochée en mémoire mais est exclue tant que le canal est
+  // « recommandé » — elle se réactive d'elle-même en repassant à l'email.
+  const [attached, setAttached] = useState<Set<string>>(new Set());
+  const joinable = (d: AttachableDoc) => channel === "email" || postalAttachable(d.mimeType);
+  const joined = documents.filter((d) => attached.has(d.id) && joinable(d));
+  const joinedBytes = joined.reduce((sum, d) => sum + d.sizeBytes, 0);
+  const attachTooHeavy = channel === "email" && joinedBytes > EMAIL_ATTACHMENTS_MAX_BYTES;
   const sent = letter.status === "sent";
   const wrap = embedded ? "" : "rounded-[1.75rem] border bg-card p-6 sm:p-7";
 
@@ -114,6 +136,7 @@ export function ReviewLetter({
       <input type="hidden" name="channel" value={channel} />
       <input type="hidden" name="body" value={body} />
       <input type="hidden" name="toEmail" value={channel === "email" ? toEmail : ""} />
+      <input type="hidden" name="attachmentIds" value={JSON.stringify(joined.map((d) => d.id))} />
 
       <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
         Objet
@@ -228,16 +251,29 @@ export function ReviewLetter({
         </div>
       )}
 
+      {documents.length > 0 ? (
+        <AttachmentPicker
+          documents={documents}
+          channel={channel}
+          attached={attached}
+          onChange={setAttached}
+          joined={joined}
+          joinedBytes={joinedBytes}
+          tooHeavy={attachTooHeavy}
+        />
+      ) : null}
+
       <p className="mt-5 rounded-2xl bg-amber-50 px-4 py-3 text-[13px] leading-relaxed text-amber-800 ring-1 ring-amber-200">
         Le courrier est envoyé <b>en votre nom</b>, jamais au nom de BLEME. En
-        validant, vous confirmez avoir relu le contenu. Rien n’est envoyé sans
-        cette validation.
+        validant, vous confirmez avoir relu le contenu
+        {joined.length > 1 ? ` et les ${joined.length} annexes jointes` : joined.length === 1 ? " et l’annexe jointe" : ""}.
+        Rien n’est envoyé sans cette validation.
       </p>
 
       <div className="mt-5 flex flex-wrap items-center gap-4">
         <button
           type="submit"
-          disabled={pending}
+          disabled={pending || attachTooHeavy}
           className="inline-flex items-center gap-2 rounded-full bg-brand px-5 py-2.5 text-sm font-medium text-brand-foreground transition-all duration-300 hover:bg-brand-strong active:scale-[0.98] disabled:opacity-60"
         >
           {pending ? <LoaderCircle className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
@@ -257,6 +293,154 @@ export function ReviewLetter({
         ) : null}
       </div>
     </form>
+  );
+}
+
+function attachmentIcon(mime: string) {
+  if (mime.startsWith("image/")) return ImageIcon;
+  if (mime === "message/rfc822") return Mail;
+  return FileText;
+}
+
+/**
+ * Tableau de sélection des annexes : chaque pièce du dossier se coche ou se
+ * refuse individuellement (opt-in — rien n'est joint par défaut). En
+ * recommandé, seuls PDF et images s'impriment : le reste est grisé avec la
+ * raison. Le total (nombre + poids) est récapitulé, et un email trop lourd
+ * bloque l'envoi avant toute validation.
+ */
+function AttachmentPicker({
+  documents,
+  channel,
+  attached,
+  onChange,
+  joined,
+  joinedBytes,
+  tooHeavy,
+}: {
+  documents: AttachableDoc[];
+  channel: "email" | "postal";
+  attached: Set<string>;
+  onChange: (next: Set<string>) => void;
+  joined: AttachableDoc[];
+  joinedBytes: number;
+  tooHeavy: boolean;
+}) {
+  const joinable = (d: AttachableDoc) => channel === "email" || postalAttachable(d.mimeType);
+  const selectable = documents.filter(joinable);
+  const full = joined.length >= MAX_ATTACHMENTS;
+  const allJoined = selectable.length > 0 && selectable.every((d) => attached.has(d.id));
+
+  const toggle = (id: string) => {
+    const next = new Set(attached);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    onChange(next);
+  };
+  const toggleAll = () => {
+    const next = new Set(attached);
+    if (allJoined) selectable.forEach((d) => next.delete(d.id));
+    else selectable.slice(0, MAX_ATTACHMENTS).forEach((d) => next.add(d.id));
+    onChange(next);
+  };
+
+  return (
+    <div className="mt-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-2 text-sm font-medium">
+          <Paperclip className="size-4 text-brand-strong" />
+          Annexes du dossier
+        </p>
+        {selectable.length > 1 ? (
+          <button
+            type="button"
+            onClick={toggleAll}
+            className="text-xs font-medium text-brand-strong transition-colors hover:text-brand"
+          >
+            {allJoined ? "Tout retirer" : "Tout joindre"}
+          </button>
+        ) : null}
+      </div>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        {channel === "postal"
+          ? "Les pièces cochées sont imprimées à la suite de la lettre recommandée."
+          : "Les pièces cochées partent en pièces jointes de l’email."}
+      </p>
+
+      <div className="mt-2 overflow-hidden rounded-2xl border">
+        {documents.map((d) => {
+          const Icon = attachmentIcon(d.mimeType);
+          const printable = joinable(d);
+          const checked = attached.has(d.id) && printable;
+          const locked = !printable || (!checked && full);
+          return (
+            <label
+              key={d.id}
+              className={`flex items-center gap-3 border-b px-4 py-3 transition-colors last:border-b-0 ${
+                locked
+                  ? "cursor-not-allowed opacity-55"
+                  : checked
+                    ? "cursor-pointer bg-brand-soft/40"
+                    : "cursor-pointer hover:bg-muted/40"
+              }`}
+            >
+              <input
+                type="checkbox"
+                className="peer sr-only"
+                checked={checked}
+                disabled={locked}
+                onChange={() => toggle(d.id)}
+                aria-label={`Joindre ${d.fileName}`}
+              />
+              <span
+                aria-hidden
+                className={`flex size-5 shrink-0 items-center justify-center rounded-md border transition-colors peer-focus-visible:ring-2 peer-focus-visible:ring-brand/50 ${
+                  checked ? "border-brand bg-brand text-brand-foreground" : "bg-background"
+                }`}
+              >
+                {checked ? <Check className="size-3.5" /> : null}
+              </span>
+              <span
+                className={`flex size-9 shrink-0 items-center justify-center rounded-xl transition-colors ${
+                  checked ? "bg-brand-soft text-brand-strong" : "bg-muted text-muted-foreground"
+                }`}
+              >
+                <Icon className="size-4" />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">{d.fileName}</span>
+                <span className="block text-xs text-muted-foreground">
+                  {d.kindLabel ? `${d.kindLabel} · ` : ""}
+                  {fileSize(d.sizeBytes)}
+                  {!printable ? " · non imprimable en recommandé (passez par email)" : ""}
+                  {printable && !checked && full ? ` · maximum ${MAX_ATTACHMENTS} annexes atteint` : ""}
+                </span>
+              </span>
+            </label>
+          );
+        })}
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t bg-muted/50 px-4 py-2.5 text-xs text-muted-foreground">
+          <span className="font-medium">
+            {joined.length === 0
+              ? "Aucune annexe jointe"
+              : `${joined.length} annexe${joined.length > 1 ? "s" : ""} jointe${joined.length > 1 ? "s" : ""} · ${fileSize(joinedBytes)}`}
+          </span>
+          <span>
+            {channel === "postal"
+              ? "Des pages en plus peuvent augmenter le coût d’affranchissement."
+              : `${fileSize(EMAIL_ATTACHMENTS_MAX_BYTES)} maximum par email.`}
+          </span>
+        </div>
+      </div>
+
+      {tooHeavy ? (
+        <p role="alert" className="mt-2 flex items-center gap-2 text-xs text-red-600">
+          <CircleAlert className="size-3.5 shrink-0" />
+          Annexes trop lourdes pour un email ({fileSize(joinedBytes)} sur{" "}
+          {fileSize(EMAIL_ATTACHMENTS_MAX_BYTES)} maximum) : retirez-en ou passez en recommandé.
+        </p>
+      ) : null}
+    </div>
   );
 }
 

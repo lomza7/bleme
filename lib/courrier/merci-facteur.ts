@@ -98,6 +98,8 @@ function mfAddress(a: LetterAddress, reference?: string): Record<string, string>
 export async function sendRegisteredLetter(input: {
   pdfBase64: string;
   filename: string;
+  /** Annexes déjà converties en PDF : imprimées à la suite de la lettre. */
+  annexesPdfBase64?: string[];
   exp: LetterAddress;
   dest: LetterAddress;
   reference: string;
@@ -120,7 +122,7 @@ export async function sendRegisteredLetter(input: {
     "content",
     JSON.stringify({
       letter: {
-        base64files: [input.pdfBase64],
+        base64files: [input.pdfBase64, ...(input.annexesPdfBase64 ?? [])],
         print_sides: "recto",
         final_filename: input.filename.slice(0, 80),
       },

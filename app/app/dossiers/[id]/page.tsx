@@ -18,6 +18,7 @@ import { serverEnv } from "@/lib/env";
 import { dateLongFr, euros } from "@/lib/format";
 import { CASE_TYPE_LABEL, STATUS_META } from "@/lib/cases/constants";
 import { checklistFor, completeness } from "@/lib/cases/completeness";
+import { toAttachableDocs } from "@/lib/courrier/attachment-rules";
 import { derivePhase, nextLetterKind } from "@/lib/cases/phases";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { dossierWarnings } from "@/lib/cases/analysis";
@@ -133,6 +134,8 @@ export default async function CaseDetailPage({
   ).filter((r) => r && typeof r.nom === "string");
 
   const docList = docs ?? [];
+  // Pièces proposées en annexes dans les écrans de validation d'envoi.
+  const attachableDocs = toAttachableDocs(docList);
   const { data: facts } = docList.length
     ? await supabase
         .from("document_extractions")
@@ -478,6 +481,7 @@ export default async function CaseDetailPage({
             defaultToAddress={defaultToAddress}
             defaultFromAddress={defaultFromAddress}
             suggestedRecipients={suggestedRecipients}
+            documents={attachableDocs}
           />
         </div>
       ) : (
@@ -590,6 +594,7 @@ export default async function CaseDetailPage({
                   defaultToAddress={defaultToAddress}
                   defaultFromAddress={defaultFromAddress}
                   suggestedRecipients={suggestedRecipients}
+                  documents={attachableDocs}
                 />
               ) : (
                 <EscalationPanel
@@ -598,6 +603,7 @@ export default async function CaseDetailPage({
                   devilReview={c.devil_review ?? null}
                   escalationSummary={c.escalation_summary_md ?? null}
                   pendingLetter={pendingLetter}
+                  documents={attachableDocs}
                 />
               )}
             </div>

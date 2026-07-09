@@ -2,7 +2,8 @@ import "server-only";
 import { serverEnv } from "@/lib/env";
 import { sendEmail } from "@/lib/services/email";
 import { sendRegisteredLetter, type LetterAddress } from "@/lib/courrier/merci-facteur";
-import { buildLetterPdf } from "@/lib/courrier/pdf";
+import { buildLetterPdf, imageToPdfBase64 } from "@/lib/courrier/pdf";
+import { postalAttachable } from "@/lib/courrier/attachment-rules";
 
 /*
  * Expédition RÉELLE d'un courrier déjà validé et loggé (approval_logs + hash,
@@ -40,6 +41,12 @@ export async function dispatchLetter(input: {
   fromAddress?: LetterAddress | null;
   /** Postal : id du courrier BLEME — référence AR, ref_interne webhook, antidoublon. */
   reference?: string | null;
+  /**
+   * Annexes approuvées AVEC le courrier (pièces du dossier déjà chargées et
+   * hachées dans approval_logs). Email : pièces jointes. Postal : PDF imprimés
+   * à la suite de la lettre (images mises en page A4).
+   */
+  attachments?: { fileName: string; mimeType: string; base64: string }[] | null;
 }): Promise<DispatchResult> {
   if (!sendEnabled()) {
     return { status: "prepared", reason: "Expédition réelle désactivée (SEND_ENABLED)." };
@@ -57,6 +64,13 @@ export async function dispatchLetter(input: {
         // Réponses du débiteur → boîte de réception BLEME du dossier (ingérées
         // par le webhook inbound), pour fermer la boucle dans le dossier.
         replyTo: input.replyTo?.trim() || undefined,
+        attachments: input.attachments?.length
+          ? input.attachments.map((a) => ({
+              filename: a.fileName,
+              content: a.base64,
+              contentType: a.mimeType,
+            }))
+          : undefined,
       });
       return { status: "sent", via: "email", ref: (res as { id?: string } | null)?.id ?? null };
     } catch (e) {
@@ -87,9 +101,25 @@ export async function dispatchLetter(input: {
       exp: input.fromAddress,
       dest: input.toAddress,
     });
+    // Annexes du pli : PDF tels quels, images mises en page A4. Les formats
+    // non imprimables sont refusés en amont (approveAndSendLetter) — ici on
+    // échoue explicitement plutôt que d'expédier un pli incomplet.
+    const annexesPdfBase64: string[] = [];
+    for (const a of input.attachments ?? []) {
+      if (!postalAttachable(a.mimeType)) {
+        return {
+          status: "prepared",
+          reason: `Annexe non imprimable en recommandé : ${a.fileName}.`,
+        };
+      }
+      annexesPdfBase64.push(
+        a.mimeType === "application/pdf" ? a.base64 : await imageToPdfBase64(a),
+      );
+    }
     const sent = await sendRegisteredLetter({
       pdfBase64,
       filename: "courrier-recommande",
+      annexesPdfBase64: annexesPdfBase64.length ? annexesPdfBase64 : undefined,
       exp: input.fromAddress,
       dest: input.toAddress,
       reference: input.reference,

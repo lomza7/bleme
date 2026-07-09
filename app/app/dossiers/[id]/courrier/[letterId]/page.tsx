@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { ReviewLetter, type AddressDefaults, type SuggestedRecipient } from "@/components/app/review-letter";
+import { toAttachableDocs } from "@/lib/courrier/attachment-rules";
 
 export const metadata: Metadata = { title: "Relire le courrier" };
 
@@ -27,12 +28,20 @@ export default async function LetterReviewPage({
     .maybeSingle();
   if (!letter) notFound();
 
-  // Préremplissage des coordonnées d'envoi (dernières saisies — corrigeables).
-  const { data: c } = await supabase
-    .from("cases")
-    .select("debtor_name, debtor_email, debtor_address, suggested_recipients, organization_id")
-    .eq("id", id)
-    .maybeSingle();
+  // Préremplissage des coordonnées d'envoi (dernières saisies — corrigeables)
+  // + pièces du dossier proposées en annexes dans l'écran de validation.
+  const [{ data: c }, { data: docs }] = await Promise.all([
+    supabase
+      .from("cases")
+      .select("debtor_name, debtor_email, debtor_address, suggested_recipients, organization_id")
+      .eq("id", id)
+      .maybeSingle(),
+    supabase
+      .from("documents")
+      .select("id, doc_kind, file_name, mime_type, size_bytes")
+      .eq("case_id", id)
+      .order("created_at", { ascending: false }),
+  ]);
   const { data: orgRow } = c
     ? await supabase
         .from("organizations")
@@ -70,6 +79,7 @@ export default async function LetterReviewPage({
           defaultToAddress={defaultToAddress}
           defaultFromAddress={defaultFromAddress}
           suggestedRecipients={suggestedRecipients}
+          documents={toAttachableDocs(docs)}
         />
       </div>
     </div>
