@@ -86,7 +86,9 @@ function buildFallbackSections(ctx: CaseContext): Record<SectionKey, string> {
       `- Montant réclamé : ${eur(ctx.amountClaimedCents)}` +
       (ctx.amountRecoveredCents > 0 ? `\n- Montant recouvré : ${eur(ctx.amountRecoveredCents)}` : ""),
     faits_chronologie: [...facts, ...timeline].join("\n"),
-    pieces: ctx.documents.map((d) => `- ${d.fileName}${d.docKind ? ` (${d.docKind})` : ""}`).join("\n"),
+    pieces: ctx.documents
+      .map((d) => `- ${d.fileName}${d.docKind ? ` (${d.docKind})` : ""}${d.summary ? ` — ${d.summary}` : ""}`)
+      .join("\n"),
     echanges: ctx.replies.slice(-5).map((r) => `- ${shortDate(r.receivedAt)} — ${r.body.slice(0, 140)}`).join("\n"),
     actions_menees: ctx.letters
       .map((l) => `- ${l.subject ?? l.kind}${l.sentAt ? ` (envoyé le ${shortDate(l.sentAt)})` : " (brouillon)"}`)

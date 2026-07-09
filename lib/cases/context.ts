@@ -48,7 +48,7 @@ export type CaseContext = {
   briefVersion: number;
   facts: CaseFact[];
   timeline: CaseTimelineItem[];
-  documents: { fileName: string; docKind: string | null; docClass: string | null }[];
+  documents: { fileName: string; docKind: string | null; docClass: string | null; summary: string | null }[];
   letters: { kind: string; status: string; subject: string | null; sentAt: string | null }[];
   replies: { receivedAt: string; via: string | null; body: string }[];
 };
@@ -70,7 +70,7 @@ export async function buildCaseContext(
   // Les pièces d'abord : les extractions y sont rattachées par document_id.
   const { data: docRows } = await sb
     .from("documents")
-    .select("id, file_name, doc_kind, doc_class")
+    .select("id, file_name, doc_kind, doc_class, summary")
     .eq("case_id", caseId);
 
   const docs = docRows ?? [];
@@ -187,6 +187,7 @@ export async function buildCaseContext(
       fileName: d.file_name,
       docKind: d.doc_kind,
       docClass: d.doc_class,
+      summary: d.summary ?? null,
     })),
     letters,
     replies,

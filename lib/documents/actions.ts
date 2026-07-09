@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { parseWhatsAppExport, pickKeyMessages } from "@/lib/whatsapp/parser";
 import { detectFacts } from "@/lib/cases/extraction";
 import { readDocumentFacts } from "@/lib/cases/vision";
@@ -239,7 +239,7 @@ export async function finalizeUpload(input: {
     // bridge, sur PDF/image). La lecture vision prime par champ (pièce réelle),
     // le texte complète les champs manquants.
     const textFacts = detectFacts(fileText, input.fileName);
-    const visionFacts = await readDocumentFacts(supabase, {
+    const { facts: visionFacts, summary: docSummary } = await readDocumentFacts(supabase, {
       storagePath: input.path,
       mime: finalMime,
       fileName: input.fileName,
@@ -247,6 +247,14 @@ export async function finalizeUpload(input: {
       caseId,
       claimedCents,
     });
+    // Résumé factuel de la pièce (ce qu'elle établit) → alimente le contexte
+    // partagé (synthèse vivante) et donc les courriers, au-delà des seuls champs.
+    if (docSummary) {
+      // Valeur calculée serveur (Nora) : écrite via le service client car
+      // public.documents n'a pas de policy UPDATE côté utilisateur (une update
+      // RLS-bloquée renverrait 0 ligne sans erreur). Scopée à ce doc de l'org.
+      await createServiceClient().from("documents").update({ summary: docSummary }).eq("id", doc.id);
+    }
     const byField = new Map<string, (typeof textFacts)[number]>();
     for (const f of textFacts) byField.set(f.field_key, f);
     for (const f of visionFacts) byField.set(f.field_key, f);

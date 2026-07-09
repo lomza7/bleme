@@ -469,7 +469,7 @@ export async function analyzeEmailForCase(input: {
   const byField = new Map<string, (typeof textFacts)[number]>();
   for (const f of textFacts) byField.set(f.field_key, f);
   for (const a of atts ?? []) {
-    const vf = await readDocumentFacts(supabase, {
+    const { facts: vf } = await readDocumentFacts(supabase, {
       storagePath: a.storage_path,
       mime: a.mime_type,
       fileName: a.file_name,

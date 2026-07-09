@@ -185,6 +185,8 @@ function eurFromCents(cents: number): string {
   return `${(cents / 100).toLocaleString("fr-FR", { minimumFractionDigits: 2 })} €`;
 }
 
+export type DocumentRead = { facts: Fact[]; summary: string | null };
+
 export async function readDocumentFacts(
   sb: SupabaseClient,
   input: {
@@ -195,13 +197,14 @@ export async function readDocumentFacts(
     caseId: string;
     claimedCents: number;
   },
-): Promise<Fact[]> {
-  if (!VISION_MIME.has(input.mime)) return [];
+): Promise<DocumentRead> {
+  const empty: DocumentRead = { facts: [], summary: null };
+  if (!VISION_MIME.has(input.mime)) return empty;
   try {
     const { data: blob } = await sb.storage.from("documents").download(input.storagePath);
-    if (!blob) return [];
+    if (!blob) return empty;
     const buf = Buffer.from(await blob.arrayBuffer());
-    if (buf.length <= 0 || buf.length > MAX_VISION_BYTES) return [];
+    if (buf.length <= 0 || buf.length > MAX_VISION_BYTES) return empty;
 
     // Nora, via le bridge Hermes, mais sur un modèle VISION OpenRouter pour CET
     // appel (le bridge route le multimodal) — aucune API directe depuis l'app.
@@ -216,10 +219,13 @@ export async function readDocumentFacts(
           '{valeur, confiance, extrait} : {"montant_cents":{"valeur":<entier centimes ou null>,"confiance":<0-1>,"extrait":<texte lu ou null>}, ' +
           '"date_iso":{"valeur":<"AAAA-MM-JJ" ou null>,"confiance":<0-1>,"extrait":...}, ' +
           '"numero_facture":{"valeur":<texte ou null>,"confiance":<0-1>,"extrait":...}, ' +
-          '"emetteur":{"valeur":<nom du créancier ou null>,"confiance":<0-1>,"extrait":...}, ' +
-          '"destinataire":{"valeur":<nom du débiteur ou null>,"confiance":<0-1>,"extrait":...}}. ' +
+          '"resume":<1 à 3 phrases FACTUELLES décrivant ce que cette pièce ÉTABLIT : nature, prestation/objet, ' +
+          "dates clés, échéance, mentions notables (pénalités, conditions), et tout élément utile qu'un simple " +
+          'récit oral ne dirait pas — SANS interprétation juridique ni pronostic, uniquement ce qui est écrit>, ' +
+          '"emetteur":{"valeur":<NOM ou raison sociale du créancier SEUL, sans son adresse ni ses coordonnées>,"confiance":<0-1>,"extrait":<court>}, ' +
+          '"destinataire":{"valeur":<NOM du débiteur SEUL, sans son adresse>,"confiance":<0-1>,"extrait":<court>}}. ' +
           "montant_cents = montant total TTC en CENTIMES (ex. 252,00 € → 25200). " +
-          "confiance = ta certitude réelle entre 0 et 1. extrait = le texte exact d'où vient la valeur. " +
+          "confiance = ta certitude réelle entre 0 et 1. extrait = un COURT extrait (max ~40 caractères). " +
           "Mets valeur:null pour tout champ non lisible. Aucun texte autour du JSON.",
         nom_fichier: input.fileName,
         // Anti-ancrage (pilier #3) : la lecture vision est AVEUGLE au montant
@@ -235,7 +241,9 @@ export async function readDocumentFacts(
       // flash-lite) : lecture plus fiable des factures/devis, coût borné (1
       // lecture par pièce). Reste OFF du MOA (la branche MOA ignore attachments).
       modelOverride: "google/gemini-2.5-flash",
-      maxTokens: 500,
+      // Sortie enrichie (5 champs {valeur,confiance,extrait} + résumé) : il faut
+      // de la marge, sinon le JSON est tronqué et le résumé (dernière clé) saute.
+      maxTokens: 1400,
     });
 
     // Normalisation tolérante (imbrication, valeurs enveloppées, alias de clés).
@@ -305,8 +313,21 @@ export async function readDocumentFacts(
         source_excerpt: excerpt(destinataireF),
       });
     }
-    return facts;
+    const resumeRaw = toText(pick2(src, ["resume", "résumé", "summary"]));
+    const summary = resumeRaw && resumeRaw.length > 10 ? resumeRaw.slice(0, 800) : null;
+    return { facts, summary };
   } catch {
-    return [];
+    return { facts: [], summary: null };
   }
+}
+
+/** pick simple (valeur déballée) pour un champ scalaire comme le résumé. */
+function pick2(src: Record<string, unknown>, keys: string[]): unknown {
+  for (const k of keys) {
+    if (k in src) {
+      const v = unwrap(src[k]);
+      if (v !== null && v !== undefined && v !== "") return v;
+    }
+  }
+  return null;
 }
