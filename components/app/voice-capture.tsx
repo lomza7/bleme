@@ -23,9 +23,15 @@ function pickMime(): string {
 export function VoiceCapture({
   value,
   onChange,
+  transcriber,
+  light = true,
 }: {
   value: string;
   onChange: (text: string) => void;
+  /** Transcripteur injecté (anonyme via /api/voice/transcribe) ; défaut authentifié. */
+  transcriber?: (blob: Blob) => Promise<{ transcript?: string; error?: string }>;
+  /** true = fond clair (app), false = tunnel sombre (acquisition). */
+  light?: boolean;
 }) {
   const [state, setState] = useState<State>(value.trim() ? "manual" : "idle");
   const [seconds, setSeconds] = useState(0);
@@ -57,7 +63,12 @@ export function VoiceCapture({
       streamRef.current = stream;
       const mime = pickMime();
       chunksRef.current = [];
-      const rec = new MediaRecorder(stream, MediaRecorder.isTypeSupported(mime) ? { mimeType: mime } : undefined);
+      // Débit borné (32 kbps) : ~2 Mo pour 8 min → sous la limite de corps Vercel
+      // (~4,5 Mo) pour la transcription anonyme, sans surcoût de qualité pour de la parole.
+      const rec = new MediaRecorder(stream, {
+        ...(MediaRecorder.isTypeSupported(mime) ? { mimeType: mime } : {}),
+        audioBitsPerSecond: 32000,
+      });
       recRef.current = rec;
       rec.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
@@ -71,7 +82,14 @@ export function VoiceCapture({
       rec.start();
       setSeconds(0);
       setNote(null);
-      timerRef.current = setInterval(() => setSeconds((s) => s + 1), 1000);
+      // Arrêt auto à 8 min : garde-fou de taille + on ne demande pas un roman.
+      timerRef.current = setInterval(() => {
+        setSeconds((s) => {
+          const n = s + 1;
+          if (n >= 480 && recRef.current?.state === "recording") recRef.current.stop();
+          return n;
+        });
+      }, 1000);
       setState("recording");
     } catch {
       setNote("Micro indisponible. Écrivez votre récit ci-dessous.");
@@ -91,6 +109,16 @@ export function VoiceCapture({
     setState("idle");
   }
 
+  // Thème : clair (app) vs sombre (tunnel d'acquisition).
+  const cardCls = light ? "border bg-background" : "border border-white/10 bg-white/[0.06]";
+  const mutedCls = light ? "text-muted-foreground" : "text-ink-muted";
+  const linkCls = light
+    ? "text-muted-foreground hover:text-foreground"
+    : "text-ink-muted hover:text-ink-foreground";
+  const fieldCls = light
+    ? "border bg-background"
+    : "border border-white/10 bg-white/[0.06] text-ink-foreground placeholder:text-ink-muted/60";
+
   const view = (() => {
     if (state === "idle") {
       return (
@@ -98,18 +126,18 @@ export function VoiceCapture({
           <button
             type="button"
             onClick={start}
-            className="group flex w-full flex-col items-center gap-4 rounded-[1.5rem] border bg-background px-8 py-10 text-center transition-all duration-300 hover:border-brand/50 hover:bg-brand-soft/30"
+            className={`group flex w-full flex-col items-center gap-4 rounded-[1.5rem] px-8 py-10 text-center transition-all duration-300 hover:border-brand/50 ${cardCls}`}
           >
             <span className="relative flex size-16 items-center justify-center rounded-full bg-brand text-brand-foreground transition-transform duration-300 group-hover:scale-105">
               <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-brand/40 [animation-duration:2.2s] motion-reduce:hidden" />
               <Mic className="relative size-7" />
             </span>
             <span className="font-semibold">Appuyez et racontez votre blème</span>
-            <span className="max-w-sm text-sm leading-relaxed text-muted-foreground">
+            <span className={`max-w-sm text-sm leading-relaxed ${mutedCls}`}>
               Comme à un ami, 2 à 5 minutes. Nora transcrit tout, vous relisez ensuite.
             </span>
           </button>
-          <button type="button" onClick={() => setState("manual")} className="inline-flex items-center gap-2 self-start text-sm text-muted-foreground transition-colors hover:text-foreground">
+          <button type="button" onClick={() => setState("manual")} className={`inline-flex items-center gap-2 self-start text-sm transition-colors ${linkCls}`}>
             <PenLine className="size-4" />
             Je préfère écrire
           </button>
@@ -119,7 +147,7 @@ export function VoiceCapture({
 
     if (state === "recording") {
       return (
-        <div className="rounded-[1.5rem] border bg-card p-6">
+        <div className={`rounded-[1.5rem] p-6 ${cardCls}`}>
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <span className="relative flex size-3">
@@ -127,14 +155,14 @@ export function VoiceCapture({
                 <span className="relative inline-flex size-3 rounded-full bg-brand" />
               </span>
               <span className="font-mono text-2xl font-semibold tabular-nums">{fmt(seconds)}</span>
-              <span className="text-sm text-muted-foreground">enregistrement…</span>
+              <span className={`text-sm ${mutedCls}`}>enregistrement…</span>
             </div>
             <button type="button" onClick={stop} className="inline-flex items-center gap-2 rounded-full bg-brand px-5 py-2.5 text-sm font-medium text-brand-foreground transition-all duration-300 hover:bg-brand-strong active:scale-[0.98]">
               <Square className="size-3.5" />
               J’ai terminé
             </button>
           </div>
-          <p className="mt-4 text-sm text-muted-foreground">Le contexte, les dates, les montants, où ça bloque. Plus vous en dites, plus le dossier est solide.</p>
+          <p className={`mt-4 text-sm ${mutedCls}`}>Le contexte, les dates, les montants, où ça bloque. Plus vous en dites, plus le dossier est solide.</p>
         </div>
       );
     }
@@ -150,7 +178,7 @@ export function VoiceCapture({
               </span>
               Transcrit — relisez et corrigez, votre version fait foi.
             </p>
-            <button type="button" onClick={restart} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground">
+            <button type="button" onClick={restart} className={`inline-flex items-center gap-1.5 text-sm transition-colors ${linkCls}`}>
               <RotateCcw className="size-3.5" />
               Réenregistrer
             </button>
@@ -168,10 +196,10 @@ export function VoiceCapture({
           value={text}
           onChange={(e) => setStory(e.target.value)}
           placeholder="La mission ou le chantier, ce qui était convenu, ce qui s’est passé, où ça bloque…"
-          className="w-full rounded-2xl border bg-background p-4 text-sm leading-relaxed outline-none transition-colors focus:border-brand"
+          className={`w-full rounded-2xl p-4 text-sm leading-relaxed outline-none transition-colors focus:border-brand ${fieldCls}`}
         />
         {state === "manual" ? (
-          <button type="button" onClick={restart} className="inline-flex items-center gap-2 self-start text-sm text-muted-foreground transition-colors hover:text-foreground">
+          <button type="button" onClick={restart} className={`inline-flex items-center gap-2 self-start text-sm transition-colors ${linkCls}`}>
             <Mic className="size-4" />
             Enregistrer à la voix plutôt
           </button>
@@ -186,6 +214,7 @@ export function VoiceCapture({
       {blob ? (
         <TranscriptionModal
           blob={blob}
+          transcriber={transcriber}
           onValidate={(t) => {
             setStory(t);
             setState("ready");

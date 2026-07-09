@@ -67,11 +67,8 @@ export async function createCaseFromDraft(
   const amountCents = parseAmountToCents(d.amount);
 
   const summaryParts: string[] = [];
-  if (d.storyMode === "voice" && d.storySeconds > 0) {
-    summaryParts.push(
-      `Récit vocal enregistré (${Math.round(d.storySeconds / 60)} min) : l’analyse IA arrive dans une prochaine version.`,
-    );
-  }
+  // Le récit (dicté → transcrit, ou écrit) arrive toujours en texte : on l'utilise
+  // tel quel (plus de placeholder « analyse à venir »).
   if (d.storyText.trim()) summaryParts.push(d.storyText.trim());
   if (isUnpaid && d.age) summaryParts.push(`Impayé depuis : ${d.age.toLowerCase()}.`);
   if (!isUnpaid && d.subject) summaryParts.push(`Objet du litige : ${d.subject}. Où ça en est : ${d.stage || "non précisé"}.`);
@@ -125,7 +122,7 @@ export async function createCaseFromDraft(
       organization_id: org.orgId,
       event_type: "created",
       title: "Dossier créé depuis votre récit",
-      description: d.storyMode === "voice" ? "Récit vocal enregistré." : "Récit écrit enregistré.",
+      description: "Récit enregistré.",
       source: "user",
     },
     ...(d.devilAnswer.trim()

@@ -15,16 +15,32 @@ type Phase = "working" | "reveal" | "error";
  * STT), puis ÉCRIT le récit à toute vitesse (effet machine à écrire), et on
  * valide. Rappel : le transcript reste modifiable à l'écrit ensuite.
  */
+/** Transcripteur authentifié par défaut : dépôt Storage (URL signée) + STT serveur. */
+async function authedTranscribe(blob: Blob): Promise<{ transcript?: string; error?: string }> {
+  const prep = await prepareVoiceUpload();
+  if (prep.error || !prep.path || !prep.token) return { error: prep.error ?? "Envoi impossible." };
+  const supabase = createClient();
+  const { error: upErr } = await supabase.storage
+    .from("documents")
+    .uploadToSignedUrl(prep.path, prep.token, blob, { contentType: blob.type });
+  if (upErr) return { error: "Envoi de l’audio impossible." };
+  const res = await transcribeVoice(prep.path);
+  return { transcript: res.transcript, error: res.error };
+}
+
 export function TranscriptionModal({
   blob,
   onValidate,
   onManual,
   onRetry,
+  transcriber,
 }: {
   blob: Blob;
   onValidate: (text: string) => void;
   onManual: (note: string) => void;
   onRetry: () => void;
+  /** Transcripteur injecté (ex. anonyme via /api/voice/transcribe). Défaut : authentifié. */
+  transcriber?: (blob: Blob) => Promise<{ transcript?: string; error?: string }>;
 }) {
   const reduce = useReducedMotion();
   const [phase, setPhase] = useState<Phase>("working");
@@ -40,34 +56,30 @@ export function TranscriptionModal({
     started.current = true;
     (async () => {
       try {
-        const prep = await prepareVoiceUpload();
-        if (prep.error || !prep.path || !prep.token) {
-          setErrMsg(prep.error ?? "Envoi impossible.");
-          return setPhase("error");
-        }
-        const supabase = createClient();
-        const { error: upErr } = await supabase.storage
-          .from("documents")
-          .uploadToSignedUrl(prep.path, prep.token, blob, { contentType: blob.type });
-        if (upErr) {
-          setErrMsg("Envoi de l’audio impossible.");
-          return setPhase("error");
-        }
-        const res = await transcribeVoice(prep.path);
+        const run = transcriber ?? authedTranscribe;
+        const res = await run(blob);
         if (res.transcript) {
           setFull(res.transcript);
           setEdited(res.transcript);
           setPhase("reveal");
           return;
         }
-        setErrMsg(res.error === "no_provider" ? "La transcription n’est pas encore activée." : "La transcription a échoué.");
+        setErrMsg(
+          res.error === "no_provider"
+            ? "La transcription n’est pas encore activée."
+            : res.error === "rate_limited"
+              ? "Trop d’essais pour l’instant — écrivez votre récit ci-dessous."
+              : res.error === "too_large"
+                ? "Enregistrement trop long — reprenez plus court, ou écrivez votre récit."
+                : "La transcription a échoué.",
+        );
         setPhase("error");
       } catch {
         setErrMsg("Une erreur est survenue.");
         setPhase("error");
       }
     })();
-  }, [blob]);
+  }, [blob, transcriber]);
 
   // Effet « machine à écrire » très rapide.
   useEffect(() => {

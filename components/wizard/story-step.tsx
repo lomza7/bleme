@@ -1,9 +1,10 @@
 "use client";
 
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { ArrowRight, PenLine, ShieldQuestion } from "lucide-react";
+import { ArrowRight, ShieldQuestion } from "lucide-react";
 import type { WizardData } from "@/components/wizard/types";
-import { VoiceRecorder } from "@/components/wizard/voice-recorder";
+import { VoiceCapture } from "@/components/app/voice-capture";
+import { transcribePublic } from "@/lib/transcription/public-client";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -19,9 +20,9 @@ export function StoryStep({
   light?: boolean;
 }) {
   const reduce = useReducedMotion();
-  const storyDone =
-    (data.storyMode === "voice" && data.storySeconds > 0) ||
-    (data.storyMode === "text" && data.storyText.trim().length >= 120);
+  // La voix passe désormais par une VRAIE transcription (VoiceCapture) qui produit
+  // du texte ; le récit est donc toujours du texte validé (≥ 120 caractères).
+  const storyDone = data.storyText.trim().length >= 120;
   const ready = storyDone && data.devilAnswer.trim().length >= 15;
 
   return (
@@ -38,52 +39,19 @@ export function StoryStep({
       </p>
 
       <div className="mt-9">
-        {data.storyMode !== "text" ? (
-          <>
-            <VoiceRecorder
-              light={light}
-              onDone={(s) => patch({ storyMode: "voice", storySeconds: s })}
-              onDenied={() => patch({ storyMode: "text" })}
-            />
-            {data.storyMode !== "voice" && (
-              <button
-                type="button"
-                onClick={() => patch({ storyMode: "text" })}
-                className={`mt-4 inline-flex items-center gap-2 text-sm transition-colors duration-300 ${light ? "text-muted-foreground hover:text-foreground" : "text-ink-muted hover:text-ink-foreground"}`}
-              >
-                <PenLine className="size-4" />
-                Je préfère écrire
-              </button>
-            )}
-          </>
-        ) : (
-          <>
-            <textarea
-              autoFocus
-              rows={7}
-              value={data.storyText}
-              onChange={(e) => patch({ storyText: e.target.value })}
-              placeholder="Racontez comme vous le raconteriez à un ami : la mission ou le chantier, ce qui était convenu, ce qui s’est passé, où ça bloque…"
-              className={`w-full rounded-[1.75rem] px-6 py-5 text-[15px] leading-relaxed transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-brand ${light ? "bg-card text-foreground border placeholder:text-muted-foreground" : "bg-white/[0.06] text-ink-foreground ring-1 ring-white/10 placeholder:text-ink-muted/60"}`}
-            />
-            <div className="mt-2 flex items-center justify-between gap-4">
-              <button
-                type="button"
-                onClick={() => patch({ storyMode: null, storyText: "" })}
-                className={`text-sm transition-colors duration-300 ${light ? "text-muted-foreground hover:text-foreground" : "text-ink-muted hover:text-ink-foreground"}`}
-              >
-                Revenir au vocal
-              </button>
-              <p
-                className={`text-xs ${light ? "text-muted-foreground" : "text-ink-muted/70"}`}
-              >
-                {data.storyText.trim().length < 120
-                  ? `Encore un peu de contexte (${data.storyText.trim().length}/120 caractères minimum)`
-                  : "C’est bon, vous pouvez continuer"}
-              </p>
-            </div>
-          </>
-        )}
+        <VoiceCapture
+          value={data.storyText}
+          onChange={(t) => patch({ storyMode: "text", storyText: t })}
+          transcriber={transcribePublic}
+          light={light}
+        />
+        <p className={`mt-2 text-right text-xs ${light ? "text-muted-foreground" : "text-ink-muted/70"}`}>
+          {data.storyText.trim().length > 0 && data.storyText.trim().length < 120
+            ? `Encore un peu de contexte (${data.storyText.trim().length}/120 caractères minimum)`
+            : data.storyText.trim().length >= 120
+              ? "C’est bon, vous pouvez continuer"
+              : ""}
+        </p>
       </div>
 
       <AnimatePresence>

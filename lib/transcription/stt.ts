@@ -11,15 +11,27 @@ import { getSecret } from "@/lib/secrets";
 
 export type Transcription = { text: string; provider: string };
 
+// Whisper (Groq/OpenAI) détecte le format par l'EXTENSION du nom de fichier :
+// un iPhone enregistre en audio/mp4 → il faut « recit.mp4 », pas « .webm ».
+function fileExtFor(mime: string): string {
+  const m = mime.toLowerCase();
+  if (m.includes("mp4") || m.includes("m4a") || m.includes("aac")) return "mp4";
+  if (m.includes("mpeg") || m.includes("mp3")) return "mp3";
+  if (m.includes("ogg")) return "ogg";
+  if (m.includes("wav")) return "wav";
+  return "webm";
+}
+
 export async function transcribe(blob: Blob, mime: string): Promise<Transcription | null> {
   const type = mime || blob.type || "audio/webm";
+  const fileName = `recit.${fileExtFor(type)}`;
 
   // 1) Groq — Whisper large-v3 (OpenAI-compatible), français, ultra rapide.
   const groq = await getSecret("GROQ_API_KEY");
   if (groq) {
     try {
       const form = new FormData();
-      form.append("file", new File([blob], "recit.webm", { type }));
+      form.append("file", new File([blob], fileName, { type }));
       form.append("model", "whisper-large-v3");
       form.append("language", "fr");
       form.append("response_format", "text");
@@ -66,7 +78,7 @@ export async function transcribe(blob: Blob, mime: string): Promise<Transcriptio
   if (oa) {
     try {
       const form = new FormData();
-      form.append("file", new File([blob], "recit.webm", { type }));
+      form.append("file", new File([blob], fileName, { type }));
       form.append("model", "gpt-4o-transcribe");
       form.append("language", "fr");
       form.append("response_format", "text");
