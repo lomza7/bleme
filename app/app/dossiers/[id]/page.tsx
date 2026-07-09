@@ -36,6 +36,9 @@ import { PhaseTrail } from "@/components/app/phase-trail";
 import { CaseEventsTimeline } from "@/components/app/case-events-timeline";
 import { CaseContextPanel } from "@/components/app/case-context";
 import { AgentObservations, type ObservationItem } from "@/components/app/agent-observations";
+import { CasePaymentBanner } from "@/components/app/billing";
+import { casePriceForOrg, hasActivePro } from "@/lib/billing/pricing";
+import { getSecret } from "@/lib/secrets";
 
 export const metadata: Metadata = { title: "Dossier" };
 
@@ -47,10 +50,12 @@ export const maxDuration = 300;
 
 export default async function CaseDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ checkout?: string; paiement?: string }>;
 }) {
-  const { id } = await params;
+  const [{ id }, query] = await Promise.all([params, searchParams]);
   const supabase = await createClient();
   const {
     data: { user },
@@ -120,7 +125,7 @@ export default async function CaseDetailPage({
   // de l'organisation (expéditeur), préremplies dans l'écran de validation.
   const { data: orgRow } = await supabase
     .from("organizations")
-    .select("name, address_json, inbox_slug")
+    .select("name, address_json, inbox_slug, billing_plan, billing_status, subscription_current_period_end")
     .eq("id", c.organization_id)
     .maybeSingle();
   const defaultToAddress: AddressDefaults =
@@ -132,6 +137,9 @@ export default async function CaseDetailPage({
   const suggestedRecipients = (
     (c.suggested_recipients as SuggestedRecipient[] | null) ?? []
   ).filter((r) => r && typeof r.nom === "string");
+  const proPrice = hasActivePro(orgRow ?? {});
+  const casePriceCents = casePriceForOrg(orgRow ?? {});
+  const stripeReady = Boolean(await getSecret("STRIPE_SECRET_KEY"));
 
   const docList = docs ?? [];
   // Pièces proposées en annexes dans les écrans de validation d'envoi.
@@ -570,6 +578,18 @@ export default async function CaseDetailPage({
       <div className="mt-8">
         <PhaseTrail phase={phase} />
       </div>
+
+      {!c.is_sample ? (
+        <CasePaymentBanner
+          caseId={c.id}
+          billingStatus={c.billing_status}
+          priceCents={casePriceCents}
+          proPrice={proPrice}
+          stripeReady={stripeReady}
+          checkout={query.checkout}
+          paymentError={query.paiement}
+        />
+      ) : null}
 
       <AgentObservations items={observationItems} />
 

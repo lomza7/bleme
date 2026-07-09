@@ -24,6 +24,8 @@ const serverSchema = publicSchema.extend({
   RESEND_INBOUND_SECRET: z.string().min(1).optional(),
   STRIPE_SECRET_KEY: z.string().min(1).optional(),
   STRIPE_WEBHOOK_SECRET: z.string().min(1).optional(),
+  STRIPE_PRO_MONTHLY_PRICE_ID: z.string().min(1).optional(),
+  STRIPE_PRO_YEARLY_PRICE_ID: z.string().min(1).optional(),
   MERCI_FACTEUR_SERVICE_ID: z.string().min(1).optional(),
   MERCI_FACTEUR_SECRET_KEY: z.string().min(1).optional(),
   MERCI_FACTEUR_WEBHOOK_SECRET: z.string().min(1).optional(),

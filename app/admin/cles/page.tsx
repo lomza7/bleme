@@ -88,6 +88,16 @@ const REGISTRY: { name: string; service: string; usage: string; testable?: boole
     usage: "Signature des événements de paiement entrants (phase 6).",
   },
   {
+    name: "STRIPE_PRO_MONTHLY_PRICE_ID",
+    service: "Stripe (Billing)",
+    usage: "Price ID récurrent du Pro mensuel à 9 € HT/mois.",
+  },
+  {
+    name: "STRIPE_PRO_YEARLY_PRICE_ID",
+    service: "Stripe (Billing)",
+    usage: "Price ID récurrent du Pro annuel à 90 € HT/an (facultatif).",
+  },
+  {
     name: "BLEME_BRIDGE_URL",
     service: "bleme-bridge (VPS)",
     usage: "URL du pont Hermes du produit : https://api.1010101.online/bleme. Requis pour le runtime Hermes.",

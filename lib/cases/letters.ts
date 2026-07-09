@@ -711,6 +711,22 @@ export async function approveAndSendLetter(
   if (!letter) return { error: "Courrier introuvable." };
   if (letter.status === "sent") return { error: "Ce courrier a déjà été envoyé." };
 
+  const { data: billedCase } = await supabase
+    .from("cases")
+    .select("billing_status, is_sample")
+    .eq("id", letter.case_id)
+    .maybeSingle();
+  if (
+    billedCase &&
+    !billedCase.is_sample &&
+    !["paid", "included"].includes(billedCase.billing_status ?? "")
+  ) {
+    return {
+      error:
+        "Ouvrez le dossier avant de valider l'envoi. Vous pouvez préparer et relire gratuitement ; le paiement débloque la validation des courriers.",
+    };
+  }
+
   // Annexes : chargées, vérifiées (appartenance au dossier, formats, poids) et
   // hachées AVANT le log d'approbation — même principe que l'email/l'adresse :
   // on ne grave jamais une validation inexploitable, et la preuve gravée liste

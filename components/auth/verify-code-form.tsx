@@ -98,7 +98,7 @@ export function VerifyCodeForm({ next = "/app" }: { next?: string }) {
               autoComplete={i === 0 ? "one-time-code" : "off"}
               maxLength={i === 0 ? LEN : 1}
               aria-label={`Chiffre ${i + 1}`}
-              className="h-14 w-full rounded-2xl border bg-background text-center text-xl font-semibold tabular-nums outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/30"
+              className="h-14 w-full rounded-2xl border bg-background text-center text-xl font-semibold tabular-nums text-ink caret-brand outline-none transition-colors focus:border-brand focus:ring-2 focus:ring-brand/30"
             />
           ))}
         </div>
