@@ -79,7 +79,52 @@ type Draft = {
   acquisitionDetail: string;
 };
 
-const AGENTS = ["marius", "nora", "lena", "jeanne", "sacha", "basile"] as const;
+// L'équipe, présentée un agent à la fois (étape « rencontre »). Registre
+// non-juridique : ce qu'ils FONT, jamais de promesse de résultat.
+const AGENTS = [
+  {
+    key: "marius",
+    prenom: "Marius",
+    role: "Agent Impayés",
+    pitch:
+      "Il rédige vos relances et mises en demeure, calibrées cran par cran — cordiale, ferme, puis solennelle. Rien ne part sans votre validation.",
+  },
+  {
+    key: "nora",
+    prenom: "Nora",
+    role: "Agente Preuves",
+    pitch:
+      "Elle lit chaque pièce que vous déposez — factures, photos, emails — la classe, et en extrait les montants, dates et parties. Vous corrigez, elle retient.",
+  },
+  {
+    key: "lena",
+    prenom: "Léna",
+    role: "Agente Litiges",
+    pitch:
+      "Quand un client conteste, elle démonte la réclamation point par point et prépare une réponse adossée à vos pièces, grief par grief.",
+  },
+  {
+    key: "jeanne",
+    prenom: "Jeanne",
+    role: "Agente Avocat du diable",
+    pitch:
+      "Elle lit votre dossier avec les yeux d'en face : ses questions débusquent ce qui manque avant que la partie adverse ne s'en serve.",
+  },
+  {
+    key: "sacha",
+    prenom: "Sacha",
+    role: "Agent Vigie",
+    pitch:
+      "Il tient le contexte de chaque dossier à jour — daté, horodaté, opposable — et surveille les échéances pour que rien ne dorme.",
+  },
+  {
+    key: "basile",
+    prenom: "Basile",
+    role: "Agent Démarches & recours",
+    pitch:
+      "Face à une administration, il monte la démarche : le bon interlocuteur, le bon courrier, les bonnes références — et le suivi des délais.",
+  },
+] as const;
 
 const inputCls =
   "w-full rounded-2xl border bg-background px-4 py-3 text-[15px] outline-none transition-colors focus:border-brand";
@@ -123,8 +168,10 @@ export function OnboardingFlow({
   defaultCompanyName: string;
 }) {
   const reduce = useReducedMotion();
-  const [step, setStep] = useState(0); // 0 accueil · 1 vous · 2 société · 3 courriers · 4 connu · 5 fin
+  // 0 accueil · 1 équipe · 2 vous · 3 société · 4 courriers · 5 connu · 6 fin
+  const [step, setStep] = useState(0);
   const [dir, setDir] = useState(1);
+  const [agentIdx, setAgentIdx] = useState(0);
   const [manualCompany, setManualCompany] = useState(false);
   const [d, setD] = useState<Draft>({
     firstName: defaultFirstName,
@@ -144,17 +191,20 @@ export function OnboardingFlow({
   const [state, action, pending] = useActionState(completeOnboarding, {} as OnboardingState);
   const patch = (p: Partial<Draft>) => setD((prev) => ({ ...prev, ...p }));
 
-  const TOTAL = 4; // étapes questionnées (hors accueil / fin)
+  const TOTAL = 4; // étapes questionnées (hors accueil / équipe / fin)
   const go = (n: number) => {
     setDir(n > step ? 1 : -1);
-    setStep(Math.min(Math.max(0, n), 5));
+    setStep(Math.min(Math.max(0, n), 6));
   };
 
   const canNext = useMemo(() => {
-    if (step === 1) return d.firstName.trim().length > 0;
-    if (step === 2) return manualCompany ? d.companyName.trim().length > 0 : d.companyName.trim().length > 0;
+    if (step === 2) return d.firstName.trim().length > 0;
+    if (step === 3) return d.companyName.trim().length > 0;
     return true;
-  }, [step, d, manualCompany]);
+  }, [step, d]);
+
+  const agent = AGENTS[agentIdx];
+  const lastAgent = agentIdx === AGENTS.length - 1;
 
   const screens = [
     // ── 0 · Accueil ───────────────────────────────────────────────────────────
@@ -162,13 +212,13 @@ export function OnboardingFlow({
       <div className="flex justify-center gap-1.5">
         {AGENTS.map((a, i) => (
           <motion.span
-            key={a}
+            key={a.key}
             initial={reduce ? false : { opacity: 0, y: 14 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, ease: EASE, delay: reduce ? 0 : 0.15 + i * 0.08 }}
             className="flex size-12 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-brand-soft to-brand/15 ring-1 ring-brand/25 sm:size-14"
           >
-            <SpriteAvatar src={`/agents/${a}.webp`} alt="" className="h-9 sm:h-11" delay={i * 0.35} />
+            <SpriteAvatar src={`/agents/${a.key}.webp`} alt="" className="h-9 sm:h-11" delay={i * 0.35} />
           </motion.span>
         ))}
       </div>
@@ -204,7 +254,105 @@ export function OnboardingFlow({
       </motion.button>
     </div>,
 
-    // ── 1 · Vous ──────────────────────────────────────────────────────────────
+    // ── 1 · Votre équipe : les 6 agents, projecteur un par un ─────────────────
+    <div key="team" className="text-center">
+      <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Votre équipe</h1>
+      <p className="mt-2 text-sm text-muted-foreground">
+        Six agents, chacun son métier. Faites connaissance — {agentIdx + 1} sur {AGENTS.length}.
+      </p>
+
+      {/* La rangée : l'agent présenté est en pleine lumière, les autres en retrait. */}
+      <div className="mt-8 flex items-end justify-center gap-2 sm:gap-2.5">
+        {AGENTS.map((a, i) => {
+          const active = i === agentIdx;
+          return (
+            <motion.button
+              key={a.key}
+              type="button"
+              onClick={() => {
+                setAgentIdx(i);
+              }}
+              aria-label={`${a.prenom} · ${a.role}`}
+              animate={
+                reduce
+                  ? undefined
+                  : {
+                      scale: active ? 1.22 : 1,
+                      y: active ? -6 : 0,
+                      opacity: active ? 1 : 0.45,
+                      filter: active ? "grayscale(0)" : "grayscale(0.7)",
+                    }
+              }
+              transition={{ type: "spring", stiffness: 300, damping: 22 }}
+              className={`flex size-12 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-brand-soft to-brand/15 transition-shadow sm:size-14 ${
+                active ? "ring-2 ring-brand shadow-lg shadow-brand/20" : "ring-1 ring-brand/20"
+              }`}
+            >
+              <SpriteAvatar src={`/agents/${a.key}.webp`} alt="" className="h-9 sm:h-11" delay={i * 0.3} />
+            </motion.button>
+          );
+        })}
+      </div>
+
+      {/* La fiche de l'agent sous le projecteur */}
+      <div className="mx-auto mt-7 max-w-md">
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={agent.key}
+            initial={reduce ? false : { opacity: 0, y: 14, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={reduce ? undefined : { opacity: 0, y: -10, scale: 0.98 }}
+            transition={{ duration: 0.35, ease: EASE }}
+            className="rounded-[1.75rem] border border-brand/20 bg-gradient-to-b from-brand-soft/60 to-card p-6 text-left"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-gradient-to-b from-brand-soft to-brand/15 ring-1 ring-brand/25">
+                <SpriteAvatar src={`/agents/${agent.key}.webp`} alt="" className="h-10" />
+              </span>
+              <div>
+                <p className="font-semibold">{agent.prenom}</p>
+                <p className="text-xs font-medium uppercase tracking-wide text-brand-strong">{agent.role}</p>
+              </div>
+            </div>
+            <p className="mt-3.5 text-sm leading-relaxed text-muted-foreground">{agent.pitch}</p>
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Points de progression de la rencontre */}
+        <div className="mt-5 flex justify-center gap-1.5">
+          {AGENTS.map((a, i) => (
+            <span
+              key={a.key}
+              className={`size-1.5 rounded-full transition-colors duration-300 ${
+                i === agentIdx ? "bg-brand" : i < agentIdx ? "bg-brand/40" : "bg-muted"
+              }`}
+            />
+          ))}
+        </div>
+
+        <div className="mt-6 flex items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => (lastAgent ? go(2) : setAgentIdx(agentIdx + 1))}
+            className="group inline-flex items-center gap-2 rounded-full bg-brand px-6 py-2.5 text-sm font-medium text-brand-foreground transition-all duration-300 hover:bg-brand-strong active:scale-[0.98]"
+          >
+            {lastAgent ? "Faisons connaissance" : "Suivant"}
+            <ArrowRight className="size-4 transition-transform duration-300 group-hover:translate-x-0.5" />
+          </button>
+        </div>
+        {!lastAgent ? (
+          <button
+            type="button"
+            onClick={() => go(2)}
+            className="mt-3 text-xs font-medium text-muted-foreground underline-offset-4 hover:underline"
+          >
+            Passer les présentations
+          </button>
+        ) : null}
+      </div>
+    </div>,
+
+    // ── 2 · Vous ──────────────────────────────────────────────────────────────
     <div key="you">
       <p className="text-sm font-medium text-brand-strong">1 / {TOTAL}</p>
       <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Qui êtes-vous ?</h1>
@@ -238,7 +386,7 @@ export function OnboardingFlow({
       </div>
     </div>,
 
-    // ── 2 · Votre société ─────────────────────────────────────────────────────
+    // ── 3 · Votre société ─────────────────────────────────────────────────────
     <div key="company">
       <p className="text-sm font-medium text-brand-strong">2 / {TOTAL}</p>
       <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">Votre société</h1>
@@ -317,7 +465,7 @@ export function OnboardingFlow({
       )}
     </div>,
 
-    // ── 3 · Vos courriers ─────────────────────────────────────────────────────
+    // ── 4 · Vos courriers ─────────────────────────────────────────────────────
     <div key="sender">
       <p className="text-sm font-medium text-brand-strong">3 / {TOTAL}</p>
       <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
@@ -373,7 +521,7 @@ export function OnboardingFlow({
       </AnimatePresence>
     </div>,
 
-    // ── 4 · Comment nous avez-vous connus ? ───────────────────────────────────
+    // ── 5 · Comment nous avez-vous connus ? ───────────────────────────────────
     <div key="source">
       <p className="text-sm font-medium text-brand-strong">4 / {TOTAL}</p>
       <h1 className="mt-2 text-2xl font-bold tracking-tight sm:text-3xl">
@@ -410,7 +558,7 @@ export function OnboardingFlow({
       </AnimatePresence>
     </div>,
 
-    // ── 5 · Fin ───────────────────────────────────────────────────────────────
+    // ── 6 · Fin ───────────────────────────────────────────────────────────────
     <div key="done" className="text-center">
       <motion.span
         initial={reduce ? false : { scale: 0.6, opacity: 0 }}
@@ -459,12 +607,12 @@ export function OnboardingFlow({
       {/* Progression */}
       <div className="mx-auto flex w-full max-w-xl items-center gap-2 px-6 pt-8">
         <span className="text-sm font-bold tracking-tight">BLEME<span className="text-brand">.</span></span>
-        {step > 0 && step < 5 ? (
+        {step > 1 && step < 6 ? (
           <div className="ml-4 flex flex-1 gap-1.5">
             {Array.from({ length: TOTAL }, (_, i) => (
               <span
                 key={i}
-                className={`h-1 flex-1 rounded-full transition-colors duration-500 ${i < step ? "bg-brand" : "bg-muted"}`}
+                className={`h-1 flex-1 rounded-full transition-colors duration-500 ${i < step - 1 ? "bg-brand" : "bg-muted"}`}
               />
             ))}
           </div>
@@ -486,8 +634,8 @@ export function OnboardingFlow({
           </motion.div>
         </AnimatePresence>
 
-        {/* Navigation (les écrans accueil et fin ont leurs propres boutons) */}
-        {step > 0 && step < 5 ? (
+        {/* Navigation (accueil, équipe et fin ont leurs propres boutons) */}
+        {step > 1 && step < 6 ? (
           <div className="mt-9 flex items-center justify-between">
             <button
               type="button"
