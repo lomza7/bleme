@@ -35,7 +35,7 @@ export function GenerateLetterButtons({
 
   return (
     <div className="flex flex-col gap-3">
-      <AgentThinkingOverlay agent={writerFor(caseType, activeKind ?? undefined)} open={pending} />
+      <AgentThinkingOverlay agent={writerFor(caseType, activeKind ?? undefined)} open={pending} caseId={caseId} />
       <div className="flex flex-wrap gap-2">
         {entries.map(([kind, meta]) => (
           <form key={kind} action={action} onSubmit={() => setActiveKind(kind)}>

@@ -13,6 +13,8 @@ import { caseMemo } from "@/lib/cases/memo";
 import { buildCaseContext } from "@/lib/cases/context";
 import { legalSocle, hasSources } from "@/lib/cases/legal";
 import { resolveAdministration } from "@/lib/administrations/annuaire";
+import { setGenerationProgress } from "@/lib/cases/generation-progress";
+import { TOOL_APIS } from "@/lib/tool-apis";
 import { dispatchLetter } from "@/lib/courrier/dispatch";
 import {
   loadCaseAttachments,
@@ -168,13 +170,27 @@ function buildLetter(
  * dans agent_runs.
  */
 async function runWriterWithRetry<T>(
-  run: () => Promise<{ data: T; simulated: boolean }>,
-): Promise<{ data: T; simulated: boolean }> {
+  run: () => Promise<{ data: T; simulated: boolean; toolCalls?: string[] }>,
+  onRetry?: () => void,
+): Promise<{ data: T; simulated: boolean; toolCalls?: string[] }> {
   try {
     return await run();
   } catch {
+    onRetry?.();
     return await run();
   }
+}
+
+/** « legifrance.rechercher_loi, justice_administrative.rechercher_ta » → « Légifrance ×1 · Justice administrative ×1 ». */
+function summarizeToolCalls(toolCalls: string[] | undefined): string | null {
+  if (!toolCalls?.length) return null;
+  const counts = new Map<string, number>();
+  for (const call of toolCalls) {
+    const api = call.split(".")[0];
+    counts.set(api, (counts.get(api) ?? 0) + 1);
+  }
+  const label = (api: string) => TOOL_APIS.find((t) => t.name === api)?.label.split(" (")[0] ?? api;
+  return [...counts.entries()].map(([api, n]) => `${label(api)} ×${n}`).join(" · ");
 }
 
 async function orgFor(): Promise<{ orgId: string; orgName: string; inboxSlug: string | null } | null> {
@@ -245,13 +261,26 @@ export async function generateLetter(
     reason: null,
   };
   let infosManquantes: string[] = [];
+  let sourcesConsultees: string | null = null;
+  // Étapes RÉELLES écrites au fil de l'eau, lues en direct par la
+  // superposition d'attente (jamais bloquant).
+  const progress = (step: string, detail?: string | null) =>
+    setGenerationProgress(supabase, c.id, org.orgId, step, detail);
+  await progress(`${writerName} relit le dossier et les pièces`);
   const memo = await caseMemo(supabase, c.id);
   // Socle juridique (récupération serveur, mis en cache par type) : articles +
   // arrêts réels fournis au rédacteur. Volet « récupération » du mode hybride.
+  await progress("Vérification du droit applicable", "Légifrance · Justice administrative · Service-Public");
   const socle = await legalSocle(c.case_type, writerKey, {
     organizationId: org.orgId,
     caseId: c.id,
   });
+  await progress(
+    hasSources(socle) ? "Socle juridique vérifié" : "Sources momentanément indisponibles",
+    hasSources(socle)
+      ? `${socle.articles.length} article${socle.articles.length > 1 ? "s" : ""} · ${socle.arrets.length} décision${socle.arrets.length > 1 ? "s" : ""} de justice`
+      : "rédaction en termes généraux, sans référence numérotée",
+  );
   // Anti-hallucination (#7) : sans source vérifiée, on INTERDIT toute référence
   // numérotée (on ne peut pas la recouper) ; avec socle, on cite précisément.
   const groundingRule = hasSources(socle)
@@ -260,7 +289,9 @@ export async function generateLetter(
   try {
     if (useLena) {
       const ctx = await buildCaseContext(supabase, c.id);
-      const { data: m, simulated } = await runWriterWithRetry(() => runAgent({
+      await progress("Léna rédige la réponse, grief par grief", "recherches complémentaires via ses outils officiels");
+      const { data: m, simulated, toolCalls } = await runWriterWithRetry(
+        () => runAgent({
         key: "lena",
         input: {
           consigne:
@@ -298,7 +329,10 @@ export async function generateLetter(
         organizationId: org.orgId,
         caseId: c.id,
         maxTokens: 2000,
-      }));
+        }),
+        () => void progress("Première rédaction incomplète — Léna reprend", "nouvelle tentative en cours"),
+      );
+      sourcesConsultees = summarizeToolCalls(toolCalls);
       if (simulated) {
         redaction = { mode: "simulation", reason: "clé du modèle non configurée (run simulé)" };
       } else if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
@@ -313,7 +347,9 @@ export async function generateLetter(
       }
     } else if (useBasile) {
       const ctx = await buildCaseContext(supabase, c.id);
-      const { data: m, simulated } = await runWriterWithRetry(() => runAgent({
+      await progress("Basile rédige le courrier motivé", "recherches complémentaires : Légifrance, justice administrative, Service-Public");
+      const { data: m, simulated, toolCalls } = await runWriterWithRetry(
+        () => runAgent({
         key: "basile",
         input: {
           consigne:
@@ -377,7 +413,10 @@ export async function generateLetter(
         organizationId: org.orgId,
         caseId: c.id,
         maxTokens: 2600,
-      }));
+        }),
+        () => void progress("Première rédaction incomplète — Basile reprend", "nouvelle tentative en cours"),
+      );
+      sourcesConsultees = summarizeToolCalls(toolCalls);
       if (simulated) {
         redaction = { mode: "simulation", reason: "clé du modèle non configurée (run simulé)" };
       } else if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
@@ -394,6 +433,9 @@ export async function generateLetter(
       // Destinataires proposés par l'agent → résolus en adresses RÉELLES via
       // l'annuaire officiel (Basile ne rédige jamais une adresse). Anti-doublon
       // sur le nom, borné à 4 pour rester lisible.
+      if ((m.destinataires_suggeres ?? []).length > 0) {
+        await progress("Vérification des adresses officielles", "annuaire de l'administration (service-public.gouv.fr)");
+      }
       const proposed = (m.destinataires_suggeres ?? [])
         .map((r) => ({ nom: r.nom.trim(), motif: r.motif.trim() }))
         .filter((r) => r.nom.length > 2)
@@ -412,7 +454,9 @@ export async function generateLetter(
       }
     } else {
       const ctx = await buildCaseContext(supabase, c.id);
-      const { data: m, simulated } = await runWriterWithRetry(() => runAgent({
+      await progress(`Marius rédige : ${LETTER_KINDS[kind].label.toLowerCase()}`, "recherches complémentaires via ses outils officiels");
+      const { data: m, simulated, toolCalls } = await runWriterWithRetry(
+        () => runAgent({
         key: "marius",
         input: {
           consigne:
@@ -452,7 +496,10 @@ export async function generateLetter(
         organizationId: org.orgId,
         caseId: c.id,
         maxTokens: 1800,
-      }));
+        }),
+        () => void progress("Première rédaction incomplète — Marius reprend", "nouvelle tentative en cours"),
+      );
+      sourcesConsultees = summarizeToolCalls(toolCalls);
       // Garde-fou #2 : conseil/pronostic dans le sujet ou le corps → on garde le
       // gabarit conforme (le courrier part au nom de l'utilisateur).
       if (simulated) {
@@ -476,6 +523,11 @@ export async function generateLetter(
     };
   }
 
+  await progress(
+    "Mise en forme du brouillon",
+    sourcesConsultees ? `sources consultées : ${sourcesConsultees}` : null,
+  );
+
   const { data: created, error } = await supabase
     .from("letters")
     .insert({
@@ -498,6 +550,7 @@ export async function generateLetter(
         .map((r) => `${r.reference}${r.verifie ? " (vérifiée)" : " (à vérifier)"}`)
         .join(" ; ")}.`
     : "";
+  const sourcesNote = sourcesConsultees ? ` Sources consultées : ${sourcesConsultees}.` : "";
   const infosNote = infosManquantes.length
     ? ` Informations à compléter avant envoi : ${infosManquantes.join(" ; ")}.`
     : "";
@@ -514,8 +567,8 @@ export async function generateLetter(
     title: `Brouillon prêt : ${LETTER_KINDS[kind].label.toLowerCase()}`,
     description:
       griefsCount > 0
-        ? `${provenance} ${griefsCount} grief${griefsCount > 1 ? "s" : ""} traité${griefsCount > 1 ? "s" : ""} point par point. À relire et valider avant tout envoi.`
-        : `${provenance} À relire et valider avant tout envoi.${refsNote}${infosNote}`,
+        ? `${provenance} ${griefsCount} grief${griefsCount > 1 ? "s" : ""} traité${griefsCount > 1 ? "s" : ""} point par point. À relire et valider avant tout envoi.${sourcesNote}`
+        : `${provenance} À relire et valider avant tout envoi.${refsNote}${infosNote}${sourcesNote}`,
     source: "ai",
   });
 

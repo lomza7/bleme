@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { touchCase } from "@/lib/cases/touch";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { runAgent } from "@/lib/ai/client";
+import { setGenerationProgress } from "@/lib/cases/generation-progress";
 import { hasAdvice } from "@/lib/ai/guardrails";
 import { caseMemo } from "@/lib/cases/memo";
 
@@ -129,7 +130,13 @@ export async function generateAdaptedResponse(
   // Litige → Léna ; démarche admin → Basile ; impayé → Marius.
   const isDispute = c.case_type === "client_dispute";
   const isAdmin = c.case_type === "admin_request";
+  // Étapes réelles pour la superposition d'attente.
+  const writerName = isDispute ? "Léna" : isAdmin ? "Basile" : "Marius";
+  const progress = (step: string, detail?: string | null) =>
+    setGenerationProgress(supabase, c.id, org.orgId, step, detail);
+  await progress(`${writerName} relit le dossier et le message reçu`);
   const memo = await caseMemo(supabase, c.id);
+  await progress(`${writerName} rédige la réponse adaptée`, "point par point, sur les faits et pièces du dossier");
   try {
     // Retry ×1 : un JSON mal formé (agent qui conclut mal ses tours d'outils)
     // ne doit pas suffire à dégrader vers le gabarit.
@@ -156,7 +163,10 @@ export async function generateAdaptedResponse(
       caseId: c.id,
       maxTokens: 1800,
     });
-    const { data: m } = await run().catch(run);
+    const { data: m } = await run().catch(() => {
+      void progress(`Première rédaction incomplète — ${writerName} reprend`, "nouvelle tentative en cours");
+      return run();
+    });
     // Garde-fou #2 : conseil/pronostic → on garde le gabarit conforme.
     if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
       subject = tplSubject;

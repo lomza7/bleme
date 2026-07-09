@@ -323,7 +323,7 @@ export async function runAgent<T>(opts: {
   // Modèle imposé pour CET appel (ex. modèle vision OpenRouter) — surcharge
   // hermes_model côté bridge sans changer la config par défaut de l'agent.
   modelOverride?: string;
-}): Promise<{ data: T; simulated: boolean }> {
+}): Promise<{ data: T; simulated: boolean; toolCalls?: string[] }> {
   const agent = await loadAgent(opts.key);
   if (!agent) {
     throw new AgentUnavailableError("unknown_agent", `Agent inconnu : ${opts.key}`);
@@ -555,7 +555,9 @@ export async function runAgent<T>(opts: {
         duration_ms: Date.now() - started,
         tool_calls: bridgeToolCalls,
       });
-      return { data, simulated: false };
+      // toolCalls exposé à l'appelant (affichage « sources consultées » côté
+      // produit) — déjà tracé dans agent_runs pour la console.
+      return { data, simulated: false, toolCalls: bridgeToolCalls };
     } catch (err) {
       await logRun({
         ...base,

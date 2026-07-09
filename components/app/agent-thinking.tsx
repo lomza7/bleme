@@ -1,16 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Check } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { SpriteAvatar } from "@/components/landing/sprite-avatar";
+import { getGenerationProgress } from "@/lib/cases/progress-actions";
 
 /*
  * Superposition « l'agent travaille » : affichée pendant qu'une action serveur
- * fait tourner un agent (rédaction de courrier, réponse adaptée, revue…).
- * Un run réel prend 20 à 90 s (recherches Légifrance comprises) : l'utilisateur
- * voit QUI travaille et À QUOI il passe ce temps, au lieu d'un simple spinner.
- * Les étapes sont indicatives (pas de télémétrie temps réel) — formulées comme
- * le déroulé réel du run, jamais comme des promesses de résultat.
+ * fait tourner un agent (20 à 90 s, recherches Légifrance comprises).
+ *
+ * Avec `caseId`, elle lit en POLLING les étapes RÉELLES écrites par le serveur
+ * (generation_progress) : « Vérification du droit applicable », « Socle
+ * juridique vérifié : 3 articles · 1 décision », « Basile rédige… » — les
+ * étapes passées s'empilent cochées, comme un fil de raisonnement. Sans
+ * étape serveur (autres runs), un déroulé indicatif prend le relais.
  */
 
 export type ThinkingAgent = {
@@ -78,30 +82,73 @@ export function writerFor(caseType: string, kind?: string): ThinkingAgent {
   return THINKING_WRITERS.marius;
 }
 
-const STEP_MS = 3200;
+const SCRIPT_STEP_MS = 3200;
+const POLL_MS = 1500;
+
+type LiveStep = { step: string; detail: string | null };
 
 /**
  * Le contenu à état ne se monte que pendant l'attente : chaque ouverture
  * repart d'un état neuf (pas de reset synchrone dans un effet).
  */
-export function AgentThinkingOverlay({ agent, open }: { agent: ThinkingAgent; open: boolean }) {
+export function AgentThinkingOverlay({
+  agent,
+  open,
+  caseId,
+}: {
+  agent: ThinkingAgent;
+  open: boolean;
+  /** Fourni → étapes réelles du serveur (generation_progress) en polling. */
+  caseId?: string;
+}) {
   if (!open) return null;
-  return <ThinkingCard agent={agent} />;
+  return <ThinkingCard agent={agent} caseId={caseId} />;
 }
 
-function ThinkingCard({ agent }: { agent: ThinkingAgent }) {
+function ThinkingCard({ agent, caseId }: { agent: ThinkingAgent; caseId?: string }) {
   const reduce = useReducedMotion();
-  const [step, setStep] = useState(0);
+  const [scriptStep, setScriptStep] = useState(0);
+  const [live, setLive] = useState<LiveStep[]>([]);
+  const liveRef = useRef<LiveStep[]>([]);
 
+  // Déroulé indicatif (repli tant qu'aucune étape réelle n'est arrivée).
   useEffect(() => {
-    // On avance dans les étapes puis on RESTE sur la dernière (pas de boucle :
-    // revoir défiler « relit votre dossier » après 60 s casserait la confiance).
     const timer = setInterval(
-      () => setStep((s) => Math.min(s + 1, agent.steps.length - 1)),
-      STEP_MS,
+      () => setScriptStep((s) => Math.min(s + 1, agent.steps.length - 1)),
+      SCRIPT_STEP_MS,
     );
     return () => clearInterval(timer);
   }, [agent.steps.length]);
+
+  // Étapes réelles : polling du serveur, accumulées en fil (dédoublonnées).
+  useEffect(() => {
+    if (!caseId) return;
+    let stop = false;
+    const tick = async () => {
+      try {
+        const p = await getGenerationProgress(caseId);
+        if (stop || !p) return;
+        const prev = liveRef.current;
+        if (prev[prev.length - 1]?.step !== p.step) {
+          const next = [...prev, { step: p.step, detail: p.detail }].slice(-6);
+          liveRef.current = next;
+          setLive(next);
+        }
+      } catch {
+        /* le polling ne casse jamais l'attente */
+      }
+    };
+    void tick();
+    const timer = setInterval(tick, POLL_MS);
+    return () => {
+      stop = true;
+      clearInterval(timer);
+    };
+  }, [caseId]);
+
+  const hasLive = live.length > 0;
+  const current = hasLive ? live[live.length - 1] : null;
+  const done = hasLive ? live.slice(0, -1) : [];
 
   return (
     <div
@@ -124,19 +171,39 @@ function ThinkingCard({ agent }: { agent: ThinkingAgent }) {
           </div>
         </div>
 
-        <div className="mt-5 min-h-12">
+        {/* Étapes passées (réelles), cochées au fil de l'eau. */}
+        {done.length > 0 ? (
+          <ul className="mt-5 flex flex-col gap-1.5">
+            {done.map((s, i) => (
+              <li key={i} className="flex items-start gap-2 text-[13px] text-muted-foreground">
+                <Check className="mt-0.5 size-3.5 shrink-0 text-emerald-600" />
+                <span className="min-w-0">
+                  {s.step}
+                  {s.detail ? <span className="text-muted-foreground/70"> — {s.detail}</span> : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        <div className={done.length > 0 ? "mt-2 min-h-10" : "mt-5 min-h-12"}>
           <AnimatePresence mode="wait">
-            <motion.p
-              key={step}
+            <motion.div
+              key={current ? current.step : `script-${scriptStep}`}
               initial={reduce ? false : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={reduce ? undefined : { opacity: 0, y: -8 }}
               transition={{ duration: 0.35 }}
               className="text-sm leading-relaxed"
             >
-              {agent.prenom} {agent.steps[step]}
-              <AnimatedDots />
-            </motion.p>
+              <p className="font-medium">
+                {current ? current.step : `${agent.prenom} ${agent.steps[scriptStep]}`}
+                <AnimatedDots />
+              </p>
+              {current?.detail ? (
+                <p className="mt-0.5 text-xs text-muted-foreground">{current.detail}</p>
+              ) : null}
+            </motion.div>
           </AnimatePresence>
         </div>
 

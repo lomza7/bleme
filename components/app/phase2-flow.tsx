@@ -100,7 +100,7 @@ export function Phase2Flow({
             ? "Sa réponse est enregistrée. On prépare la suite adaptée à partir de ce qu’elle dit et des faits de votre dossier."
             : "Son message est enregistré. On rédige une réponse adaptée à partir de ce qu’il dit et des faits de votre dossier."}
         </p>
-        <AgentThinkingOverlay agent={writerFor(caseType)} open={adaptPending} />
+        <AgentThinkingOverlay agent={writerFor(caseType)} open={adaptPending} caseId={caseId} />
         <form action={adaptAction} className="mt-5">
           <input type="hidden" name="caseId" value={caseId} />
           <button
