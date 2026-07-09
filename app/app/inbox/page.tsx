@@ -148,9 +148,9 @@ export default async function InboxPage({
         <div className="min-w-0">
           <p className="text-sm font-semibold">Votre adresse de transfert</p>
           <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-            Transférez-y vos emails de clients : ils atterriront directement
-            ici. Activation à la connexion du domaine ; en attendant,
-            importez un fichier ou collez un email ci-dessous.
+            Transférez-y vos emails de clients : ils arrivent ici en quelques
+            secondes, pièces jointes comprises, prêts à être versés au bon
+            dossier.
           </p>
         </div>
         <CopyAddress address={address} />

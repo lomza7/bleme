@@ -125,9 +125,9 @@ export function EmailPieceModal({ address, onClose }: { address?: string; onClos
           </li>
         </ol>
 
-        <p className="mt-4 rounded-xl bg-amber-50 px-3.5 py-2.5 text-xs leading-relaxed text-amber-800 ring-1 ring-amber-200">
-          Cette adresse s’active à la connexion du domaine. En attendant, vous pouvez glisser un fichier{" "}
-          <span className="font-mono">.eml</span> directement dans la zone de dépôt.
+        <p className="mt-4 rounded-xl bg-emerald-50 px-3.5 py-2.5 text-xs leading-relaxed text-emerald-800 ring-1 ring-emerald-200">
+          L’adresse est active : tout email transféré arrive en quelques secondes, pièces jointes comprises.
+          Vous pouvez aussi glisser un fichier <span className="font-mono">.eml</span> directement dans la zone de dépôt.
         </p>
       </div>
     </Shell>
