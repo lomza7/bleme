@@ -30,7 +30,6 @@ import { Phase2Flow } from "@/components/app/phase2-flow";
 import { EscalationPanel } from "@/components/app/escalation-panel";
 import { RecordPayment } from "@/components/app/record-payment";
 import { PhaseTrail } from "@/components/app/phase-trail";
-import { Markdown } from "@/components/app/markdown";
 import { CaseEventsTimeline } from "@/components/app/case-events-timeline";
 import { CaseContextPanel } from "@/components/app/case-context";
 import { AgentObservations, type ObservationItem } from "@/components/app/agent-observations";
@@ -108,6 +107,10 @@ export default async function CaseDetailPage({
   const briefPending =
     briefRequestedAt !== null &&
     (briefUpdatedAt === null || briefRequestedAt > briefUpdatedAt) &&
+    // Fenêtre de fraîcheur : au-delà de 10 min, la génération est considérée
+    // perdue (pas de badge « en cours » fantôme). Horloge nécessaire — RSC
+    // rendu dynamiquement à la requête, pas de purity à préserver ici.
+    // eslint-disable-next-line react-hooks/purity
     Date.now() - briefRequestedAt < 10 * 60 * 1000;
 
   // Coordonnées d'expédition : adresse du dossier (dernière saisie) et adresse
