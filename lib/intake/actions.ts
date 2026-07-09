@@ -42,11 +42,22 @@ const FALLBACK: Record<string, string[]> = {
     "Disposez-vous de preuves de la prestation réalisée (photos datées, livrables, échanges) ?",
     "La réclamation a-t-elle été formalisée par écrit, et y avez-vous déjà répondu ?",
   ],
+  admin: [
+    "Quelle décision ou situation visez-vous, et avez-vous sa référence et sa date de notification ?",
+    "Quelle administration ou quel service a pris la décision (nom exact du service, adresse si vous l’avez) ?",
+    "Avez-vous déjà écrit à l’administration à ce sujet, et une réponse a-t-elle été reçue ?",
+  ],
+};
+
+const KIND_LABEL: Record<string, string> = {
+  unpaid: "facture impayée",
+  dispute: "litige client",
+  admin: "démarche administrative",
 };
 
 export async function intakeQuestions(input: {
   transcript: string;
-  kind: "unpaid" | "dispute";
+  kind: "unpaid" | "dispute" | "admin";
   partyName: string;
 }): Promise<{ questions: string[] }> {
   const fallback = FALLBACK[input.kind] ?? FALLBACK.unpaid;
@@ -59,7 +70,7 @@ export async function intakeQuestions(input: {
       input: {
         consigne:
           "Tu lis le récit d'un professionnel sur son dossier. Pose 2 à 4 questions PRÉCISES pour combler les trous qui affaibliraient le dossier face à la partie adverse (preuve d'accord, accusé de réception, motif de non-paiement, dates, pièces manquantes). Questions courtes, concrètes, actionnables. Aucun conseil juridique, aucun pronostic. Réponds en JSON { questions: string[] }.",
-        type: input.kind === "unpaid" ? "facture impayée" : "litige client",
+        type: KIND_LABEL[input.kind] ?? KIND_LABEL.unpaid,
         partie: input.partyName,
         recit: input.transcript.slice(0, 6000),
       },

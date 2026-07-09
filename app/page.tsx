@@ -344,19 +344,19 @@ function Piliers() {
           <div className="flex h-full flex-col rounded-[1.75rem] bg-brand-soft p-9 transition-all duration-500 ease-fluid hover:-translate-y-1 hover:shadow-xl hover:shadow-zinc-950/[0.06]">
             <div className="flex items-center gap-3">
               <p className="text-sm font-medium uppercase tracking-[0.16em] text-brand-strong">
-                Amendes et démarches
+                Démarches et recours
               </p>
               <span className="rounded-full bg-brand px-2.5 py-0.5 text-[11px] font-medium text-brand-foreground">
-                Bientôt
+                Nouveau
               </span>
             </div>
             <h3 className="mt-4 text-2xl font-semibold tracking-tight">
-              Les amendes payées sans discuter.
+              L’administration aussi doit répondre.
             </h3>
             <p className="mt-4 leading-relaxed text-muted-foreground">
-              Beaucoup d’amendes professionnelles peuvent être contestées ou
-              faire l’objet d’une demande gracieuse. BLEME préparera le
-              recours et suivra la réponse de l’administration.
+              Décision à contester, demande gracieuse, dossier à rectifier :
+              BLEME qualifie la démarche, prépare le recours motivé et relance
+              quand le silence de l’administration dure.
             </p>
             <p className="mt-auto flex flex-wrap items-baseline gap-x-3 gap-y-1 border-t border-brand/20 pt-5">
               <span className="text-4xl font-bold tracking-tight text-brand-strong">
@@ -650,6 +650,7 @@ function Footer() {
               <li><Link href="/guides/mise-en-demeure-de-payer" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Mise en demeure de payer</Link></li>
               <li><Link href="/guides/indemnite-forfaitaire-40-euros" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">L’indemnité de 40 €</Link></li>
               <li><Link href="/guides/injonction-de-payer" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">L’injonction de payer</Link></li>
+              <li><Link href="/guides/recours-gracieux-administration" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Le recours gracieux</Link></li>
               <li><Link href="/guides" className="font-medium text-ink-foreground transition-colors duration-300 hover:text-brand">Tous les guides</Link></li>
             </ul>
           </nav>

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { ReviewLetter } from "@/components/app/review-letter";
+import { ReviewLetter, type AddressDefaults } from "@/components/app/review-letter";
 
 export const metadata: Metadata = { title: "Relire le courrier" };
 
@@ -21,11 +21,29 @@ export default async function LetterReviewPage({
 
   const { data: letter } = await supabase
     .from("letters")
-    .select("id, subject, body_md, status, channel, approved_at, case_id")
+    .select("id, subject, body_md, status, channel, approved_at, sent_at, case_id")
     .eq("id", letterId)
     .eq("case_id", id)
     .maybeSingle();
   if (!letter) notFound();
+
+  // Préremplissage des coordonnées d'envoi (dernières saisies — corrigeables).
+  const { data: c } = await supabase
+    .from("cases")
+    .select("debtor_name, debtor_email, debtor_address, organization_id")
+    .eq("id", id)
+    .maybeSingle();
+  const { data: orgRow } = c
+    ? await supabase
+        .from("organizations")
+        .select("name, address_json")
+        .eq("id", c.organization_id)
+        .maybeSingle()
+    : { data: null };
+  const defaultToAddress: AddressDefaults =
+    (c?.debtor_address as AddressDefaults) ?? (c?.debtor_name ? { societe: c.debtor_name } : null);
+  const defaultFromAddress: AddressDefaults =
+    (orgRow?.address_json as AddressDefaults) ?? (orgRow?.name ? { societe: orgRow.name } : null);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -42,7 +60,13 @@ export default async function LetterReviewPage({
         n’est envoyé tant que vous n’avez pas validé.
       </p>
       <div className="mt-6">
-        <ReviewLetter letter={letter} caseId={id} />
+        <ReviewLetter
+          letter={letter}
+          caseId={id}
+          defaultEmail={c?.debtor_email ?? ""}
+          defaultToAddress={defaultToAddress}
+          defaultFromAddress={defaultFromAddress}
+        />
       </div>
     </div>
   );

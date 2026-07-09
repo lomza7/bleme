@@ -8,7 +8,7 @@ import { ALLOWED_MIME, MAX_SIZE, resolveMime } from "@/lib/documents/mime";
 import { detectFacts, FIELD_LABEL } from "@/lib/cases/extraction";
 import { analysePiece } from "@/lib/cases/analysis";
 import type { PieceAnalysis } from "@/lib/cases/analysis-types";
-import { recomputeCaseProgress } from "@/lib/cases/completeness";
+import { touchCase } from "@/lib/cases/touch";
 import { runAgent } from "@/lib/ai/client";
 import { keepClean } from "@/lib/ai/guardrails";
 import { readDocumentFacts, amountToCents } from "@/lib/cases/vision";
@@ -409,6 +409,10 @@ export async function assignItemToCase(
     .update({ case_id: caseRow.id, is_read: true, is_archived: true })
     .eq("id", item.id);
 
+  await touchCase(caseRow.id, {
+    type: "email_merged",
+    label: `Élément versé au dossier : ${item.subject ?? "pièce reçue"}`,
+  });
   revalidatePath("/app/inbox");
   revalidatePath("/app/documents", "layout");
   revalidatePath(`/app/dossiers/${caseRow.id}`);
@@ -739,7 +743,7 @@ export async function confirmEmailMerge(input: {
     .update({ case_id: caseRow.id, is_read: true, is_archived: true })
     .eq("id", item.id);
 
-  await recomputeCaseProgress(caseRow.id);
+  await touchCase(caseRow.id, { type: "email_merged", label: `Email versé : ${item.subject}` });
   revalidatePath("/app/inbox");
   revalidatePath("/app/documents", "layout");
   revalidatePath(`/app/dossiers/${caseRow.id}`);

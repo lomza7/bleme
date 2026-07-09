@@ -23,7 +23,7 @@
 | 5 | [05-architecture.md](05-architecture.md) | Architecture technique, mises au point stack, email entrant, sécurité, audit |
 | 6 | [06-modele-donnees.md](06-modele-donnees.md) | Schéma Supabase : 22 tables, relations, index, RLS |
 | 7 | [07-agents-ia.md](07-agents-ia.md) | 10 agents IA : rôles, I/O, limites, points de validation humaine |
-| 8 | [08-workflows.md](08-workflows.md) | 13 workflows clés pas à pas |
+| 8 | [08-workflows.md](08-workflows.md) | 14 workflows clés pas à pas |
 | 9 | [09-pricing.md](09-pricing.md) | Grille tarifaire, conversion, captivité saine, unit economics |
 | 10 | [10-landing-page.md](10-landing-page.md) | Copy complète de la landing V1 |
 | 11 | [11-slogans.md](11-slogans.md) | 30 slogans + top 5 justifié |

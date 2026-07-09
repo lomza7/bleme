@@ -1,16 +1,27 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { CircleAlert, CircleCheck, LoaderCircle, UploadCloud } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { CircleAlert, CircleCheck, LoaderCircle, ScanLine, UploadCloud } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { prepareUpload, finalizeUpload, type DocState } from "@/lib/documents/actions";
 import { AnalysisModal } from "@/components/app/analysis-modal";
 import type { PieceAnalysis } from "@/lib/cases/analysis-types";
 
+// Chargé à la demande : le scanner (caméra + traitement d'image) ne pèse rien
+// tant qu'on ne l'ouvre pas, et n'a aucun sens côté serveur.
+const DocumentScanner = dynamic(
+  () => import("@/components/app/document-scanner").then((m) => m.DocumentScanner),
+  { ssr: false },
+);
+
 const MAX_SIZE = 25 * 1024 * 1024;
 
-/** Zone de dépôt : clic ou glisser-déposer, envoi DIRECT navigateur → Storage
- * (URL signée) pour tenir 25 Mo même en prod. Avec `kinds`, catégorise la pièce. */
+/** Dépôt de pièce : le SCAN caméra est l'action mise en avant (cadrage auto,
+ * redressement, contrôle de lisibilité avant envoi — la moitié des utilisateurs
+ * photographient leurs factures sur chantier) ; le clic / glisser-déposer reste
+ * disponible en secondaire. Envoi DIRECT navigateur → Storage (URL signée)
+ * pour tenir 25 Mo même en prod. Avec `kinds`, catégorise la pièce. */
 export function Uploader({
   scope,
   kinds,
@@ -24,6 +35,28 @@ export function Uploader({
   const [state, setState] = useState<DocState>({});
   const [dragging, setDragging] = useState(false);
   const [modal, setModal] = useState<PieceAnalysis | null>(null);
+  const [scanOpen, setScanOpen] = useState(false);
+  const [canScan, setCanScan] = useState(false);
+
+  // Le bouton scan n'apparaît que si l'appareil a une caméra (rendu après
+  // montage : pas de mismatch d'hydratation).
+  useEffect(() => {
+    let alive = true;
+    if (!navigator.mediaDevices?.getUserMedia) return;
+    navigator.mediaDevices
+      .enumerateDevices()
+      .then((devices) => {
+        if (alive && devices.some((d) => d.kind === "videoinput")) setCanScan(true);
+      })
+      .catch(() => {
+        // Énumération bloquée avant permission sur certains navigateurs :
+        // on laisse tenter, le scanner gère lui-même le refus caméra.
+        if (alive) setCanScan(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   async function handleFile(file: File | undefined) {
     if (!file || pending) return;
@@ -103,6 +136,24 @@ export function Uploader({
           accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,.webp,.txt,.eml,.doc,.docx"
           onChange={(e) => handleFile(e.target.files?.[0] ?? undefined)}
         />
+        {canScan ? (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => setScanOpen(true)}
+            className="flex w-full items-center gap-4 rounded-[1.75rem] bg-brand px-6 py-5 text-left text-brand-foreground transition-all duration-300 hover:bg-brand-strong active:scale-[0.99] disabled:opacity-60"
+          >
+            <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-white/15">
+              <ScanLine className="size-5" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-semibold">Scanner un document</span>
+              <span className="block text-xs opacity-85">
+                Cadrage automatique, lisibilité vérifiée avant l&apos;ajout au dossier
+              </span>
+            </span>
+          </button>
+        ) : null}
         <button
           type="button"
           disabled={pending}
@@ -117,7 +168,9 @@ export function Uploader({
             setDragging(false);
             handleFile(e.dataTransfer.files?.[0] ?? undefined);
           }}
-          className={`flex w-full flex-col items-center gap-2 rounded-[1.75rem] border-2 border-dashed px-6 py-8 text-center transition-all duration-300 ${
+          className={`flex w-full flex-col items-center gap-2 rounded-[1.75rem] border-2 border-dashed px-6 text-center transition-all duration-300 ${
+            canScan ? "py-5" : "py-8"
+          } ${
             dragging
               ? "border-brand bg-brand-soft"
               : "border-brand/30 bg-brand-soft/40 hover:border-brand/60 hover:bg-brand-soft/70"
@@ -129,7 +182,11 @@ export function Uploader({
             <UploadCloud className="size-6 text-brand-strong" />
           )}
           <span className="text-sm font-medium">
-            {pending ? "Envoi en cours…" : "Glissez un fichier ici, ou cliquez"}
+            {pending
+              ? "Envoi en cours…"
+              : canScan
+                ? "ou glissez un fichier ici"
+                : "Glissez un fichier ici, ou cliquez"}
           </span>
           <span className="text-xs text-muted-foreground">
             PDF, photos, Word, email · 25 Mo max
@@ -148,6 +205,15 @@ export function Uploader({
           </p>
         ) : null}
       </div>
+      {scanOpen ? (
+        <DocumentScanner
+          onClose={() => setScanOpen(false)}
+          onComplete={(file) => {
+            setScanOpen(false);
+            void handleFile(file);
+          }}
+        />
+      ) : null}
       {modal ? <AnalysisModal analysis={modal} onClose={() => setModal(null)} /> : null}
     </>
   );

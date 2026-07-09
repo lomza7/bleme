@@ -6,9 +6,9 @@ import { JsonLd } from "@/components/seo/json-ld";
 import { SITE_URL } from "@/lib/site";
 
 export const metadata: Metadata = {
-  title: "Guides pratiques : impayés, relances, litiges, recouvrement",
+  title: "Guides pratiques : impayés, relances, litiges, démarches",
   description:
-    "13 guides pratiques BLEME pour les pros : traiter une facture impayée, relancer, mettre en demeure, calculer les pénalités, choisir son recours, gérer un client qui conteste. Information claire, sources officielles.",
+    "14 guides pratiques BLEME pour les pros : traiter une facture impayée, relancer, mettre en demeure, calculer les pénalités, contester une décision de l'administration, gérer un client qui conteste. Information claire, sources officielles.",
   alternates: { canonical: "/guides" },
 };
 
@@ -52,9 +52,9 @@ export default function GuidesPage() {
           Guides pratiques
         </h1>
         <p className="mt-3 max-w-xl text-lg text-muted-foreground">
-          Impayés, relances, litiges, recours : l’essentiel du droit utile
-          aux pros, en clair et sourcé. Sans jargon, sans conseil
-          personnalisé.
+          Impayés, relances, litiges, démarches administratives : l’essentiel
+          du droit utile aux pros, en clair et sourcé. Sans jargon, sans
+          conseil personnalisé.
         </p>
 
         {GUIDE_CATEGORIES.map((categorie) => (

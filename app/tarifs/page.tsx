@@ -344,14 +344,14 @@ export default function TarifsPage() {
           <SimulateurAnnee />
         </Reveal>
 
-        {/* Bientôt : le front administratif */}
+        {/* Le front administratif, désormais ouvert */}
         <Reveal>
           <div className="mx-auto mt-6 flex max-w-4xl flex-wrap items-center gap-x-6 gap-y-3 rounded-[1.75rem] border border-dashed bg-card px-7 py-5">
             <span className="rounded-full bg-brand px-2.5 py-1 text-[11px] font-medium text-brand-foreground">
-              Bientôt
+              Nouveau
             </span>
             <p className="min-w-0 flex-1 basis-72 text-sm leading-relaxed text-muted-foreground">
-              Le même réflexe s’appliquera aux amendes et aux impôts : chaque
+              Le même réflexe s’applique désormais à l’administration : chaque
               année, plus d’un million de demandes de remise gracieuse sont
               déposées auprès de l’administration fiscale, et environ deux sur
               trois aboutissent à une remise partielle ou totale (rapport

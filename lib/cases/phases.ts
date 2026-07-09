@@ -24,6 +24,11 @@ export function phaseMeta(phase: Phase) {
 // Échelle d'escalade des courriers d'un impayé (dans l'ordre).
 export const ESCALATION_ORDER = ["reminder_1", "reminder_2", "formal_notice"] as const;
 
+// Échelle des courriers d'une démarche administrative : demande ou recours
+// gracieux → relance après silence → recours hiérarchique. Le contentieux
+// (tribunal administratif) relève de la phase 3, pas d'un cran de courrier.
+export const ADMIN_ORDER = ["admin_gracieux", "admin_relance", "admin_hierarchique"] as const;
+
 /**
  * Phase dérivée de l'état RÉEL (statut + courriers envoyés). Fonction pure,
  * seule vérité : recompute la persiste en cache dans cases.phase.
@@ -38,7 +43,7 @@ export function derivePhase({
   sentKinds: string[];
 }): Phase {
   if (status === "escalated") return 3;
-  if (sentKinds.includes("formal_notice")) return 3;
+  if (sentKinds.includes("formal_notice") || sentKinds.includes("admin_hierarchique")) return 3;
   if (sentKinds.length > 0) return 2;
   return 1;
 }
@@ -47,10 +52,12 @@ export function derivePhase({
  * Prochain courrier à préparer selon les courriers déjà envoyés.
  * Impayé : premier cran manquant de l'échelle (null si épuisée → endgame P3).
  * Litige : 'response' (répétable, une réponse par retour du client).
+ * Démarche admin : premier cran manquant de l'échelle gracieux → hiérarchique.
  */
 export function nextLetterKind(caseType: string, sentKinds: string[]): string | null {
   if (caseType === "client_dispute") return "response";
-  for (const kind of ESCALATION_ORDER) {
+  const order = caseType === "admin_request" ? ADMIN_ORDER : ESCALATION_ORDER;
+  for (const kind of order) {
     if (!sentKinds.includes(kind)) return kind;
   }
   return null;

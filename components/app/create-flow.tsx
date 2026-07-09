@@ -24,7 +24,7 @@ const EASE = [0.16, 1, 0.3, 1] as const;
 const KINDS: { kind: CaseKind; icon: typeof Banknote; title: string; desc: string; soon?: boolean }[] = [
   { kind: "unpaid", icon: Banknote, title: "Facture impayée", desc: "Un client ne paie pas ce qu’il vous doit." },
   { kind: "dispute", icon: Scale, title: "Litige client", desc: "Un client conteste, réclame ou bloque le paiement." },
-  { kind: "admin", icon: Landmark, title: "Amende ou démarche", desc: "Une amende à contester, une demande à monter.", soon: true },
+  { kind: "admin", icon: Landmark, title: "Démarche administrative", desc: "Une décision à contester, un recours ou une demande à monter." },
 ];
 
 const STEPS = [
@@ -77,16 +77,21 @@ export function CreateFlow() {
   };
 
   const isUnpaid = data.kind === "unpaid";
+  const isAdmin = data.kind === "admin";
   const detailsReady = isUnpaid
     ? data.partyName.trim() !== "" && data.amount.trim() !== "" && data.age !== ""
     : data.partyName.trim() !== "" && data.subject !== "" && data.stage !== "";
 
   // ── Compagnon par étape (guide la création, comme dans les phases) ──────────
+  // Basile prend le relais sur les démarches administratives.
+  const guide: Pick<Companion, "key" | "prenom" | "role"> = isAdmin
+    ? { key: "basile", prenom: "Basile", role: "Agent Démarches & recours" }
+    : { key: "marius", prenom: "Marius", role: "Agent Impayés" };
   const companions: Companion[] = [
-    { key: "marius", prenom: "Marius", role: "Agent Impayés", message: "Choisissez la situation : je monte le dossier avec vous, étape par étape." },
-    { key: "marius", prenom: "Marius", role: "Agent Impayés", message: isUnpaid ? "Juste l’essentiel pour ouvrir : qui, combien, depuis quand." : "Juste l’essentiel : avec qui, sur quoi, où ça en est." },
+    { ...guide, message: "Choisissez la situation : je monte le dossier avec vous, étape par étape." },
+    { ...guide, message: isUnpaid ? "Juste l’essentiel pour ouvrir : qui, combien, depuis quand." : isAdmin ? "Juste l’essentiel : quelle administration, à propos de quoi, où ça en est." : "Juste l’essentiel : avec qui, sur quoi, où ça en est." },
     { key: "nora", prenom: "Nora", role: "Agente Preuves", message: "Racontez librement — j’en tirerai les faits, les dates et la chronologie. C’est optionnel, vous pourrez compléter après." },
-    { key: "marius", prenom: "Marius", role: "Agent Impayés", message: "Tout est prêt. À la création, le dossier s’ouvre et les agents se mettent au travail. Rien ne part sans votre validation." },
+    { ...guide, message: "Tout est prêt. À la création, le dossier s’ouvre et les agents se mettent au travail. Rien ne part sans votre validation." },
   ];
 
   // ── Panneaux ────────────────────────────────────────────────────────────────
@@ -122,11 +127,11 @@ export function CreateFlow() {
 
   const panelDetails = (
     <section className="rounded-[1.75rem] border bg-card p-6 sm:p-7">
-      <h2 className="text-lg font-semibold">{isUnpaid ? "Les faits, en 30 secondes" : "Le litige, en 30 secondes"}</h2>
+      <h2 className="text-lg font-semibold">{isUnpaid ? "Les faits, en 30 secondes" : isAdmin ? "La démarche, en 30 secondes" : "Le litige, en 30 secondes"}</h2>
       <p className="mt-1 text-sm text-muted-foreground">Juste de quoi ouvrir le dossier — vous détaillerez ensuite.</p>
       <div className="mt-5 flex flex-col gap-5">
         <div className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium">{isUnpaid ? "Qui vous doit de l’argent ?" : "Avec qui avez-vous ce litige ?"}</span>
+          <span className="text-sm font-medium">{isUnpaid ? "Qui vous doit de l’argent ?" : isAdmin ? "Quelle administration ou quel service ?" : "Avec qui avez-vous ce litige ?"}</span>
           <CompanySearch value={data.partyName} onChange={({ name, siren }) => patch({ partyName: name, debtorSiren: siren })} />
         </div>
         {isUnpaid ? (
@@ -141,6 +146,17 @@ export function CreateFlow() {
             <div className="flex flex-col gap-2">
               <span className="text-sm font-medium">Depuis quand attendez-vous ?</span>
               <Pills options={["Moins d’1 mois", "1 à 3 mois", "3 à 6 mois", "Plus de 6 mois"]} value={data.age} onChange={(age) => patch({ age })} />
+            </div>
+          </>
+        ) : isAdmin ? (
+          <>
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium">À propos de quoi ?</span>
+              <Pills options={["Contester une décision", "Demande gracieuse", "Rectifier une situation", "Amende", "Autre"]} value={data.subject} onChange={(subject) => patch({ subject })} />
+            </div>
+            <div className="flex flex-col gap-2">
+              <span className="text-sm font-medium">Où ça en est ?</span>
+              <Pills options={["Rien envoyé pour l’instant", "Demande déjà envoyée", "Réponse reçue", "Silence de l’administration"]} value={data.stage} onChange={(stage) => patch({ stage })} />
             </div>
           </>
         ) : (
@@ -170,7 +186,7 @@ export function CreateFlow() {
         <div className="mt-6 border-t pt-6">
           <IntakeQuestions
             transcript={data.storyText}
-            kind={isUnpaid ? "unpaid" : "dispute"}
+            kind={data.kind ?? "unpaid"}
             partyName={data.partyName}
             onChange={(a) => patch({ devilAnswer: a })}
           />
@@ -191,7 +207,12 @@ export function CreateFlow() {
         </div>
       </div>
       <ul className="mt-5 space-y-2 text-sm">
-        {(isUnpaid ? ["Relance cordiale dès l’ouverture", "Relance ferme à J+7", "Mise en demeure prête à J+15"] : ["Preuves classées et chronologie", "Points de vigilance anticipés", "Réponse circonstanciée en brouillon"]).map((p) => (
+        {(isUnpaid
+          ? ["Relance cordiale dès l’ouverture", "Relance ferme à J+7", "Mise en demeure prête à J+15"]
+          : isAdmin
+            ? ["Pièces classées et faits vérifiés", "Demande ou recours gracieux en brouillon", "Suivi des délais de réponse"]
+            : ["Preuves classées et chronologie", "Points de vigilance anticipés", "Réponse circonstanciée en brouillon"]
+        ).map((p) => (
           <li key={p} className="flex items-start gap-2.5">
             <Check className="mt-0.5 size-4 shrink-0 text-brand-strong" />
             {p}

@@ -111,15 +111,14 @@ const TIMELINES: Record<
     ],
   },
   admin: {
-    label: "Demande aux impôts",
-    soon: true,
+    label: "Démarche administrative",
     jalons: [
       {
         jour: "Jour 0",
         icon: Landmark,
         titre: "Situation analysée",
         texte:
-          "Amende, majoration ou pénalité : les motifs de contestation ou de remise gracieuse sont identifiés.",
+          "Décision à contester, demande gracieuse ou rectification : la démarche et l’autorité compétente sont identifiées.",
         duree: "analyse immédiate",
       },
       {
@@ -127,7 +126,7 @@ const TIMELINES: Record<
         icon: ScrollText,
         titre: "Demande rédigée",
         texte:
-          "Le courrier motivé est prêt : contestation ou demande gracieuse, avec vos justificatifs joints.",
+          "Le courrier motivé est prêt : recours ou demande gracieuse, avec vos justificatifs joints.",
         duree: "brouillon prêt sous 24 h",
       },
       {

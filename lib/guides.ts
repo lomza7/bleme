@@ -82,6 +82,17 @@ export const GUIDE_CATEGORIES: GuideCategorie[] = [
     ],
   },
   {
+    titre: "Administration et démarches",
+    guides: [
+      {
+        slug: "recours-gracieux-administration",
+        titre: "Recours gracieux : contester une décision de l'administration",
+        resume:
+          "Demander à l'administration de revoir sa décision avant le tribunal : à qui écrire, quelles mentions, le délai de 2 mois et ce que vaut le silence.",
+      },
+    ],
+  },
+  {
     titre: "Litiges, preuves et clients",
     guides: [
       {

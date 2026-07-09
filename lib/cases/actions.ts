@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { fetchCompanyFiche } from "@/lib/companies/pappers";
+import { touchCase } from "@/lib/cases/touch";
 
 async function currentOrgId(): Promise<{ orgId: string } | { error: string }> {
   const supabase = await createClient();
@@ -55,7 +56,7 @@ export async function createCaseFromDraft(
   const parsed = draftSchema.safeParse(
     JSON.parse(String(formData.get("draft") ?? "{}")),
   );
-  if (!parsed.success || parsed.data.kind === "admin") {
+  if (!parsed.success) {
     return { error: "Brouillon illisible : recommencez depuis « Nouveau blème »." };
   }
   const org = await currentOrgId();
@@ -64,6 +65,7 @@ export async function createCaseFromDraft(
   const d = parsed.data;
   const supabase = await createClient();
   const isUnpaid = d.kind === "unpaid";
+  const isAdmin = d.kind === "admin";
   const amountCents = parseAmountToCents(d.amount);
 
   const summaryParts: string[] = [];
@@ -71,7 +73,8 @@ export async function createCaseFromDraft(
   // tel quel (plus de placeholder « analyse à venir »).
   if (d.storyText.trim()) summaryParts.push(d.storyText.trim());
   if (isUnpaid && d.age) summaryParts.push(`Impayé depuis : ${d.age.toLowerCase()}.`);
-  if (!isUnpaid && d.subject) summaryParts.push(`Objet du litige : ${d.subject}. Où ça en est : ${d.stage || "non précisé"}.`);
+  if (d.kind === "dispute" && d.subject) summaryParts.push(`Objet du litige : ${d.subject}. Où ça en est : ${d.stage || "non précisé"}.`);
+  if (isAdmin && d.subject) summaryParts.push(`Objet de la démarche : ${d.subject}. Où ça en est : ${d.stage || "non précisé"}.`);
 
   // Fiche entreprise (Pappers) rattachée au dossier si un SIREN a été retenu —
   // utile pour la suite et pour les agents (siège officiel, dirigeants, alerte
@@ -91,8 +94,8 @@ export async function createCaseFromDraft(
     .from("cases")
     .insert({
       organization_id: org.orgId,
-      case_type: isUnpaid ? "unpaid_invoice" : "client_dispute",
-      title: `${isUnpaid ? "Facture impayée" : "Litige client"} · ${d.partyName}`,
+      case_type: isUnpaid ? "unpaid_invoice" : isAdmin ? "admin_request" : "client_dispute",
+      title: `${isUnpaid ? "Facture impayée" : isAdmin ? "Démarche administrative" : "Litige client"} · ${d.partyName}`,
       status: isUnpaid ? "awaiting_user" : "awaiting_user",
       debtor_name: d.partyName,
       debtor_siren: d.debtorSiren,
@@ -102,10 +105,12 @@ export async function createCaseFromDraft(
       weak_points_md: vigilance,
       stage: 1,
       phase: 1,
-      next_letter_kind: isUnpaid ? "reminder_1" : "response",
+      next_letter_kind: isUnpaid ? "reminder_1" : isAdmin ? "admin_gracieux" : "response",
       next_action_label: isUnpaid
         ? "Ajouter vos preuves (facture, devis…)"
-        : "Ajouter vos preuves (devis, échanges, photos…)",
+        : isAdmin
+          ? "Ajouter vos pièces (décision, jugement, courriers…)"
+          : "Ajouter vos preuves (devis, échanges, photos…)",
       next_action_at: days(1),
       expected_recovery_at: isUnpaid ? days(28) : null,
       source: "wizard_draft",
@@ -139,6 +144,9 @@ export async function createCaseFromDraft(
       : []),
   ]);
 
+  // Contexte initial dès la création (v1 datée) ; recompute:false préserve la
+  // prochaine action posée par le wizard (« Ajoutez vos preuves »).
+  await touchCase(created.id, { type: "case_created", label: "Dossier créé" }, { recompute: false });
   revalidatePath("/app");
   redirect(`/app/dossiers/${created.id}`);
 }
@@ -178,6 +186,7 @@ export async function updateCaseRequest(
     .eq("id", parsed.data.caseId);
   if (error) return { error: "Impossible d’enregistrer. Réessayez." };
 
+  await touchCase(parsed.data.caseId, { type: "request_updated", label: "Demande mise à jour" });
   revalidatePath(`/app/dossiers/${parsed.data.caseId}`);
   revalidatePath("/app");
   return { success: "Demande mise à jour." };
@@ -233,6 +242,10 @@ export async function recordPayment(
     source: "user",
   });
 
+  await touchCase(caseId.data, {
+    type: "payment",
+    label: fullyPaid ? "Paiement reçu — dossier soldé" : "Paiement partiel reçu",
+  });
   revalidatePath("/app");
   revalidatePath(`/app/dossiers/${caseId.data}`);
   return {};

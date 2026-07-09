@@ -17,7 +17,7 @@ export function IntakeQuestions({
   onChange,
 }: {
   transcript: string;
-  kind: "unpaid" | "dispute";
+  kind: "unpaid" | "dispute" | "admin";
   partyName: string;
   onChange: (answersText: string) => void;
 }) {

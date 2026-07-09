@@ -29,8 +29,13 @@ const PATTERNS: string[] = [
   "vous\\s+risquez",
   "pronostic",
   "strat[ée]gie\\s+judiciaire",
-  // Conseil personnalisé / promesse de résultat
-  "je\\s+vous\\s+conseille",
+  // Conseil personnalisé / promesse de résultat. NB : « il est recommandé de »
+  // (conseil) mais JAMAIS « recommandé(e) » seul — lettre/envoi recommandé est
+  // le vocabulaire légitime du produit.
+  "(?:je|nous)\\s+(?:te|vous)\\s+conseill\\w*",
+  "il\\s+est\\s+recommand[ée]\\s+de",
+  "avez\\s+(?:tout\\s+)?int[ée]r[êe]t\\s+à",
+  "il\\s+faudrait",
   "vous\\s+devriez",
   "vous\\s+obtiendrez",
   "recours\\s+gagnant",

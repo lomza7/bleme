@@ -38,5 +38,5 @@ export const KIND_META: Record<
 > = {
   unpaid: { label: "Facture impayée", short: "Impayé" },
   dispute: { label: "Litige client", short: "Litige" },
-  admin: { label: "Amende ou démarche", short: "Démarche" },
+  admin: { label: "Démarche administrative", short: "Démarche" },
 };

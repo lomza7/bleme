@@ -58,10 +58,18 @@ const SUBJECT_BY_TYPE: Record<string, string> = {
     "(force obligatoire), 1217 et 1219 (inexécution et exception d'inexécution), 1353 (charge de la preuve), " +
     "et le cas échéant la garantie légale de conformité / des vices. Puis, via judilibre.rechercher, trouve " +
     "1 arrêt pertinent sur la contestation d'une prestation, la réception sans réserve ou l'exception d'inexécution.",
+  // Socle universel des démarches administratives : le régime général des
+  // recours (CRPA) et des délais contentieux (CJA) vaut pour toute autorité
+  // (préfecture, ministère, DGFiP…). Les textes propres au domaine du dossier
+  // (code de la route, LPF…) relèvent du volet agentique de Basile.
   admin_request:
-    "Récupère via legifrance (Livre des procédures fiscales) les articles sur la réclamation contentieuse " +
-    "(R*196-1 LPF, délais) et la demande gracieuse (L247 LPF), et via judilibre/justice administrative 1 " +
-    "décision de principe pertinente. Ne cite que ce que les outils renvoient.",
+    "Récupère via legifrance.consulter_article (id obtenu par legifrance.rechercher_loi) le texte des " +
+    "articles L410-1 et L411-2 du Code des relations entre le public et l'administration (recours " +
+    "administratifs gracieux et hiérarchique ; interruption du délai de recours contentieux) et des " +
+    "articles R421-1 et R421-2 du Code de justice administrative (délai de recours contentieux de deux " +
+    "mois ; silence gardé valant décision implicite de rejet). Puis, via justice_administrative.rechercher " +
+    "ou rechercher_ta, trouve 1 décision pertinente sur le recours gracieux contre une décision " +
+    "administrative individuelle. Ne cite que ce que les outils renvoient.",
 };
 
 // Cache global par type (la loi est universelle). Un socle NON VIDE est gardé 6 h ;

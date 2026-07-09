@@ -77,7 +77,13 @@ Notation : **[U]** action utilisateur, **[S]** système déterministe, **[IA]** 
 3. [S] Si non validée après 3 jours → rappel ; après 10 jours → dossier marqué "à risque" sur le dashboard.
 4. *(V2, opt-in)* : relances **amiables** envoyées automatiquement si l'utilisateur a activé l'auto-pilote et pré-validé les templates — la MED reste toujours à validation manuelle.
 
-## 13. Export du dossier complet
+## 13. Passage de relais entre agents (changement de phase)
+1. [S] `recomputeCaseProgress` détecte un changement de phase (P1→P2 ou P2→P3) : le dossier change d'agent référent.
+2. [IA] L'agent qui reçoit le dossier relit la mémoire partagée + le socle juridique (Légifrance/JUDILIBRE) et émet 0-4 prises de parole typées : `question` / `observation` / `vigilance` (voir doc 07). Références juridiques absentes des sources → supprimées côté serveur ; filtre anti-conseil au grain fin.
+3. [S] Persistance dans `agent_observations` (status `open`) + événement timeline "X a pris la parole". Idempotent : un même passage de relais ne parle qu'une fois.
+4. [✋] L'utilisateur répond (sa réponse prime et alimente la mémoire partagée), acte ("c'est noté") ou écarte. Rien n'est bloquant : le dossier avance même sans réponse.
+
+## 14. Export du dossier complet
 1. [U] Clique "Exporter le dossier".
 2. [IA] Agent Export : synthèse factuelle (parties, montants, chronologie, démarches accomplies, liste des pièces).
 3. [S] Bordereau numéroté (`piece_number`), ZIP ordonné (synthèse, bordereau, pièces, courriers avec preuves d'envoi, emails en PDF), horodatage + hash.

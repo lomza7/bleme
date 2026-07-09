@@ -20,6 +20,9 @@ export const LETTER_PALIER: Record<string, number> = {
   formal_notice: 3,
   response: 0,
   custom: 0,
+  admin_gracieux: 1,
+  admin_relance: 2,
+  admin_hierarchique: 3,
 };
 
 /**
@@ -32,6 +35,11 @@ export const LETTER_MENTIONS: Record<string, string[]> = {
   formal_notice: [MENTION_RETARD_B2B, MENTION_MISE_EN_DEMEURE],
   response: [],
   custom: [],
+  // Courriers à l'administration : aucune mention figée — les références du
+  // droit viennent du socle vérifié ou des outils, jamais d'un gabarit codé.
+  admin_gracieux: [],
+  admin_relance: [],
+  admin_hierarchique: [],
 };
 
 export const LETTER_KINDS: Record<
@@ -42,6 +50,9 @@ export const LETTER_KINDS: Record<
   reminder_2: { label: "Relance ferme", tone: "ferme", caseTypes: ["unpaid_invoice"] },
   formal_notice: { label: "Mise en demeure", tone: "ferme", caseTypes: ["unpaid_invoice"] },
   response: { label: "Réponse à la contestation", tone: "factuel", caseTypes: ["client_dispute"] },
+  admin_gracieux: { label: "Demande / recours gracieux", tone: "factuel", caseTypes: ["admin_request"] },
+  admin_relance: { label: "Relance de l’administration", tone: "ferme", caseTypes: ["admin_request"] },
+  admin_hierarchique: { label: "Recours hiérarchique", tone: "ferme", caseTypes: ["admin_request"] },
   // Courriers créés par programme (réponse adaptée à un retour, modèles
   // d'escalade P3) : jamais proposés comme bouton générique (caseTypes vide) ;
   // le sujet du courrier porte le libellé précis.

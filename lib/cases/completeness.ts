@@ -2,8 +2,9 @@ import "server-only";
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
-import { derivePhase, nextLetterKind } from "@/lib/cases/phases";
+import { derivePhase, nextLetterKind, type Phase } from "@/lib/cases/phases";
 import { refreshLivingBrief } from "@/lib/cases/brief";
+import { runHandoffReflection } from "@/lib/cases/observations";
 
 /*
  * Moteur du cockpit dossier : checklist de complétude par type, calcul du
@@ -26,6 +27,11 @@ export const CHECKLISTS: Record<string, ChecklistItem[]> = {
     { kind: "echanges", label: "Échanges avec le client", hint: "La contestation et vos réponses." },
     { kind: "facture", label: "La facture concernée", hint: "La facture dont le paiement est bloqué." },
   ],
+  admin_request: [
+    { kind: "decision_admin", label: "La décision ou le courrier de l’administration", hint: "Notification, avis, décision — ce que vous contestez ou visez." },
+    { kind: "justificatif", label: "Vos pièces justificatives", hint: "Jugement, dépôt de plainte, attestation, facture — ce qui appuie la demande." },
+    { kind: "echanges", label: "Échanges avec l’administration", hint: "Courriers envoyés, réponses reçues, accusés de réception." },
+  ],
 };
 
 // Catégories proposées à l'upload (rôle de la pièce dans le dossier).
@@ -35,6 +41,8 @@ export const DOC_KINDS: { value: string; label: string }[] = [
   { value: "preuve_envoi", label: "Preuve d’envoi / réception" },
   { value: "preuve_livraison", label: "Preuve de livraison / photos" },
   { value: "echanges", label: "Échanges (email, SMS, WhatsApp)" },
+  { value: "decision_admin", label: "Décision / courrier de l’administration" },
+  { value: "justificatif", label: "Justificatif (jugement, plainte, attestation…)" },
   { value: "autre", label: "Autre pièce" },
 ];
 
@@ -76,10 +84,13 @@ function inDays(n: number): string {
  * dérivée de l'état réel (derivePhase) et persistée comme cache d'affichage.
  * Renvoie le nouveau score (pour affichage optimiste).
  */
-export async function recomputeCaseProgress(caseId: string): Promise<number | null> {
+export async function recomputeCaseProgress(
+  caseId: string,
+  cause?: import("@/lib/cases/brief").BriefCause,
+): Promise<number | null> {
   const supabase = await createClient();
   const [{ data: c }, { data: docs }, { data: letters }, { data: replies }] = await Promise.all([
-    supabase.from("cases").select("case_type, status, stage_total").eq("id", caseId).maybeSingle(),
+    supabase.from("cases").select("case_type, status, stage_total, phase, is_sample").eq("id", caseId).maybeSingle(),
     supabase.from("documents").select("doc_kind, doc_class").eq("case_id", caseId),
     supabase.from("letters").select("kind, status").eq("case_id", caseId).order("created_at", { ascending: false }),
     supabase.from("debtor_replies").select("handled").eq("case_id", caseId),
@@ -117,12 +128,16 @@ export async function recomputeCaseProgress(caseId: string): Promise<number | nu
     label =
       c.status === "escalated"
         ? "Escalade engagée — préparez le dossier"
-        : "Mise en demeure envoyée — sans réponse, envisagez l’escalade";
+        : c.case_type === "admin_request"
+          ? "Recours envoyé — sans réponse dans le délai, envisagez l’escalade"
+          : "Mise en demeure envoyée — sans réponse, envisagez l’escalade";
     at = inDays(7);
   } else if (phase === 2) {
     label = nextKind
-      ? `Prochaine relance : ${LETTER_KINDS[nextKind]?.label ?? nextKind}`
-      : "En attente du client";
+      ? `Prochain courrier : ${LETTER_KINDS[nextKind]?.label ?? nextKind}`
+      : c.case_type === "admin_request"
+        ? "En attente de l’administration"
+        : "En attente du client";
     at = inDays(7);
   } else if (missing.length > 0) {
     label = `Déposez : ${missing[0].label.toLowerCase()}`;
@@ -146,11 +161,20 @@ export async function recomputeCaseProgress(caseId: string): Promise<number | nu
     })
     .eq("id", caseId);
 
-  // Synthèse vivante rafraîchie en tâche de fond (après la réponse), pour ne pas
-  // ralentir l'action utilisateur. `after` garde la fonction serverless en vie
+  // Tâches de fond (après la réponse), pour ne pas ralentir l'action
+  // utilisateur : synthèse vivante, puis — si le dossier vient de changer de
+  // phase, donc d'agent référent — prise de parole de l'agent qui le reçoit
+  // (doc 07, passage de relais). L'ordre compte : la réflexion relit la
+  // synthèse fraîche via caseMemo. `after` garde la fonction serverless en vie
   // le temps du run ; hors contexte requête (script), on ignore simplement.
+  const prevPhase = (c.phase ?? null) as Phase | null;
   try {
-    after(() => refreshLivingBrief(caseId));
+    after(async () => {
+      await refreshLivingBrief(caseId, cause);
+      if (!c.is_sample && prevPhase !== null && prevPhase !== phase) {
+        await runHandoffReflection(caseId, { fromPhase: prevPhase, toPhase: phase });
+      }
+    });
   } catch {
     /* pas de contexte requête : le cahier se rafraîchira à la prochaine mutation */
   }

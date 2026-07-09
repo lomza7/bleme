@@ -6,7 +6,7 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { parseWhatsAppExport, pickKeyMessages } from "@/lib/whatsapp/parser";
 import { detectFacts } from "@/lib/cases/extraction";
 import { readDocumentFacts } from "@/lib/cases/vision";
-import { recomputeCaseProgress } from "@/lib/cases/completeness";
+import { touchCase } from "@/lib/cases/touch";
 import { analysePiece } from "@/lib/cases/analysis";
 import type { PieceAnalysis } from "@/lib/cases/analysis-types";
 import { runAgent } from "@/lib/ai/client";
@@ -309,7 +309,7 @@ export async function finalizeUpload(input: {
     } catch {
       // Le run en erreur est déjà tracé par runAgent ; on garde le socle.
     }
-    await recomputeCaseProgress(caseId);
+    await touchCase(caseId, { type: "document_added", label: `Pièce ajoutée : ${input.fileName}` });
     revalidatePath(`/app/dossiers/${caseId}`);
   }
 
@@ -331,7 +331,7 @@ export async function correctExtraction(formData: FormData): Promise<void> {
   if (caseIdParsed.success) {
     // La correction prime (pilier #3) : on recompute → refreshLivingBrief (after)
     // régénère la synthèse et le memo servis aux agents sur la valeur corrigée.
-    await recomputeCaseProgress(caseIdParsed.data);
+    await touchCase(caseIdParsed.data, { type: "user_correction", label: "Correction d'une information extraite" });
     revalidatePath(`/app/dossiers/${caseIdParsed.data}`);
   }
 }
@@ -353,7 +353,7 @@ export async function deleteDocument(formData: FormData): Promise<void> {
   revalidatePath("/app/documents", "layout");
   // Retirer une pièce recompose la complétude et rafraîchit la page dossier.
   if (doc.case_id) {
-    await recomputeCaseProgress(doc.case_id);
+    await touchCase(doc.case_id, { type: "document_removed", label: "Pièce retirée du dossier" });
     revalidatePath(`/app/dossiers/${doc.case_id}`);
   }
 }

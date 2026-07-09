@@ -72,7 +72,9 @@ export function StoryStep({
                   La question qui fâche :{" "}
                   {data.kind === "dispute"
                     ? "qu’est-ce que l’autre partie vous reproche, au juste ?"
-                    : `qu’est-ce que ${data.partyName || "l’autre partie"} pourrait répondre pour ne pas payer ?`}
+                    : data.kind === "admin"
+                      ? "qu’est-ce que l’administration pourrait objecter à votre demande ?"
+                      : `qu’est-ce que ${data.partyName || "l’autre partie"} pourrait répondre pour ne pas payer ?`}
                 </p>
                 <p
                   className={`mt-1.5 text-sm leading-relaxed ${light ? "text-muted-foreground" : "text-ink-muted"}`}

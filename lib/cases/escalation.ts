@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { recomputeCaseProgress, completeness } from "@/lib/cases/completeness";
+import { completeness } from "@/lib/cases/completeness";
+import { touchCase } from "@/lib/cases/touch";
 import { buildEscalation, ESCALATION_MODELS, type EscalationModel } from "@/lib/cases/escalation-templates";
 import { runAgent } from "@/lib/ai/client";
 import { hasAdvice } from "@/lib/ai/guardrails";
@@ -109,11 +110,10 @@ export async function runDevilReview(_prev: EscState, formData: FormData): Promi
     description: "Points de vigilance actionnables identifiés.",
     source: "ai",
   });
-  // Refermer la boucle : la revue de Jeanne alimente la synthèse vivante
+  // Refermer la boucle : la revue de Jeanne alimente le contexte daté
   // (buildCaseContext → revue_adverse), pour que l'escalade de Marius, qui lit
-  // caseMemo, voie enfin ces objections. recomputeCaseProgress déclenche
-  // refreshLivingBrief en tâche de fond (after()).
-  await recomputeCaseProgress(c.id);
+  // caseMemo, voie enfin ces objections.
+  await touchCase(c.id, { type: "escalation", label: "Revue de robustesse (regard adverse)" });
   revalidatePath(`/app/dossiers/${c.id}`);
   return { success: "Revue effectuée." };
 }
@@ -203,6 +203,7 @@ export async function generateEscalationDraft(_prev: EscState, formData: FormDat
     title: `Modèle préparé : ${ESCALATION_MODELS[model].label.toLowerCase()}`,
     source: "ai",
   });
+  await touchCase(c.id, { type: "letter_draft", label: `Modèle d'escalade préparé : ${ESCALATION_MODELS[model].label}` });
   revalidatePath(`/app/dossiers/${c.id}`);
   return { success: "Modèle généré.", letterId: created.id };
 }
@@ -253,7 +254,7 @@ export async function escalateCase(_prev: EscState, formData: FormData): Promise
   }
 
   await supabase.from("cases").update({ status: "escalated", escalation_summary_md: summary }).eq("id", c.id);
-  await recomputeCaseProgress(c.id);
+  await touchCase(c.id, { type: "escalation", label: "Dossier passé en escalade" });
   await supabase.from("case_events").insert({
     case_id: c.id,
     organization_id: org.orgId,

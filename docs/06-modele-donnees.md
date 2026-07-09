@@ -92,6 +92,11 @@ Champs : `letter_id`, `case_id`, `provider ('manual'|'maileva'|'merci_facteur')`
 Rôle : toute proposition d'un agent soumise à l'humain (prochaine action, brouillon, classification douteuse).
 Champs : `case_id`, `agent_key`, `suggestion_type`, `payload jsonb`, `rationale_md`, `status ('proposed'|'accepted'|'edited'|'rejected'|'expired')`, `decided_by`, `decided_at`.
 
+### `agent_observations`
+Rôle : prise de parole d'un agent au passage de relais (changement de phase) — question à l'utilisateur, observation factuelle ou point de vigilance appuyé sur des sources juridiques réelles (voir doc 07).
+Champs : `organization_id`, `case_id`, `agent_key`, `trigger_key` (ex. `phase_1_to_2`, unique par dossier), `kind ('question'|'observation'|'vigilance')`, `title`, `detail_md`, `legal_refs jsonb` (`[{reference, portee}]` — texte du socle juridique après appariement, jamais celui du modèle), `status ('open'|'answered'|'acknowledged'|'dismissed')`, `answer_text`, `answered_by`, `answered_at`.
+Règles : écriture réservée au service-role (pas de policy INSERT ; colonnes de contenu verrouillées par trigger, seule la réponse est modifiable) ; idempotence sous concurrence via le verrou `case_handoff_claims (case_id, trigger_key)` posé avant le run ; la réponse utilisateur prime et est réinjectée dans la mémoire partagée des agents.
+
 ### `agent_runs`
 Rôle : trace technique de chaque appel IA (coût, debug, amélioration des prompts).
 Champs : `case_id null`, `agent_key`, `prompt_version`, `model`, `input_ref jsonb`, `output_ref jsonb`, `tokens_in`, `tokens_out`, `cost_cents`, `duration_ms`, `status ('ok'|'failed'|'retried')`, `error`.

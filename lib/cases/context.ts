@@ -51,6 +51,9 @@ export type CaseContext = {
   documents: { fileName: string; docKind: string | null; docClass: string | null; summary: string | null }[];
   letters: { kind: string; status: string; subject: string | null; sentAt: string | null }[];
   replies: { receivedAt: string; via: string | null; body: string }[];
+  // Prises de parole des agents aux passages de relais (+ réponses utilisateur,
+  // qui priment) : les agents suivants les voient et ne reposent pas la question.
+  observations: { agentKey: string; kind: string; title: string; status: string; answer: string | null }[];
 };
 
 export async function buildCaseContext(
@@ -76,7 +79,7 @@ export async function buildCaseContext(
   const docs = docRows ?? [];
   const docIds = docs.map((d) => d.id);
 
-  const [extRes, eventsRes, lettersRes, repliesRes] = await Promise.all([
+  const [extRes, eventsRes, lettersRes, repliesRes, obsRes] = await Promise.all([
     docIds.length
       ? sb
           .from("document_extractions")
@@ -100,6 +103,11 @@ export async function buildCaseContext(
       .select("received_at, received_via, body_text")
       .eq("case_id", caseId)
       .order("received_at", { ascending: true }),
+    sb
+      .from("agent_observations")
+      .select("agent_key, kind, title, status, answer_text")
+      .eq("case_id", caseId)
+      .order("created_at", { ascending: true }),
   ]);
 
   const facts: CaseFact[] = (
@@ -162,6 +170,22 @@ export async function buildCaseContext(
     body: r.body_text,
   }));
 
+  const observations = (
+    (obsRes.data ?? []) as {
+      agent_key: string;
+      kind: string;
+      title: string;
+      status: string;
+      answer_text: string | null;
+    }[]
+  ).map((o) => ({
+    agentKey: o.agent_key,
+    kind: o.kind,
+    title: o.title,
+    status: o.status,
+    answer: o.answer_text,
+  }));
+
   return {
     id: row.id,
     organizationId: row.organization_id,
@@ -191,5 +215,6 @@ export async function buildCaseContext(
     })),
     letters,
     replies,
+    observations,
   };
 }

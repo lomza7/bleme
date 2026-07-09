@@ -1,7 +1,8 @@
 import "server-only";
 import { serverEnv } from "@/lib/env";
 import { sendEmail } from "@/lib/services/email";
-import { getMerciFacteurToken } from "@/lib/courrier/merci-facteur";
+import { sendRegisteredLetter, type LetterAddress } from "@/lib/courrier/merci-facteur";
+import { buildLetterPdf } from "@/lib/courrier/pdf";
 
 /*
  * Expédition RÉELLE d'un courrier déjà validé et loggé (approval_logs + hash,
@@ -34,6 +35,11 @@ export async function dispatchLetter(input: {
   toEmail?: string | null;
   toName?: string | null;
   replyTo?: string | null;
+  /** Postal : adresses saisies/validées par l'utilisateur, jamais devinées. */
+  toAddress?: LetterAddress | null;
+  fromAddress?: LetterAddress | null;
+  /** Postal : id du courrier BLEME — référence AR, ref_interne webhook, antidoublon. */
+  reference?: string | null;
 }): Promise<DispatchResult> {
   if (!sendEnabled()) {
     return { status: "prepared", reason: "Expédition réelle désactivée (SEND_ENABLED)." };
@@ -61,12 +67,41 @@ export async function dispatchLetter(input: {
     }
   }
 
-  // Postal (Merci Facteur) : l'authentification existe ; la création + l'envoi du
-  // recommandé (génération PDF + adresse destinataire) restent à brancher. On ne
-  // prétend donc PAS avoir expédié.
-  const auth = await getMerciFacteurToken();
-  if ("error" in auth) {
-    return { status: "prepared", reason: `Envoi postal indisponible : ${auth.error}` };
+  // Postal (Merci Facteur, LRAR mode `lrare`) : PDF généré depuis le contenu
+  // EXACT approuvé, adresses saisies par l'utilisateur, antidoublon = id du
+  // courrier. `sendCourrier` débite et expédie immédiatement — d'où la double
+  // porte SEND_ENABLED + validation loggée en amont.
+  if (!input.toAddress) {
+    return { status: "prepared", reason: "Adresse postale du destinataire manquante." };
   }
-  return { status: "prepared", reason: "Envoi postal (recommandé) : intégration d'expédition à finaliser." };
+  if (!input.fromAddress) {
+    return { status: "prepared", reason: "Adresse postale de l'expéditeur manquante." };
+  }
+  if (!input.reference) {
+    return { status: "prepared", reason: "Référence du courrier manquante (antidoublon)." };
+  }
+  try {
+    const pdfBase64 = await buildLetterPdf({
+      subject: input.subject,
+      bodyMd: input.bodyMd,
+      exp: input.fromAddress,
+      dest: input.toAddress,
+    });
+    const sent = await sendRegisteredLetter({
+      pdfBase64,
+      filename: "courrier-recommande",
+      exp: input.fromAddress,
+      dest: input.toAddress,
+      reference: input.reference,
+    });
+    if ("error" in sent) {
+      return { status: "prepared", reason: `Envoi postal indisponible : ${sent.error}` };
+    }
+    return { status: "sent", via: "postal", ref: sent.envoiId || null };
+  } catch (e) {
+    return {
+      status: "prepared",
+      reason: e instanceof Error ? e.message.slice(0, 200) : "Échec de l'envoi postal.",
+    };
+  }
 }

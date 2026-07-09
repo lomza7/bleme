@@ -410,32 +410,32 @@ export const AGENTS: Agent[] = [
   {
     slug: "basile",
     prenom: "Basile",
-    role: "Agent Impôts & démarches",
+    role: "Agent Démarches & recours",
     avatar: "/agents/basile.webp",
     tagline:
       "Face à l'administration, il connaît les textes, les délais et les silences qui valent rejet : courrier motivé, bon fondement, relance au bon moment.",
     expertise:
-      "Expert du dialogue avec l'administration. Il identifie les motifs de contestation ou de remise gracieuse, rédige le courrier motivé et relance si le silence dure.",
+      "Expert du dialogue avec l'administration — impôts, préfectures, ministères, organismes publics. Il qualifie la démarche (recours gracieux, hiérarchique, réclamation, rectification), rédige le courrier motivé et relance si le silence dure.",
     skills: [
-      { label: "Doctrine fiscale", niveau: 4 },
       { label: "Procédures administratives", niveau: 4 },
+      { label: "Doctrine fiscale", niveau: 4 },
     ],
-    sources: ["BOFiP · doctrine fiscale", "Code général des impôts", "Livre des procédures fiscales"],
+    sources: ["Légifrance · codes et textes consolidés", "Justice administrative · CE, CAA et TA", "Fiches Service-Public · démarches officielles"],
     stats: [
-      { chiffre: "6 mois", valeur: 6, suffixe: " mois", label: "le délai de réponse de l'administration à une réclamation, qu'il suit au jour près", court: "de silence administratif suivis au jour près" },
-      { chiffre: "L247", label: "l'article du LPF qui permet de demander une remise gracieuse", court: "la remise gracieuse, son article de prédilection" },
-      { chiffre: "N+2", label: "l'horizon de réclamation qu'il surveille : jusqu'au 31 décembre de la 2e année", court: "l'horizon de réclamation surveillé" },
+      { chiffre: "2 mois", valeur: 2, suffixe: " mois", label: "le silence de l'administration qui fait naître une décision implicite, suivi au jour près", court: "de silence administratif suivis au jour près" },
+      { chiffre: "500k", valeur: 500, suffixe: "k", label: "décisions de tribunaux administratifs qu'il peut consulter avant de rédiger", court: "décisions de justice administrative consultables" },
+      { chiffre: "0", valeur: 0, label: "référence citée sans vérification : chaque article passe par Légifrance ou reste marqué « à vérifier »", court: "référence citée sans vérification par les sources" },
     ],
     mission: [
       {
-        titre: "Qualifier la situation",
+        titre: "Qualifier la démarche",
         detail:
-          "Contestation sur le fond, demande de remise gracieuse ou simple étalement : le bon fondement change tout le courrier. Il identifie la voie adaptée à votre cas.",
+          "Recours gracieux, recours hiérarchique, réclamation, demande gracieuse, rectification après un jugement : le bon fondement et la bonne autorité changent tout le courrier. Il identifie la voie adaptée à votre cas.",
       },
       {
         titre: "Rédiger le courrier motivé",
         detail:
-          "Références exactes, pièces attendues, motivation structurée : un courrier à l'administration se joue sur la forme autant que sur le fond. Le brouillon arrive prêt à relire.",
+          "Références du dossier, faits datés, demande expresse, pièces jointes numérotées : un courrier à l'administration se joue sur la forme autant que sur le fond. Le brouillon arrive prêt à relire.",
       },
       {
         titre: "Relancer quand le silence dure",
@@ -445,31 +445,30 @@ export const AGENTS: Agent[] = [
     ],
     savoir: [
       {
-        titre: "Doctrine fiscale opposable",
-        corpus: "BOFiP",
+        titre: "Codes et textes consolidés",
+        corpus: "Légifrance",
         description:
-          "Le Bulletin officiel des finances publiques : la doctrine que l'administration s'engage à appliquer, et qui lui est opposable (art. L80 A du LPF). Quand le BOFiP dit une chose, elle compte.",
-        stat: { chiffre: "L80 A", label: "l'article qui rend la doctrine opposable à l'administration" },
+          "Les codes en vigueur, consultés en direct avant chaque courrier : le bon article, dans sa version applicable, pas une approximation de mémoire. Ce qui n'est pas confirmé par la source est marqué « à vérifier ».",
+        stat: { chiffre: "En direct", label: "chaque référence est récupérée au moment de la rédaction" },
         icone: "code",
       },
       {
-        titre: "Code général des impôts",
-        corpus: "CGI + annexes",
+        titre: "Justice administrative",
+        corpus: "CE · CAA · TA",
         description:
-          "Le texte et ses 4 annexes réglementaires : assiette, recouvrement, sanctions. C'est là qu'il va chercher le fondement exact d'une contestation : le bon article, pas une approximation.",
-        stat: { chiffre: "4", valeur: 4, label: "annexes réglementaires maîtrisées en plus du code" },
+          "Les décisions du Conseil d'État, des cours administratives d'appel et des tribunaux administratifs : ce que le juge a déjà dit de situations comparables, cité avec juridiction, date et numéro exacts.",
+        stat: { chiffre: "500k", valeur: 500, suffixe: "k", label: "décisions de première instance indexées, en plus du fond CE/CAA" },
         icone: "code",
       },
       {
-        titre: "Procédures et délais fiscaux",
-        corpus: "Livre des procédures fiscales",
+        titre: "Procédures et délais",
+        corpus: "CRPA & fiches Service-Public",
         description:
-          "Réclamation contentieuse, remise gracieuse (art. L247), délais de réponse et rejets implicites : la mécanique administrative, avec ses échéances qu'il ne faut jamais laisser filer.",
-        stat: { chiffre: "6 mois", valeur: 6, suffixe: " mois", label: "de silence sur une réclamation : il prépare la suite avant" },
+          "Recours gracieux et hiérarchique, décisions implicites, délais de recours : la mécanique administrative, avec ses échéances qu'il ne faut jamais laisser filer.",
+        stat: { chiffre: "2 mois", valeur: 2, suffixe: " mois", label: "le délai charnière du contentieux administratif, surveillé sur chaque dossier" },
         icone: "horloge",
       },
     ],
-    soon: true,
   },
 ];
 

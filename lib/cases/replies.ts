@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { recomputeCaseProgress } from "@/lib/cases/completeness";
+import { touchCase } from "@/lib/cases/touch";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { runAgent } from "@/lib/ai/client";
 import { hasAdvice } from "@/lib/ai/guardrails";
@@ -73,7 +73,7 @@ export async function recordDebtorReply(
     source: "user",
   });
 
-  await recomputeCaseProgress(caseId.data);
+  await touchCase(caseId.data, { type: "debtor_reply", label: "Retour du destinataire enregistré" });
   revalidatePath(`/app/dossiers/${caseId.data}`);
   return { success: "Retour enregistré." };
 }
@@ -187,7 +187,7 @@ export async function generateAdaptedResponse(
     source: "ai",
   });
 
-  await recomputeCaseProgress(c.id);
+  await touchCase(c.id, { type: "letter_draft", label: "Réponse adaptée préparée" });
   revalidatePath(`/app/dossiers/${c.id}`);
   return { success: "Réponse adaptée générée.", letterId: created.id };
 }

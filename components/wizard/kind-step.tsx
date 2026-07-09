@@ -31,10 +31,9 @@ const KINDS: {
   {
     kind: "admin",
     icon: Landmark,
-    title: "Amende ou démarche",
-    desc: "Une amende à contester, une demande gracieuse à monter.",
-    chips: ["Contestation", "Demande gracieuse"],
-    soon: true,
+    title: "Démarche administrative",
+    desc: "Une décision à contester, un recours à monter, une administration qui ne répond pas.",
+    chips: ["Recours gracieux", "Suivi des délais", "Relance après silence"],
   },
 ];
 

@@ -12,7 +12,24 @@ import { buildCaseContext } from "@/lib/cases/context";
 export async function caseMemo(sb: SupabaseClient, caseId: string): Promise<string> {
   const ctx = await buildCaseContext(sb, caseId);
   if (!ctx) return "";
-  if (ctx.livingBriefMd && ctx.livingBriefMd.trim()) return ctx.livingBriefMd;
+
+  // Les prises de parole (doc 07) sont TOUJOURS annexées — même quand la
+  // synthèse vivante existe : en mode dégradé le brief (repli déterministe)
+  // ne les contient pas, et la réponse utilisateur doit primer partout
+  // (pilier #3) ; une question ouverte ne doit jamais être reposée.
+  const paroles: string[] = [];
+  const answered = ctx.observations.filter((o) => o.status === "answered" && o.answer);
+  const openQuestions = ctx.observations.filter((o) => o.status === "open" && o.kind === "question");
+  if (answered.length) {
+    paroles.push(`Réponses de l'utilisateur aux agents (font foi) : ${answered.map((o) => `${o.title} → ${o.answer}`).join(" ; ")}`);
+  }
+  if (openQuestions.length) {
+    paroles.push(`Questions déjà posées, en attente (ne pas reposer) : ${openQuestions.map((o) => o.title).join(" ; ")}`);
+  }
+
+  if (ctx.livingBriefMd && ctx.livingBriefMd.trim()) {
+    return [ctx.livingBriefMd, ...paroles].join("\n\n");
+  }
 
   // Repli condensé tant que la synthèse vivante n'a pas encore été générée.
   const lines: string[] = [`Dossier : ${ctx.title} (${ctx.caseType}).`];
@@ -25,5 +42,5 @@ export async function caseMemo(sb: SupabaseClient, caseId: string): Promise<stri
     lines.push(`Derniers évènements : ${ctx.timeline.slice(-6).map((t) => t.title).join(" ; ")}`);
   }
   if (ctx.weakPointsMd) lines.push(`Points de vigilance : ${ctx.weakPointsMd.slice(0, 400)}`);
-  return lines.join("\n");
+  return [...lines, ...paroles].join("\n");
 }

@@ -16,6 +16,32 @@ import { STATUS_META } from "@/lib/cases/constants";
  * elle n'échoue jamais bruyamment (toute erreur est avalée, le run étant tracé).
  */
 
+/**
+ * Cause d'une mise à jour du contexte (miroir applicatif du CHECK SQL de
+ * case_context_versions, hors 'backfill'). Portée par l'appelant qui SAIT
+ * pourquoi le dossier évolue ; affichée dans l'historique daté (« v7, consignée
+ * le 15/07 après un retour du destinataire »).
+ */
+export type CauseType =
+  | "case_created"
+  | "document_added"
+  | "document_removed"
+  | "user_correction"
+  | "request_updated"
+  | "letter_draft"
+  | "letter_sent"
+  | "debtor_reply"
+  | "email_merged"
+  | "escalation"
+  | "settlement"
+  | "payment"
+  | "case_closed"
+  | "update";
+
+export type BriefCause = { type: CauseType; label: string };
+
+const DEFAULT_CAUSE: BriefCause = { type: "update", label: "Mise à jour du dossier" };
+
 function eur(cents: number): string {
   return `${(cents / 100).toLocaleString("fr-FR", { minimumFractionDigits: 0 })} €`;
 }
@@ -77,6 +103,9 @@ function buildFallbackSections(ctx: CaseContext): Record<SectionKey, string> {
   if (ctx.weakPointsMd) vigilances.push(ctx.weakPointsMd.slice(0, 600));
   const dr = ctx.devilReview as { points?: { objection: string; remede?: string }[] } | null;
   for (const p of dr?.points ?? []) vigilances.push(`- ${p.objection}${p.remede ? ` — ${p.remede}` : ""}`);
+  for (const o of ctx.observations) {
+    if (o.status === "open" && o.kind === "vigilance") vigilances.push(`- ${o.title}`);
+  }
   const statusLabel = STATUS_META[ctx.status]?.label ?? ctx.status;
 
   return {
@@ -116,18 +145,25 @@ function assembleBrief(
 
 
 /**
- * Régénère la synthèse vivante d'un dossier et l'écrit dans
- * cases.living_brief_md (+ horodatage et incrément de version). Ne fait rien
- * pour un dossier encore en brouillon. Ne lève jamais d'exception.
+ * Régénère le CONTEXTE du dossier et le consigne au journal daté
+ * (case_context_versions, append-only) via la RPC record_case_context_version —
+ * qui déduplique, numérote atomiquement et met à jour le cache cases.living_brief_*.
+ * Chaque version est horodatée par le serveur SQL et porte sa cause : la
+ * chronologie est opposable. Ne fait rien pour un dossier en brouillon.
+ * Ne lève jamais d'exception.
  */
-export async function refreshLivingBrief(caseId: string): Promise<void> {
+export async function refreshLivingBrief(caseId: string, cause?: BriefCause): Promise<void> {
   try {
     const sb = createServiceClient();
     const ctx = await buildCaseContext(sb, caseId);
     if (!ctx) return;
     // On ne régénère pas pour rien : un dossier encore en brouillon n'a pas
-    // de matière stable à synthétiser.
-    if (ctx.status === "draft") return;
+    // de matière stable à synthétiser. On solde le marqueur « génération en
+    // cours » (posé par touchCase) pour ne pas laisser un pending fantôme.
+    if (ctx.status === "draft") {
+      await sb.from("cases").update({ living_brief_requested_at: null }).eq("id", caseId);
+      return;
+    }
 
     const fallbackSections = buildFallbackSections(ctx);
     const fallbackMd = assembleBrief({}, fallbackSections);
@@ -166,9 +202,15 @@ export async function refreshLivingBrief(caseId: string): Promise<void> {
       courriers: ctx.letters,
       retours: ctx.replies,
       revue_adverse: ctx.devilReview,
+      // Prises de parole aux passages de relais : une réponse utilisateur fait
+      // foi ; une question 'open' ne doit pas être reposée.
+      parole_agents: ctx.observations,
     };
 
     let md = fallbackMd;
+    // 'ai' = le run Sacha a abouti (simulation du bridge comprise) ;
+    // 'fallback' = repli déterministe buildFallbackSections.
+    let generatedBy: "ai" | "fallback" = "fallback";
     try {
       const { data } = await runAgent({
         key: "sacha",
@@ -181,19 +223,28 @@ export async function refreshLivingBrief(caseId: string): Promise<void> {
       });
       // Assemblage serveur (titres + ordre garantis) + garde-fou par section.
       md = assembleBrief(data, fallbackSections) || fallbackMd;
+      generatedBy = "ai";
     } catch {
       // run en erreur déjà tracé ; on garde le socle déterministe
       md = fallbackMd;
     }
 
-    await sb
-      .from("cases")
-      .update({
-        living_brief_md: md,
-        living_brief_updated_at: new Date().toISOString(),
-        living_brief_version: (ctx.briefVersion ?? 0) + 1,
-      })
-      .eq("id", caseId);
+    // Consignation au journal daté (append-only). La RPC est l'UNIQUE point
+    // d'écriture : dédup par empreinte, version max+1 sous verrou, cache cases
+    // synchronisé, marqueur temps réel soldé — en une transaction.
+    const c = cause ?? DEFAULT_CAUSE;
+    const { error } = await sb.rpc("record_case_context_version", {
+      p_case_id: caseId,
+      p_content_md: md,
+      p_cause_type: c.type,
+      p_cause_label: c.label.slice(0, 200),
+      p_generated_by: generatedBy,
+    });
+    if (error) {
+      // Visible dans les logs Vercel (fini l'échec silencieux) ; la prochaine
+      // mutation retentera.
+      console.error(`[contexte] record_case_context_version a échoué (${caseId}) : ${error.message}`);
+    }
   } catch {
     // Fonction de fond : jamais d'échec bruyant côté appelant.
   }

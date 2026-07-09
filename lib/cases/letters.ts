@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { recomputeCaseProgress } from "@/lib/cases/completeness";
+import { touchCase } from "@/lib/cases/touch";
 import { LETTER_KINDS, LETTER_PALIER, LETTER_MENTIONS, INDEMNITE_FORFAITAIRE } from "@/lib/cases/letter-meta";
 import { runAgent } from "@/lib/ai/client";
 import { hasAdvice } from "@/lib/ai/guardrails";
@@ -84,6 +84,52 @@ function buildLetter(
         signature,
     };
   }
+  // Courriers à l'administration : gabarits neutres, sans aucune référence
+  // juridique codée (les références viennent du socle vérifié ou des outils).
+  if (kind === "admin_gracieux") {
+    return {
+      subject: `Demande de réexamen — ${c.title}`,
+      body:
+        `Madame, Monsieur,\n\n` +
+        `Par la présente, je sollicite le réexamen de la situation me concernant ` +
+        `[référence et date de la décision ou du dossier à préciser].\n\n` +
+        `[Exposé des faits, dans l'ordre, avec les dates.]\n\n` +
+        `[Votre demande précise : réexamen, rectification, restitution, remise…]\n\n` +
+        `Vous trouverez ci-joint les pièces à l'appui de la présente demande.\n\n` +
+        `Dans l'attente de votre réponse, je vous prie d'agréer, Madame, Monsieur, ` +
+        `l'expression de ma considération distinguée.` +
+        signature,
+    };
+  }
+  if (kind === "admin_relance") {
+    return {
+      subject: `Relance — demande restée sans réponse (${c.title})`,
+      body:
+        `Madame, Monsieur,\n\n` +
+        `Je me permets de revenir vers vous au sujet de ma demande du ` +
+        `[date de la demande initiale à préciser], restée à ce jour sans réponse.\n\n` +
+        `[Rappel en une phrase de l'objet de la demande.]\n\n` +
+        `Je vous remercie de bien vouloir me faire connaître la suite réservée à ce dossier.\n\n` +
+        `Je vous prie d'agréer, Madame, Monsieur, l'expression de ma considération distinguée.` +
+        signature,
+    };
+  }
+  if (kind === "admin_hierarchique") {
+    return {
+      subject: `Recours hiérarchique — ${c.title}`,
+      body:
+        `Madame, Monsieur,\n\n` +
+        `Par la présente, je forme un recours hiérarchique à l'encontre de la décision ` +
+        `[référence, date et autorité de la décision à préciser], ` +
+        `[maintenue malgré ma demande du (date) / restée sans réponse depuis le (date)].\n\n` +
+        `[Exposé des faits et des motifs, dans l'ordre, avec les dates.]\n\n` +
+        `[Votre demande précise.]\n\n` +
+        `Vous trouverez ci-joint les pièces à l'appui du présent recours.\n\n` +
+        `Dans l'attente de votre réponse, je vous prie d'agréer, Madame, Monsieur, ` +
+        `l'expression de ma considération distinguée.` +
+        signature,
+    };
+  }
   // response (litige)
   return {
     subject: `Réponse à votre contestation — ${c.title}`,
@@ -143,14 +189,19 @@ export async function generateLetter(
   let subject = tpl.subject;
   let body = tpl.body;
   let griefsCount = 0;
+  let adminRefs: { reference: string; intitule: string; source: string; verifie: boolean }[] = [];
   // La réponse à une contestation est écrite par Léna (litiges, grief par grief) ;
-  // le recouvrement d'impayés par Marius. Rédaction RÉELLE (run tracé). Sur échec
-  // ou en bêta, repli gabarit. L'utilisateur relit et valide de toute façon.
+  // les courriers à l'administration par Basile (démarches & recours, outillé
+  // Légifrance/justice administrative) ; le recouvrement d'impayés par Marius.
+  // Rédaction RÉELLE (run tracé). Sur échec ou en bêta, repli gabarit.
+  // L'utilisateur relit et valide de toute façon.
   const useLena = kind === "response";
+  const useBasile = c.case_type === "admin_request";
+  const writerKey = useLena ? "lena" : useBasile ? "basile" : "marius";
   const memo = await caseMemo(supabase, c.id);
   // Socle juridique (récupération serveur, mis en cache par type) : articles +
   // arrêts réels fournis au rédacteur. Volet « récupération » du mode hybride.
-  const socle = await legalSocle(c.case_type, useLena ? "lena" : "marius", {
+  const socle = await legalSocle(c.case_type, writerKey, {
     organizationId: org.orgId,
     caseId: c.id,
   });
@@ -208,6 +259,55 @@ export async function generateLetter(
         body = m.body_md?.trim() || tpl.body;
         griefsCount = m.griefs?.length ?? 0;
       }
+    } else if (useBasile) {
+      const ctx = await buildCaseContext(supabase, c.id);
+      const { data: m } = await runAgent({
+        key: "basile",
+        input: {
+          consigne:
+            "Rédige le BROUILLON de ce courrier adressé à l'administration. Qualifie d'abord la démarche (recours gracieux, hiérarchique, réclamation, rectification après décision de justice, relance après silence) à partir du dossier, puis rédige : identification du demandeur, références du dossier, exposé des faits daté, demande expresse, motivation, pièces jointes numérotées. Appuie-toi sur le socle_juridique fourni et cherche les textes propres au cas via les outils (Légifrance, justice administrative, Service-Public)." +
+            groundingRule +
+            " Réponds en JSON { subject, body_md, demarche, references_utilisees:[{reference, intitule, source, verifie}] }.",
+          contexte_dossier: memo,
+          socle_juridique: socle,
+          type: LETTER_KINDS[kind].label,
+          palier: LETTER_PALIER[kind] ?? 0,
+          ton: LETTER_KINDS[kind].tone,
+          destinataire: c.debtor_name,
+          montant_en_jeu: c.amount_claimed_cents ? `${euros(c.amount_claimed_cents)} €` : null,
+          pieces: (ctx?.documents ?? []).map((d) => ({ nom: d.fileName, type: d.docKind })),
+          chronologie: (ctx?.timeline ?? []).map((t) => ({ date: t.date, evenement: t.title })),
+          expediteur: org.orgName,
+          gabarit: tpl.body,
+        },
+        schema: z.object({
+          subject: z.string().min(3).max(200),
+          body_md: z.string().min(60),
+          demarche: z.string().default(""),
+          references_utilisees: z
+            .array(
+              z.object({
+                reference: z.string(),
+                intitule: z.string().default(""),
+                source: z.string().default(""),
+                verifie: z.boolean().default(false),
+              }),
+            )
+            .default([]),
+        }),
+        simulation: { subject: tpl.subject, body_md: tpl.body, demarche: "", references_utilisees: [] },
+        organizationId: org.orgId,
+        caseId: c.id,
+        maxTokens: 1800,
+      });
+      if (hasAdvice(m.subject ?? "", m.body_md ?? "")) {
+        subject = tpl.subject;
+        body = tpl.body;
+      } else {
+        subject = m.subject?.trim() || tpl.subject;
+        body = m.body_md?.trim() || tpl.body;
+        adminRefs = (m.references_utilisees ?? []).filter((r) => r.reference.trim());
+      }
     } else {
       const { data: m } = await runAgent({
         key: "marius",
@@ -263,6 +363,14 @@ export async function generateLetter(
     .single();
   if (error || !created) return { error: "Impossible de générer le brouillon." };
 
+  // Références citées dans un courrier admin : consignées dans la chronologie
+  // avec leur statut (vérifiée / à vérifier) — auditable et contestable (#3).
+  const refsNote = adminRefs.length
+    ? ` Références citées : ${adminRefs
+        .map((r) => `${r.reference}${r.verifie ? " (vérifiée)" : " (à vérifier)"}`)
+        .join(" ; ")}.`
+    : "";
+
   await supabase.from("case_events").insert({
     case_id: c.id,
     organization_id: org.orgId,
@@ -271,17 +379,39 @@ export async function generateLetter(
     description:
       griefsCount > 0
         ? `${griefsCount} grief${griefsCount > 1 ? "s" : ""} traité${griefsCount > 1 ? "s" : ""} point par point. À relire et valider avant tout envoi.`
-        : "À relire et valider avant tout envoi.",
+        : `À relire et valider avant tout envoi.${refsNote}`,
     source: "ai",
   });
 
-  await recomputeCaseProgress(c.id);
+  await touchCase(c.id, { type: "letter_draft", label: `Brouillon préparé : ${LETTER_KINDS[kind].label}` });
   revalidatePath(`/app/dossiers/${c.id}`);
   return { success: "Brouillon généré.", letterId: created.id };
 }
 
 const CHANNELS = new Set(["email", "postal"]);
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+// Adresse postale saisie à la validation (jamais devinée, pilier #3). Même
+// forme que cases.debtor_address ({nom, adresse, complement?, codePostal, ville}).
+const addressSchema = z.object({
+  nom: z.string().trim().max(120).optional().default(""),
+  societe: z.string().trim().max(120).optional().default(""),
+  adresse: z.string().trim().min(3).max(90),
+  complement: z.string().trim().max(90).optional().default(""),
+  codePostal: z.string().trim().regex(/^\d{5}$/),
+  ville: z.string().trim().min(1).max(80),
+});
+
+function parseAddress(formData: FormData, prefix: string) {
+  return addressSchema.safeParse({
+    nom: formData.get(`${prefix}Nom`) ?? "",
+    societe: formData.get(`${prefix}Societe`) ?? "",
+    adresse: formData.get(`${prefix}Adresse`) ?? "",
+    complement: formData.get(`${prefix}Complement`) ?? "",
+    codePostal: formData.get(`${prefix}Cp`) ?? "",
+    ville: formData.get(`${prefix}Ville`) ?? "",
+  });
+}
 
 export async function approveAndSendLetter(
   _prev: LetterState,
@@ -298,6 +428,22 @@ export async function approveAndSendLetter(
   // le log d'approbation pour ne pas graver une validation inexploitable.
   if (channel === "email" && !EMAIL_RE.test(toEmail)) {
     return { error: "Indiquez l'email du destinataire pour un envoi par email." };
+  }
+  // Envoi postal : adresses complètes destinataire ET expéditeur, vérifiées
+  // AVANT le log d'approbation (même principe que l'email).
+  let toAddress: z.infer<typeof addressSchema> | null = null;
+  let fromAddress: z.infer<typeof addressSchema> | null = null;
+  if (channel === "postal") {
+    const dest = parseAddress(formData, "to");
+    if (!dest.success || (!dest.data.nom && !dest.data.societe)) {
+      return { error: "Adresse postale du destinataire incomplète (nom ou organisme, adresse, code postal à 5 chiffres, ville)." };
+    }
+    const exp = parseAddress(formData, "from");
+    if (!exp.success || (!exp.data.nom && !exp.data.societe)) {
+      return { error: "Votre adresse d'expéditeur est incomplète (nom, adresse, code postal à 5 chiffres, ville)." };
+    }
+    toAddress = dest.data;
+    fromAddress = exp.data;
   }
 
   const org = await orgFor();
@@ -341,6 +487,9 @@ export async function approveAndSendLetter(
     bodyMd: body,
     toEmail: channel === "email" ? toEmail : null,
     replyTo: org.inboxSlug ? `${org.inboxSlug}@${serverEnv().CASE_EMAIL_DOMAIN}` : null,
+    toAddress,
+    fromAddress,
+    reference: letter.id,
   });
   const reallySent = dispatch.status === "sent";
 
@@ -353,6 +502,8 @@ export async function approveAndSendLetter(
       content_sha256: contentSha256,
       channel,
       to_email: channel === "email" ? toEmail : null,
+      to_address: toAddress,
+      postal_envoi_id: reallySent && dispatch.via === "postal" ? dispatch.ref : null,
       status: "sent",
       approved_by: user?.id ?? null,
       approved_at: new Date().toISOString(),
@@ -361,10 +512,17 @@ export async function approveAndSendLetter(
     .eq("id", letter.id);
   if (upErr) return { error: "Validation enregistrée mais l'envoi a échoué." };
 
-  // Mémorise l'email du destinataire sur le dossier pour le préremplir la fois
-  // suivante (saisie utilisateur — jamais deviné ; la dernière saisie prime, #3).
+  // Mémorise les coordonnées du destinataire sur le dossier pour les préremplir
+  // la fois suivante (saisie utilisateur — jamais deviné ; la dernière prime, #3).
   if (channel === "email" && toEmail) {
     await supabase.from("cases").update({ debtor_email: toEmail }).eq("id", letter.case_id);
+  }
+  if (channel === "postal" && toAddress) {
+    await supabase.from("cases").update({ debtor_address: toAddress }).eq("id", letter.case_id);
+    // L'adresse d'expéditeur sert à tous les dossiers de l'organisation.
+    if (fromAddress) {
+      await supabase.from("organizations").update({ address_json: fromAddress }).eq("id", org.orgId);
+    }
   }
 
   await supabase.from("case_events").insert({
@@ -380,7 +538,7 @@ export async function approveAndSendLetter(
     source: "user",
   });
 
-  await recomputeCaseProgress(letter.case_id);
+  await touchCase(letter.case_id, { type: "letter_sent", label: "Courrier validé pour envoi" });
   revalidatePath(`/app/dossiers/${letter.case_id}`);
   return {
     success: reallySent

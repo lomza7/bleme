@@ -82,6 +82,24 @@ Règle transverse (dans le system prompt de tous les agents) : *tu aides à orga
 
 ---
 
+## Prise de parole aux passages de relais *(décision du 09/07/2026)*
+
+Quand le dossier change de phase, il change d'agent référent (P1 Marius → P2 Sacha → P3 Jeanne). À ce moment précis, **l'agent qui reçoit le dossier a le droit — et le devoir — de prendre la parole** avant d'agir : il relit la mémoire partagée (synthèse vivante + contexte consolidé) et le socle juridique récupéré (Légifrance/JUDILIBRE), et peut émettre 0 à 4 prises de parole typées, adressées à l'utilisateur :
+
+- **`question`** — une information manquante que seul l'utilisateur peut fournir ("le devis a-t-il été signé avant le début des travaux ?").
+- **`observation`** — un constat factuel utile sur l'état du dossier ("les trois relances mentionnent des montants différents").
+- **`vigilance`** — un point qui pourrait poser problème, formulé de façon documentaire et **appuyé sur des sources réelles** ("la facture date de plus de 4 ans : un délai de prescription pourrait s'appliquer — art. L110-4 C. com. ; faites vérifier le délai applicable par un professionnel").
+
+**Limites (les plus strictes du produit, avec l'agent Escalade)** :
+- Toute référence juridique (article, arrêt) citée dans une vigilance doit s'apparier à un article/arrêt précis du socle récupéré par les outils — et **c'est le texte du socle (référence + portée) qui est affiché, jamais celui du modèle** ; une référence absente des sources est supprimée côté serveur.
+- Statistiques : uniquement une donnée publique sourcée déjà présente dans les sources fournies (BODACC, jurisprudence citée) ; **jamais une probabilité de succès du dossier**.
+- Formulations documentaires ; filtre serveur anti-conseil (`hasAdvice`) appliqué au grain fin (une prise de parole fautive est écartée, pas les autres) ; en cas de doute sérieux, la vigilance se termine par "à faire valider par un professionnel".
+- Un passage de relais donné ne parle qu'**une fois** (idempotent) ; si l'agent n'a rien d'utile à dire, il se tait (liste vide, aucun bruit).
+
+**Validation humaine** : chaque prise de parole a un cycle de vie (`open` → répondue / actée / écartée). La réponse de l'utilisateur **prime** (pilier #3) et est réinjectée dans la mémoire partagée : les agents suivants la voient et ne reposent pas la question. Stockage : table `agent_observations` (doc 06).
+
+---
+
 ## Récapitulatif des points de validation humaine obligatoires
 
 | Moment | Mécanisme |
@@ -92,3 +110,4 @@ Règle transverse (dans le system prompt de tous les agents) : *tu aides à orga
 | Réponse à un email du débiteur | Brouillon à valider |
 | Reprise/pause d'une séquence de relance | Notifiée, annulable |
 | Passage à l'escalade | Toujours à l'initiative de l'utilisateur |
+| Prise de parole d'un agent (question/vigilance) | Répondue, actée ou écartée par l'utilisateur ; sa réponse prime et alimente la mémoire partagée |

@@ -7,7 +7,7 @@ import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { recordDebtorReply, generateAdaptedResponse, type ReplyState } from "@/lib/cases/replies";
 import { escalateCase, type EscState } from "@/lib/cases/escalation";
 import { GenerateLetterButtons } from "@/components/app/letters";
-import { ReviewLetter } from "@/components/app/review-letter";
+import { ReviewLetter, type AddressDefaults } from "@/components/app/review-letter";
 import { RecordPayment } from "@/components/app/record-payment";
 
 const INITIAL: ReplyState = {};
@@ -35,6 +35,9 @@ export function Phase2Flow({
   nextActionAt,
   pendingLetter,
   hasUnhandledReply,
+  defaultEmail = "",
+  defaultToAddress = null,
+  defaultFromAddress = null,
 }: {
   caseId: string;
   caseType: string;
@@ -42,11 +45,17 @@ export function Phase2Flow({
   nextActionAt: string | null;
   pendingLetter: PendingLetter | null;
   hasUnhandledReply: boolean;
+  defaultEmail?: string;
+  defaultToAddress?: AddressDefaults;
+  defaultFromAddress?: AddressDefaults;
 }) {
   const [replyState, replyAction, replyPending] = useActionState(recordDebtorReply, INITIAL);
   const [adaptState, adaptAction, adaptPending] = useActionState(generateAdaptedResponse, INITIAL);
   const [escState, escAction, escPending] = useActionState(escalateCase, {} as EscState);
   const [showReply, setShowReply] = useState(false);
+  // Démarche administrative : l'interlocuteur n'est pas un « client ».
+  const isAdmin = caseType === "admin_request";
+  const other = isAdmin ? "L’administration" : "Le client";
 
   // 1. Un brouillon attend la relecture/validation → envoi inline.
   if (pendingLetter) {
@@ -57,7 +66,14 @@ export function Phase2Flow({
           Le brouillon est prêt. Relisez-le, choisissez le mode d’envoi, puis validez pour l’envoyer en votre nom.
         </p>
         <div className="mt-5">
-          <ReviewLetter letter={pendingLetter} caseId={caseId} embedded />
+          <ReviewLetter
+            letter={pendingLetter}
+            caseId={caseId}
+            embedded
+            defaultEmail={defaultEmail}
+            defaultToAddress={defaultToAddress}
+            defaultFromAddress={defaultFromAddress}
+          />
         </div>
       </section>
     );
@@ -69,10 +85,12 @@ export function Phase2Flow({
       <section className="rounded-[1.75rem] border bg-card p-6 sm:p-7">
         <div className="flex items-center gap-2">
           <Sparkles className="size-5 text-brand-strong" />
-          <h2 className="text-lg font-semibold">Le client a répondu</h2>
+          <h2 className="text-lg font-semibold">{other} a répondu</h2>
         </div>
         <p className="mt-1 text-sm text-muted-foreground">
-          Son message est enregistré. On rédige une réponse adaptée à partir de ce qu’il dit et des faits de votre dossier.
+          {isAdmin
+            ? "Sa réponse est enregistrée. On prépare la suite adaptée à partir de ce qu’elle dit et des faits de votre dossier."
+            : "Son message est enregistré. On rédige une réponse adaptée à partir de ce qu’il dit et des faits de votre dossier."}
         </p>
         <form action={adaptAction} className="mt-5">
           <input type="hidden" name="caseId" value={caseId} />
@@ -101,13 +119,13 @@ export function Phase2Flow({
     <section className="rounded-[1.75rem] border bg-card p-6 sm:p-7">
       <div className="flex items-center gap-2">
         <Clock className="size-5 text-brand-strong" />
-        <h2 className="text-lg font-semibold">En attente du client</h2>
+        <h2 className="text-lg font-semibold">{isAdmin ? "En attente de l’administration" : "En attente du client"}</h2>
       </div>
 
       {nextLabel ? (
         <div className="mt-4 rounded-2xl bg-brand-soft p-4 ring-1 ring-brand/20">
           <p className="text-sm">
-            <span className="font-medium">Prochaine relance : {nextLabel}</span>
+            <span className="font-medium">Prochain courrier : {nextLabel}</span>
             {nextActionAt ? <span className="text-muted-foreground"> · {relativeDays(nextActionAt)}</span> : null}
           </p>
           <div className="mt-3">
@@ -116,13 +134,13 @@ export function Phase2Flow({
         </div>
       ) : (
         <p className="mt-4 rounded-2xl bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
-          Toutes les relances ont été envoyées. Passez à la phase suivante pour envisager l’escalade.
+          Tous les courriers de cette phase ont été envoyés. Passez à la phase suivante pour envisager l’escalade.
         </p>
       )}
 
       <div className="mt-6 border-t pt-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-sm font-medium">Le client a répondu ?</p>
+          <p className="text-sm font-medium">{other} a répondu ?</p>
           {!showReply ? (
             <button
               type="button"
@@ -150,7 +168,7 @@ export function Phase2Flow({
             <textarea
               name="body"
               rows={5}
-              placeholder="Collez ici, mot pour mot, ce que le client a répondu."
+              placeholder={isAdmin ? "Collez ici, mot pour mot, la réponse de l’administration." : "Collez ici, mot pour mot, ce que le client a répondu."}
               className="w-full rounded-2xl border bg-background p-4 text-sm leading-relaxed outline-none transition-colors focus:border-brand"
             />
             <div className="flex flex-wrap items-center gap-4">

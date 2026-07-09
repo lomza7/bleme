@@ -20,7 +20,7 @@ import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { dossierWarnings } from "@/lib/cases/analysis";
 import { Uploader } from "@/components/app/uploader";
 import { GenerateLetterButtons, LetterRow } from "@/components/app/letters";
-import { ReviewLetter } from "@/components/app/review-letter";
+import { ReviewLetter, type AddressDefaults } from "@/components/app/review-letter";
 import { FactRow } from "@/components/app/fact-row";
 import { FileList } from "@/components/app/file-list";
 import { DossierSteps, type Companion } from "@/components/app/dossier-steps";
@@ -32,6 +32,8 @@ import { RecordPayment } from "@/components/app/record-payment";
 import { PhaseTrail } from "@/components/app/phase-trail";
 import { Markdown } from "@/components/app/markdown";
 import { CaseEventsTimeline } from "@/components/app/case-events-timeline";
+import { CaseContextPanel } from "@/components/app/case-context";
+import { AgentObservations, type ObservationItem } from "@/components/app/agent-observations";
 
 export const metadata: Metadata = { title: "Dossier" };
 
@@ -53,7 +55,7 @@ export default async function CaseDetailPage({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [{ data: c }, { data: docs }, { data: letters }, { data: replies }, { data: events }] =
+  const [{ data: c }, { data: docs }, { data: letters }, { data: replies }, { data: events }, { data: observations }] =
     await Promise.all([
       supabase.from("cases").select("*").eq("id", id).maybeSingle(),
       supabase
@@ -72,8 +74,53 @@ export default async function CaseDetailPage({
         .select("event_date, event_type, title, description, source")
         .eq("case_id", id)
         .order("event_date", { ascending: false }),
+      supabase
+        .from("agent_observations")
+        .select("id, agent_key, kind, title, detail_md, legal_refs, status, answer_text")
+        .eq("case_id", id)
+        .in("status", ["open", "answered"])
+        .order("created_at", { ascending: false }),
     ]);
   if (!c) notFound();
+
+  // Contexte daté : la surface AFFICHÉE lit le JOURNAL append-only
+  // (case_context_versions, RLS select-only), pas le cache — c'est lui qui
+  // porte l'horodatage opposable. Dates formatées SERVEUR (zéro mismatch).
+  const [{ data: lastCtx }, { data: ctxVersions }] = await Promise.all([
+    supabase
+      .from("case_context_versions")
+      .select("version, content_md, created_at")
+      .eq("case_id", id)
+      .order("version", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("case_context_versions")
+      .select("version, cause_label, created_at")
+      .eq("case_id", id)
+      .order("version", { ascending: false })
+      .limit(10),
+  ]);
+  const fmtDateTime = (iso: string) =>
+    `${new Date(iso).toLocaleDateString("fr-FR", { timeZone: "Europe/Paris" })} à ${new Date(iso).toLocaleTimeString("fr-FR", { timeZone: "Europe/Paris", hour: "2-digit", minute: "2-digit" })}`;
+  const briefRequestedAt = c.living_brief_requested_at ? Date.parse(c.living_brief_requested_at) : null;
+  const briefUpdatedAt = c.living_brief_updated_at ? Date.parse(c.living_brief_updated_at) : null;
+  const briefPending =
+    briefRequestedAt !== null &&
+    (briefUpdatedAt === null || briefRequestedAt > briefUpdatedAt) &&
+    Date.now() - briefRequestedAt < 10 * 60 * 1000;
+
+  // Coordonnées d'expédition : adresse du dossier (dernière saisie) et adresse
+  // de l'organisation (expéditeur), préremplies dans l'écran de validation.
+  const { data: orgRow } = await supabase
+    .from("organizations")
+    .select("name, address_json")
+    .eq("id", c.organization_id)
+    .maybeSingle();
+  const defaultToAddress: AddressDefaults =
+    (c.debtor_address as AddressDefaults) ?? (c.debtor_name ? { societe: c.debtor_name } : null);
+  const defaultFromAddress: AddressDefaults =
+    (orgRow?.address_json as AddressDefaults) ?? (orgRow?.name ? { societe: orgRow.name } : null);
 
   const docList = docs ?? [];
   const { data: facts } = docList.length
@@ -121,6 +168,7 @@ export default async function CaseDetailPage({
   const hasUnhandledReply = (replies ?? []).some((r) => !r.handled);
   const active = c.status !== "resolved" && c.status !== "closed";
   const isDispute = c.case_type === "client_dispute";
+  const isAdmin = c.case_type === "admin_request";
   const phase = derivePhase({ status: c.status, sentKinds });
   const nextKind = nextLetterKind(c.case_type, sentKinds);
   const missLabels = missing.map((m) => m.label.toLowerCase());
@@ -193,6 +241,23 @@ export default async function CaseDetailPage({
       </section>
     ) : null;
 
+  // Prises de parole des agents aux passages de relais — les actées/écartées
+  // sont filtrées en base ; on affiche les ouvertes d'abord, puis les répondues.
+  const observationItems: ObservationItem[] = (observations ?? [])
+    .map((o) => ({
+      id: o.id,
+      agent_key: o.agent_key,
+      kind: o.kind,
+      title: o.title,
+      detail_md: o.detail_md,
+      legal_refs: (Array.isArray(o.legal_refs) ? (o.legal_refs as { reference: string; portee: string }[]) : []).filter(
+        (r) => r && typeof r.reference === "string",
+      ),
+      status: o.status,
+      answer_text: o.answer_text,
+    }))
+    .sort((a, b) => (a.status === "open" ? 0 : 1) - (b.status === "open" ? 0 : 1));
+
   // ── Cahier vivant : synthèse consolidée + chronologie (visibles en toutes phases) ──
   const caseEvents = (events ?? []).map((e) => ({
     date: e.event_date,
@@ -203,18 +268,20 @@ export default async function CaseDetailPage({
   }));
   const cahierSections = (
     <>
-      {c.living_brief_md ? (
-        <section className="mt-6 rounded-[1.75rem] border bg-card p-6 sm:p-7">
-          <div className="flex items-center gap-2">
-            <Sparkles className="size-5 text-brand-strong" />
-            <h2 className="text-lg font-semibold">Synthèse du dossier</h2>
-          </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Ce que vos agents ont compris et consigné, tenu à jour à chaque étape.
-          </p>
-          <Markdown content={c.living_brief_md} className="mt-4" />
-        </section>
-      ) : null}
+      <div className="mt-6">
+        <CaseContextPanel
+          caseId={c.id}
+          contentMd={lastCtx?.content_md ?? null}
+          version={lastCtx?.version ?? 0}
+          consignedAtLabel={lastCtx ? fmtDateTime(lastCtx.created_at) : null}
+          pending={briefPending}
+          versions={(ctxVersions ?? []).map((v) => ({
+            version: v.version,
+            causeLabel: v.cause_label,
+            createdAtLabel: fmtDateTime(v.created_at),
+          }))}
+        />
+      </div>
       {caseEvents.length > 0 ? (
         <section className="mt-6 rounded-[1.75rem] border bg-card p-6 sm:p-7">
           <div className="flex items-center gap-2">
@@ -354,10 +421,10 @@ export default async function CaseDetailPage({
     </section>
   );
 
-  const firstKind = isDispute ? "response" : "reminder_1";
+  const firstKind = isDispute ? "response" : isAdmin ? "admin_gracieux" : "reminder_1";
   const panelPremierCourrier = (
     <section className="rounded-[1.75rem] border bg-card p-6 sm:p-7">
-      <h2 className="text-lg font-semibold">Lancez la première relance</h2>
+      <h2 className="text-lg font-semibold">{isAdmin ? "Lancez le premier courrier" : "Lancez la première relance"}</h2>
       <p className="mt-1 text-sm text-muted-foreground">
         Un brouillon est préparé à partir des faits validés. Relisez-le, choisissez le mode d’envoi, puis validez pour l’envoyer en votre nom.
       </p>
@@ -369,7 +436,14 @@ export default async function CaseDetailPage({
       ) : null}
       {pendingLetter ? (
         <div className="mt-5">
-          <ReviewLetter letter={pendingLetter} caseId={c.id} embedded />
+          <ReviewLetter
+            letter={pendingLetter}
+            caseId={c.id}
+            embedded
+            defaultEmail={c.debtor_email ?? ""}
+            defaultToAddress={defaultToAddress}
+            defaultFromAddress={defaultFromAddress}
+          />
         </div>
       ) : (
         <div className="mt-4">
@@ -384,8 +458,12 @@ export default async function CaseDetailPage({
     </section>
   );
 
+  // Basile guide les démarches administratives ; Marius, le recouvrement.
+  const lead = isAdmin
+    ? { key: "basile", prenom: "Basile", role: "Agent Démarches & recours" }
+    : { key: "marius", prenom: "Marius", role: "Agent Impayés" };
   const companionsP1: Companion[] = [
-    { key: "marius", prenom: "Marius", role: "Agent Impayés", message: "Vérifions votre demande : à qui, combien, pour quoi. Vous pourrez tout corriger." },
+    { ...lead, message: isAdmin ? "Vérifions votre demande : quelle administration, quelle décision, ce que vous demandez." : "Vérifions votre demande : à qui, combien, pour quoi. Vous pourrez tout corriger." },
     {
       key: "nora",
       prenom: "Nora",
@@ -407,32 +485,34 @@ export default async function CaseDetailPage({
           : "Ajoutez une facture et j’en extrais le montant, la date et le numéro.",
     },
     {
-      key: "marius",
-      prenom: "Marius",
-      role: "Agent Impayés",
+      ...lead,
       message: pendingLetter
         ? "Votre brouillon est prêt. Relisez-le, puis validez pour l’envoyer en votre nom."
-        : "Je prépare votre première relance à partir des faits validés. Il ne partira qu’après votre validation.",
+        : isAdmin
+          ? "Je prépare votre premier courrier à l’administration à partir des faits validés. Il ne partira qu’après votre validation."
+          : "Je prépare votre première relance à partir des faits validés. Il ne partira qu’après votre validation.",
     },
   ];
 
   // ── Compagnon Phase 2 / Phase 3 ─────────────────────────────────────────────
   const companionP2: Companion = pendingLetter
-    ? { key: "marius", prenom: "Marius", role: "Agent Impayés", message: "Votre brouillon est prêt. Relisez-le, puis validez pour l’envoyer en votre nom." }
+    ? { ...lead, message: "Votre brouillon est prêt. Relisez-le, puis validez pour l’envoyer en votre nom." }
     : hasUnhandledReply
       ? {
-          key: isDispute ? "lena" : "marius",
-          prenom: isDispute ? "Léna" : "Marius",
-          role: isDispute ? "Agente Litiges" : "Agent Impayés",
-          message: "Le client a répondu. Je prépare une réponse adaptée à ce qu’il dit et à vos pièces.",
+          key: isDispute ? "lena" : isAdmin ? "basile" : "marius",
+          prenom: isDispute ? "Léna" : isAdmin ? "Basile" : "Marius",
+          role: isDispute ? "Agente Litiges" : isAdmin ? "Agent Démarches & recours" : "Agent Impayés",
+          message: isAdmin
+            ? "L’administration a répondu. Je prépare la suite adaptée à sa réponse et à vos pièces."
+            : "Le client a répondu. Je prépare une réponse adaptée à ce qu’il dit et à vos pièces.",
         }
       : {
           key: "sacha",
           prenom: "Sacha",
           role: "Agent Vigie",
           message: nextKind
-            ? `Je surveille l’échéance. Prochaine relance : ${LETTER_KINDS[nextKind]?.label ?? nextKind}. Dites-moi si le client répond, on adaptera.`
-            : "Toutes les relances sont parties. On peut envisager l’escalade en phase suivante.",
+            ? `Je surveille l’échéance. Prochain courrier : ${LETTER_KINDS[nextKind]?.label ?? nextKind}. Dites-moi si ${isAdmin ? "l’administration" : "le client"} répond, on adaptera.`
+            : "Tous les courriers de cette phase sont partis. On peut envisager l’escalade en phase suivante.",
         };
 
   const companionP3: Companion = c.devil_review
@@ -448,6 +528,8 @@ export default async function CaseDetailPage({
       <div className="mt-8">
         <PhaseTrail phase={phase} />
       </div>
+
+      <AgentObservations items={observationItems} />
 
       {cahierSections}
 
@@ -477,6 +559,9 @@ export default async function CaseDetailPage({
                   nextActionAt={c.next_action_at}
                   pendingLetter={pendingLetter}
                   hasUnhandledReply={hasUnhandledReply}
+                  defaultEmail={c.debtor_email ?? ""}
+                  defaultToAddress={defaultToAddress}
+                  defaultFromAddress={defaultFromAddress}
                 />
               ) : (
                 <EscalationPanel
