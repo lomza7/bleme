@@ -8,7 +8,6 @@ import { recordDebtorReply, generateAdaptedResponse, type ReplyState } from "@/l
 import { escalateCase, type EscState } from "@/lib/cases/escalation";
 import { GenerateLetterButtons } from "@/components/app/letters";
 import { ReviewLetter, type AddressDefaults, type SuggestedRecipient } from "@/components/app/review-letter";
-import { RecordPayment } from "@/components/app/record-payment";
 
 const INITIAL: ReplyState = {};
 
@@ -199,10 +198,6 @@ export function Phase2Flow({
             </div>
           </form>
         ) : null}
-      </div>
-
-      <div className="mt-6 border-t pt-6">
-        <RecordPayment caseId={caseId} />
       </div>
 
       {caseType === "client_dispute" ? (

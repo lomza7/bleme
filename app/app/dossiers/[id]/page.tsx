@@ -9,6 +9,7 @@ import {
   CircleAlert,
   Clock,
   Download,
+  Paperclip,
   Sparkles,
   ShieldQuestion,
 } from "lucide-react";
@@ -29,7 +30,6 @@ import { CompanionCard } from "@/components/app/companion-card";
 import { CaseRequest } from "@/components/app/case-request";
 import { Phase2Flow } from "@/components/app/phase2-flow";
 import { EscalationPanel } from "@/components/app/escalation-panel";
-import { RecordPayment } from "@/components/app/record-payment";
 import { PhaseTrail } from "@/components/app/phase-trail";
 import { CaseEventsTimeline } from "@/components/app/case-events-timeline";
 import { CaseContextPanel } from "@/components/app/case-context";
@@ -214,28 +214,6 @@ export default async function CaseDetailPage({
     </>
   );
 
-  const piecesSection = (
-    <section className="mt-6">
-      <div className="flex flex-wrap items-baseline justify-between gap-2 px-1">
-        <h2 className="font-semibold">Pièces du dossier</h2>
-        <p className="text-xs text-muted-foreground">
-          {docList.length} document{docList.length > 1 ? "s" : ""} · téléchargez ou retirez une pièce
-        </p>
-      </div>
-      <div className="mt-4">
-        <FileList
-          docs={docList.map((d) => ({
-            id: d.id,
-            file_name: d.file_name,
-            mime_type: d.mime_type,
-            size_bytes: Number(d.size_bytes),
-            created_at: d.created_at,
-          }))}
-        />
-      </div>
-    </section>
-  );
-
   const courriersSection =
     letterList.length > 0 ? (
       <section className="mt-6">
@@ -313,6 +291,37 @@ export default async function CaseDetailPage({
           </div>
         </details>
       ) : null}
+      <details className="group overflow-hidden rounded-[1.5rem] border bg-card">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 transition-colors hover:bg-muted/30 sm:p-5 [&::-webkit-details-marker]:hidden">
+          <span className="flex items-center gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
+              <Paperclip className="size-5" />
+            </span>
+            <span>
+              <span className="text-base font-semibold">Pièces du dossier</span>
+              <span className="mt-0.5 block text-xs text-muted-foreground">
+                {docList.length} document{docList.length > 1 ? "s" : ""} · téléchargez ou retirez une pièce
+              </span>
+            </span>
+          </span>
+          <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+        </summary>
+        <div className="border-t px-4 pb-5 pt-4 sm:px-5">
+          {docList.length > 0 ? (
+            <FileList
+              docs={docList.map((d) => ({
+                id: d.id,
+                file_name: d.file_name,
+                mime_type: d.mime_type,
+                size_bytes: Number(d.size_bytes),
+                created_at: d.created_at,
+              }))}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">Aucune pièce déposée pour l’instant.</p>
+          )}
+        </div>
+      </details>
     </div>
   );
 
@@ -340,7 +349,6 @@ export default async function CaseDetailPage({
           </Link>
         </section>
         {courriersSection}
-        {piecesSection}
         {cahierSections(true)}
       </div>
     );
@@ -557,19 +565,13 @@ export default async function CaseDetailPage({
 
       <div className="mt-6">
         {phase === 1 ? (
-          <div className="flex flex-col gap-6">
-            <DossierSteps
-              stepLabels={["Demande", "Preuves", "Faits", "Premier courrier"]}
-              panels={[panelDemande, panelPreuves, panelFaits, panelPremierCourrier]}
-              companions={companionsP1}
-              defaultStep={defaultStep}
-              side={null}
-            />
-            {/* Le client peut régler dès cette phase (#13) : on l'acte ici aussi. */}
-            <div className="rounded-[1.75rem] border bg-card p-6 sm:p-7">
-              <RecordPayment caseId={c.id} />
-            </div>
-          </div>
+          <DossierSteps
+            stepLabels={["Demande", "Preuves", "Faits", "Premier courrier"]}
+            panels={[panelDemande, panelPreuves, panelFaits, panelPremierCourrier]}
+            companions={companionsP1}
+            defaultStep={defaultStep}
+            side={null}
+          />
         ) : (
           <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2">
@@ -604,7 +606,6 @@ export default async function CaseDetailPage({
       </div>
 
       {courriersSection}
-      {piecesSection}
       {cahierSections()}
     </div>
   );
