@@ -18,10 +18,12 @@ export default async function AppLayout({
   if (!user) redirect("/login");
 
   const [{ data: profile }, { data: org }] = await Promise.all([
-    supabase.from("profiles").select("full_name, is_admin, onboarding_state").eq("id", user.id).maybeSingle(),
+    supabase.from("profiles").select("full_name, is_admin, onboarding_state, email_verified").eq("id", user.id).maybeSingle(),
     supabase.from("organizations").select("name").limit(1).maybeSingle(),
   ]);
-  // Onboarding /bienvenue pas encore terminé → on y passe d'abord (une fois).
+  // Email non vérifié → écran de code d'abord (rempart anti-faux-comptes).
+  if (profile && profile.email_verified === false) redirect("/verifier-email");
+  // Onboarding /bienvenue pas encore terminé → on y passe ensuite (une fois).
   if (profile && profile.onboarding_state !== "done") redirect("/bienvenue");
   const isAdmin = Boolean(profile?.is_admin);
 

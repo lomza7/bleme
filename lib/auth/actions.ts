@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { publicEnv } from "@/lib/env";
+import { sendVerificationCode, verifyCode } from "@/lib/auth/email-otp";
 
 export type AuthState = {
   error?: string;
@@ -84,13 +85,52 @@ export async function signUp(
     return { error: "Un compte existe déjà avec cet email. Connectez-vous." };
   }
 
-  // Confirmation d'email désactivée : session immédiate, entrée directe.
-  if (data.session) {
-    redirect(nextPath(formData.get("next")));
+  // Vérification email par code : on envoie un code à 6 chiffres et on redirige
+  // vers l'écran de saisie. La session existe déjà (confirmation Supabase
+  // désactivée), mais le gate /app refuse l'accès tant que email_verified est
+  // faux — l'utilisateur DOIT saisir le code pour entrer.
+  if (data.user) {
+    await sendVerificationCode(data.user.id, parsed.data.email, parsed.data.fullName);
   }
+  const next = nextPath(formData.get("next"));
+  redirect(`/verifier-email?next=${encodeURIComponent(next)}`);
+}
 
-  // Si la confirmation est réactivée un jour, le flux email reprend.
-  redirect(`/verifier-email?email=${encodeURIComponent(parsed.data.email)}`);
+/** Vérifie le code reçu par email ; sur succès, entrée dans l'app. */
+export async function verifyEmailCode(
+  _prev: AuthState,
+  formData: FormData,
+): Promise<AuthState> {
+  const code = String(formData.get("code") ?? "").replace(/\D/g, "");
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { error: "Session expirée. Reconnectez-vous pour reprendre." };
+  }
+  const res = await verifyCode(user.id, code);
+  if ("error" in res) return { error: res.error };
+  redirect(nextPath(formData.get("next")));
+}
+
+/** Renvoie un nouveau code de vérification (anti-spam intégré). */
+export async function resendEmailCode(_prev: AuthState, _formData: FormData): Promise<AuthState> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user?.email) {
+    return { error: "Session expirée. Reconnectez-vous pour reprendre." };
+  }
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("full_name")
+    .eq("id", user.id)
+    .maybeSingle();
+  const res = await sendVerificationCode(user.id, user.email, profile?.full_name ?? null);
+  if ("error" in res) return { error: res.error };
+  return { success: "Un nouveau code vient de partir. Pensez aux spams." };
 }
 
 export async function signIn(

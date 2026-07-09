@@ -270,6 +270,14 @@
     animation-delay: var(--delay, 0s);
   }
 
+  /* Barres de graphique : grandissent au CHARGEMENT (durée fixe), jamais au
+     scroll — une animation view() laisse les graphiques au-dessus de la ligne
+     de flottaison bloqués à scaleY(0), donc invisibles (bug console admin). */
+  .anim-grow-bar {
+    transform-origin: bottom;
+    animation: grow-line 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+  }
+
   @supports (animation-timeline: view()) {
     .anim-scroll {
       animation: reveal-up cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -283,14 +291,6 @@
       animation: grow-line linear both;
       animation-timeline: view();
       animation-range: entry 25% exit 75%;
-    }
-
-    /* Barres de graphique qui poussent à l'entrée dans le viewport. */
-    .anim-grow-bar {
-      transform-origin: bottom;
-      animation: grow-line cubic-bezier(0.16, 1, 0.3, 1) both;
-      animation-timeline: view();
-      animation-range: entry 30% entry 80%;
     }
   }
 }

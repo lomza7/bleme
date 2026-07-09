@@ -26,11 +26,13 @@ export default async function BienvenuePage() {
   const [{ data: profile }, { data: org }] = await Promise.all([
     supabase
       .from("profiles")
-      .select("full_name, first_name, last_name, onboarding_state")
+      .select("full_name, first_name, last_name, onboarding_state, email_verified")
       .eq("id", user.id)
       .maybeSingle(),
     supabase.from("organizations").select("name").limit(1).maybeSingle(),
   ]);
+  // Email non vérifié → on passe d'abord par l'écran de code.
+  if (profile && profile.email_verified === false) redirect("/verifier-email");
   if (profile?.onboarding_state === "done") redirect("/app");
 
   // Préremplissage : prénom/nom depuis le full_name du signup (« Camille Durand »).
