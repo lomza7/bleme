@@ -40,6 +40,25 @@ const SOURCE_LABELS: Record<string, string> = {
   note: "Notes",
 };
 
+// Canaux d'acquisition + rôles déclarés à l'onboarding (/bienvenue).
+const ACQ_LABELS: Record<string, string> = {
+  bouche_a_oreille: "Bouche-à-oreille",
+  google: "Google / recherche",
+  reseaux: "Réseaux sociaux",
+  comptable: "Comptable",
+  presse: "Presse / article",
+  pub: "Publicité",
+  autre: "Autre",
+};
+const ROLE_LABELS: Record<string, string> = {
+  dirigeant: "Dirigeant·e",
+  artisan: "Artisan",
+  independant: "Indépendant·e",
+  comptable: "Comptable / gestion",
+  assistant: "Assistant·e / ADV",
+  autre: "Autre",
+};
+
 function euros(cents: number): string {
   return `${Math.round(cents / 100).toLocaleString("fr-FR")} €`;
 }
@@ -237,6 +256,19 @@ export default async function AdminOverview({
     a.tokens += tokensOf(r);
     a.cost += Number(r.cost_microcents);
     byAgent.set(r.agent_key, a);
+  }
+
+  // ── Onboarding : canaux d'acquisition + rôles déclarés (/bienvenue) ─────────
+  const { data: profilesOnb } = await service
+    .from("profiles")
+    .select("acquisition_source, role_title, onboarding_state");
+  const acqByChannel = new Map<string, number>();
+  const rolesByTitle = new Map<string, number>();
+  let onboarded = 0;
+  for (const p of profilesOnb ?? []) {
+    if (p.onboarding_state === "done") onboarded += 1;
+    if (p.acquisition_source) acqByChannel.set(p.acquisition_source, (acqByChannel.get(p.acquisition_source) ?? 0) + 1);
+    if (p.role_title) rolesByTitle.set(p.role_title, (rolesByTitle.get(p.role_title) ?? 0) + 1);
   }
 
   // ── APIs outils : qui appelle quoi, et lesquelles ne le sont JAMAIS ─────────
@@ -632,6 +664,35 @@ export default async function AdminOverview({
 
       {/* Répartitions */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        <div className="rounded-[1.75rem] border bg-card p-6">
+          <h2 className="text-sm font-semibold">Comment ils nous ont connus</h2>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Déclaré à l’onboarding · {onboarded.toLocaleString("fr-FR")} onboarding{onboarded > 1 ? "s" : ""} terminé{onboarded > 1 ? "s" : ""}
+          </p>
+          <div className="mt-4">
+            {acqByChannel.size > 0 ? (
+              <HBars
+                rows={[...acqByChannel.entries()]
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([k, v]) => ({ label: ACQ_LABELS[k] ?? k, value: v }))}
+              />
+            ) : (
+              <p className="text-xs text-muted-foreground">Pas encore de réponses.</p>
+            )}
+          </div>
+          {rolesByTitle.size > 0 ? (
+            <>
+              <h3 className="mt-6 text-sm font-semibold">Leurs rôles</h3>
+              <div className="mt-3">
+                <HBars
+                  rows={[...rolesByTitle.entries()]
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([k, v]) => ({ label: ROLE_LABELS[k] ?? k, value: v }))}
+                />
+              </div>
+            </>
+          ) : null}
+        </div>
         <div className="rounded-[1.75rem] border bg-card p-6">
           <h2 className="text-sm font-semibold">Dossiers par statut</h2>
           <div className="mt-5">

@@ -273,7 +273,8 @@ async function logRun(run: {
   // Défense de déploiement : si la colonne tool_calls n'existe pas encore
   // (migration pas appliquée), on ne PERD PAS le run — on le retrace sans.
   if (error && run.tool_calls) {
-    const { tool_calls: _omit, ...rest } = run;
+    const rest = { ...run };
+    delete rest.tool_calls;
     await supabase.from("agent_runs").insert(rest);
   }
 }
