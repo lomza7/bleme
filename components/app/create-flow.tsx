@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { CompanionCard, type Companion } from "@/components/app/companion-card";
 import { CompanySearch } from "@/components/app/company-search";
+import { AdminSearch } from "@/components/app/admin-search";
 import { VoiceCapture } from "@/components/app/voice-capture";
 import { IntakeQuestions } from "@/components/app/intake-questions";
 import { createCaseFromDraft } from "@/lib/cases/actions";
@@ -78,9 +79,12 @@ export function CreateFlow() {
 
   const isUnpaid = data.kind === "unpaid";
   const isAdmin = data.kind === "admin";
+  const partyReady = isAdmin
+    ? data.needsRecipientHelp || data.partyName.trim() !== ""
+    : data.partyName.trim() !== "";
   const detailsReady = isUnpaid
-    ? data.partyName.trim() !== "" && data.amount.trim() !== "" && data.age !== ""
-    : data.partyName.trim() !== "" && data.subject !== "" && data.stage !== "";
+    ? partyReady && data.amount.trim() !== "" && data.age !== ""
+    : partyReady && data.subject !== "" && data.stage !== "";
 
   // ── Compagnon par étape (guide la création, comme dans les phases) ──────────
   // Basile prend le relais sur les démarches administratives.
@@ -132,7 +136,18 @@ export function CreateFlow() {
       <div className="mt-5 flex flex-col gap-5">
         <div className="flex flex-col gap-1.5">
           <span className="text-sm font-medium">{isUnpaid ? "Qui vous doit de l’argent ?" : isAdmin ? "Quelle administration ou quel service ?" : "Avec qui avez-vous ce litige ?"}</span>
-          <CompanySearch value={data.partyName} onChange={({ name, siren }) => patch({ partyName: name, debtorSiren: siren })} />
+          {isAdmin ? (
+            <AdminSearch
+              value={data.partyName}
+              helpActive={data.needsRecipientHelp}
+              onChange={({ name, address }) => patch({ partyName: name, partyAddress: address })}
+              onHelp={(active) =>
+                patch({ needsRecipientHelp: active, ...(active ? { partyName: "", partyAddress: null } : {}) })
+              }
+            />
+          ) : (
+            <CompanySearch value={data.partyName} onChange={({ name, siren }) => patch({ partyName: name, debtorSiren: siren })} />
+          )}
         </div>
         {isUnpaid ? (
           <>

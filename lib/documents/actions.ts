@@ -7,7 +7,8 @@ import { parseWhatsAppExport, pickKeyMessages } from "@/lib/whatsapp/parser";
 import { detectFacts } from "@/lib/cases/extraction";
 import { readDocumentFacts } from "@/lib/cases/vision";
 import { touchCase } from "@/lib/cases/touch";
-import { analysePiece } from "@/lib/cases/analysis";
+import { analysePiece, guessDocKind, normalizeDocKind } from "@/lib/cases/analysis";
+import { DOC_KINDS } from "@/lib/cases/completeness";
 import type { PieceAnalysis } from "@/lib/cases/analysis-types";
 import { runAgent } from "@/lib/ai/client";
 import { keepClean } from "@/lib/ai/guardrails";
@@ -15,10 +16,32 @@ import { ALLOWED_MIME, MAX_SIZE, resolveMime } from "@/lib/documents/mime";
 
 export type DocState = { error?: string; success?: string; analysis?: PieceAnalysis };
 
-// Sortie attendue de l'agent Nora (run réel, tracé dans agent_runs).
+// Le modèle renvoie parfois les alertes comme objets ({ message, ... }) plutôt
+// que comme chaînes : on les ramène à une phrase plutôt que de rejeter TOUT le
+// run (sinon on perdait aussi le classement type_piece pour une broutille).
+function alerteToString(v: unknown): string {
+  if (typeof v === "string") return v.slice(0, 300);
+  if (v && typeof v === "object") {
+    const o = v as Record<string, unknown>;
+    const s = o.message ?? o.alerte ?? o.text ?? o.detail ?? o.description ?? o.label;
+    if (typeof s === "string") return s.slice(0, 300);
+    return Object.values(o).filter((x) => typeof x === "string").join(" — ").slice(0, 300);
+  }
+  return String(v ?? "").slice(0, 300);
+}
+
+// Sortie attendue de l'agent Nora (run réel, tracé dans agent_runs) : elle
+// CLASSE la pièce (type_piece), confirme qu'elle est exploitable et signale les
+// incohérences. Plus de type déclaré par l'utilisateur : l'agent s'en charge.
 const NORA_SCHEMA = z.object({
+  type_piece: z.string().max(40).nullable().default(null),
   type_confirme: z.boolean(),
-  alertes: z.array(z.string().max(300)).max(6).default([]),
+  alertes: z
+    .preprocess(
+      (v) => (Array.isArray(v) ? v.map(alerteToString).filter(Boolean).slice(0, 6) : []),
+      z.array(z.string().max(300)),
+    )
+    .default([]),
 });
 
 async function currentOrgId() {
@@ -103,17 +126,19 @@ export async function finalizeUpload(input: {
   const supabase = await createClient();
   let caseId: string | null = null;
   let claimedCents = 0;
+  let caseType = "unpaid_invoice";
   if (input.scope !== "company") {
     const parsed = z.uuid().safeParse(input.scope);
     if (!parsed.success) return { error: "Dossier inconnu." };
     const { data: c } = await supabase
       .from("cases")
-      .select("id, amount_claimed_cents")
+      .select("id, amount_claimed_cents, case_type")
       .eq("id", parsed.data)
       .maybeSingle();
     if (!c) return { error: "Dossier inconnu." };
     caseId = c.id;
     claimedCents = Number(c.amount_claimed_cents) || 0;
+    caseType = c.case_type;
   }
 
   // Le chemin doit correspondre EXACTEMENT au scope résolu (org + dossier|company) :
@@ -273,30 +298,49 @@ export async function finalizeUpload(input: {
       );
       message += ` ${facts.length} information${facts.length > 1 ? "s" : ""} détectée${facts.length > 1 ? "s" : ""} (à vérifier).`;
     }
-    // Socle déterministe fiable (facts + cohérence + confirmation de type).
-    const det = analysePiece(input.fileName, input.docKind, facts, claimedCents, fileText);
-    analysis = det;
-    // Run RÉEL de Nora (tracé dans agent_runs) : elle confirme le type et peut
+    // Classement AUTOMATIQUE : plus de sélecteur de type à l'écran. Nora lit le
+    // contenu et classe la pièce ; un socle déterministe (guessDocKind) prend le
+    // relais si l'agent échoue. Le doc_kind pilote la checklist « pièces
+    // suggérées » — c'est lui qu'on persiste pour la faire avancer.
+    const docClass = whatsapp ? "whatsapp_export" : "other";
+    let effectiveKind = input.docKind ?? guessDocKind({
+      fileName: input.fileName,
+      text: fileText,
+      facts,
+      docClass,
+      mime: finalMime,
+      caseType,
+    });
+    let det = analysePiece(input.fileName, effectiveKind, facts, claimedCents, fileText);
+    // Run RÉEL de Nora (tracé dans agent_runs) : elle classe la pièce et peut
     // ajouter des alertes. Le déterministe reste le socle si l'agent échoue.
     try {
       const { data: nora } = await runAgent({
         key: "nora",
         input: {
           consigne:
-            "Tu analyses une pièce d'un dossier. Confirme si elle correspond au type déclaré et signale toute incohérence avec le dossier. Réponds en JSON { type_confirme: bool, alertes: string[] }.",
-          type_declare: det.kindLabel,
+            "Tu analyses une pièce déposée dans un dossier. 1) CLASSE-la dans UNE seule des catégories fournies (renvoie la valeur exacte dans type_piece). 2) Confirme si le contenu est exploitable et cohérent avec le dossier, et signale toute incohérence factuelle (montant, date, destinataire). Aucun conseil, aucun pronostic. Réponds en JSON { type_piece, type_confirme, alertes }.",
+          categories_possibles: DOC_KINDS,
           montant_reclame_cents: claimedCents,
           champs_detectes: det.facts,
           extrait: fileText ? fileText.slice(0, 4000) : "(document non textuel : contenu non lisible)",
         },
         schema: NORA_SCHEMA,
         simulation: {
+          type_piece: effectiveKind,
           type_confirme: det.kindConfirmed,
           alertes: det.coherence.filter((c) => c.level === "warn").map((c) => c.message),
         },
         organizationId: orgId,
         caseId,
       });
+      // Le classement de l'agent prime (il a vu le contenu) s'il est valide ;
+      // sinon on garde le socle déterministe. Jamais de classement fantaisiste.
+      const noraKind = normalizeDocKind(nora.type_piece);
+      if (!input.docKind && noraKind) {
+        effectiveKind = noraKind;
+        det = analysePiece(input.fileName, effectiveKind, facts, claimedCents, fileText);
+      }
       const coherence = [...det.coherence];
       // Garde-fou #2 : les alertes de Nora affichées à l'utilisateur passent le
       // filtre anti-conseil avant fusion.
@@ -308,6 +352,13 @@ export async function finalizeUpload(input: {
       analysis = { ...det, kindConfirmed: det.kindConfirmed && nora.type_confirme, coherence };
     } catch {
       // Le run en erreur est déjà tracé par runAgent ; on garde le socle.
+      analysis = det;
+    }
+    // Persiste le classement retenu (service client : public.documents n'a pas de
+    // policy UPDATE côté utilisateur — une update RLS renverrait 0 ligne sans
+    // erreur). AVANT touchCase pour que la complétude voie le nouveau doc_kind.
+    if (!input.docKind && effectiveKind) {
+      await createServiceClient().from("documents").update({ doc_kind: effectiveKind }).eq("id", doc.id);
     }
     await touchCase(caseId, { type: "document_added", label: `Pièce ajoutée : ${input.fileName}` });
     revalidatePath(`/app/dossiers/${caseId}`);

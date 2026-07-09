@@ -1,3 +1,5 @@
+import type { AdminAddress } from "@/lib/administrations/types";
+
 export type CaseKind = "unpaid" | "dispute" | "admin";
 
 export type WizardStep = "kind" | "details" | "story" | "account" | "create";
@@ -7,6 +9,10 @@ export type WizardData = {
   // Détails (champs selon le type)
   partyName: string;
   debtorSiren: string | null;
+  // Démarche admin : adresse officielle du service choisi (annuaire), et
+  // « je ne sais pas » → Basile déterminera le destinataire.
+  partyAddress: AdminAddress | null;
+  needsRecipientHelp: boolean;
   amount: string;
   age: string;
   subject: string;
@@ -22,6 +28,8 @@ export const EMPTY_DATA: WizardData = {
   kind: null,
   partyName: "",
   debtorSiren: null,
+  partyAddress: null,
+  needsRecipientHelp: false,
   amount: "",
   age: "",
   subject: "",

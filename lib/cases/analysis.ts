@@ -110,6 +110,75 @@ export function analysePiece(
   };
 }
 
+// Ensemble des valeurs de classement valides (pour normaliser la sortie de Nora).
+const DOC_KIND_VALUES = new Set(DOC_KINDS.map((k) => k.value));
+const DOC_KIND_BY_LABEL = new Map(DOC_KINDS.map((k) => [k.label.toLowerCase(), k.value]));
+
+/**
+ * Normalise un type de pièce renvoyé par l'agent vers une valeur DOC_KINDS
+ * valide (accepte la valeur exacte OU le libellé). Renvoie null si non reconnu
+ * — jamais de classement fantaisiste.
+ */
+export function normalizeDocKind(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const s = raw.trim().toLowerCase();
+  if (DOC_KIND_VALUES.has(s)) return s;
+  if (DOC_KIND_BY_LABEL.has(s)) return DOC_KIND_BY_LABEL.get(s) ?? null;
+  // Synonymes courants renvoyés par le modèle.
+  if (/factur|honoraire/.test(s)) return "facture";
+  if (/devis|contrat|commande/.test(s)) return "devis_contrat";
+  if (/livraison|photo|chantier/.test(s)) return "preuve_livraison";
+  if (/envoi|réception|reception|recommand|accus/.test(s)) return "preuve_envoi";
+  if (/échange|echange|email|courriel|sms|whatsapp|message/.test(s)) return "echanges";
+  if (/administrat|décision|decision|préfe|prefe/.test(s)) return "decision_admin";
+  if (/justif|jugement|plainte|attestation/.test(s)) return "justificatif";
+  return null;
+}
+
+/**
+ * Classement DÉTERMINISTE d'une pièce à partir de son contenu (socle de repli
+ * quand l'agent échoue, et amorce avant sa lecture). Le classement pilote la
+ * checklist « pièces suggérées » : on ne force un type que sur un signal net,
+ * on renvoie null (non classé) plutôt que de deviner à tort.
+ */
+export function guessDocKind(input: {
+  fileName: string;
+  text: string;
+  facts: Fact[];
+  docClass: string;
+  mime: string;
+  caseType: string;
+}): string | null {
+  const { fileName, text, facts, docClass, mime, caseType } = input;
+  if (docClass === "whatsapp_export") return "echanges";
+  const hay = `${fileName}\n${text}`.toLowerCase();
+  const hasAmount = facts.some((f) => f.field_key === "amount_cents");
+
+  // Facture : signal fort (mention explicite, ou montant + vocabulaire comptable).
+  if (/factur|note d'honoraire/.test(hay)) return "facture";
+  // Décision / courrier de l'administration.
+  if (/d[ée]cision|arr[êe]t[ée]|notification|pr[ée]fect|rectorat|urssaf|administration|titre ex[ée]cutoire|avis d'imposition|refus de/.test(hay)) return "decision_admin";
+  // Devis / contrat / bon de commande.
+  if (/devis|bon de commande|contrat|proposition commerciale/.test(hay)) return "devis_contrat";
+  // Preuve d'envoi / réception.
+  if (/accus[ée] de r[ée]ception|recommand[ée]|lettre suivie|bordereau|num[ée]ro de suivi|avis de passage/.test(hay)) return "preuve_envoi";
+  // Preuve de livraison / réception de travaux.
+  if (/bon de livraison|proc[èe]s-verbal|pv de r[ée]ception|fin de travaux|livraison/.test(hay)) return "preuve_livraison";
+  // Facture : signal faible (montant + vocabulaire TTC/HT/TVA).
+  if (hasAmount && /\bttc\b|\bht\b|\btva\b|\btotal\b/.test(hay)) return "facture";
+  // Justificatif (jugement, plainte, attestation…).
+  if (/jugement|ordonnance|plainte|attestation|certificat|constat|justificatif/.test(hay)) return "justificatif";
+  // Échanges écrits.
+  if (/e-?mail|courriel|\bsms\b|whatsapp|\bobjet\s*:|\bde\s*:.*@/.test(hay)) return "echanges";
+  if (hasAmount) return "facture";
+  // Image sans texte exploitable : on s'appuie sur la nature du dossier.
+  if (mime.startsWith("image/")) {
+    if (caseType === "client_dispute") return "preuve_livraison";
+    if (caseType === "admin_request") return "justificatif";
+  }
+  return null;
+}
+
 /** Alertes de cohérence à l'échelle du dossier (warns uniquement, dédupliqués). */
 export function dossierWarnings(
   caseType: string,

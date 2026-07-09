@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import {
   ArrowLeft,
   CheckCircle2,
+  ChevronDown,
   Circle,
   CircleAlert,
   Clock,
@@ -14,13 +15,13 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { dateLongFr, euros } from "@/lib/format";
 import { CASE_TYPE_LABEL, STATUS_META } from "@/lib/cases/constants";
-import { checklistFor, completeness, DOC_KINDS } from "@/lib/cases/completeness";
+import { checklistFor, completeness } from "@/lib/cases/completeness";
 import { derivePhase, nextLetterKind } from "@/lib/cases/phases";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { dossierWarnings } from "@/lib/cases/analysis";
 import { Uploader } from "@/components/app/uploader";
 import { GenerateLetterButtons, LetterRow } from "@/components/app/letters";
-import { ReviewLetter, type AddressDefaults } from "@/components/app/review-letter";
+import { ReviewLetter, type AddressDefaults, type SuggestedRecipient } from "@/components/app/review-letter";
 import { FactRow } from "@/components/app/fact-row";
 import { FileList } from "@/components/app/file-list";
 import { DossierSteps, type Companion } from "@/components/app/dossier-steps";
@@ -124,6 +125,9 @@ export default async function CaseDetailPage({
     (c.debtor_address as AddressDefaults) ?? (c.debtor_name ? { societe: c.debtor_name } : null);
   const defaultFromAddress: AddressDefaults =
     (orgRow?.address_json as AddressDefaults) ?? (orgRow?.name ? { societe: orgRow.name } : null);
+  const suggestedRecipients = (
+    (c.suggested_recipients as SuggestedRecipient[] | null) ?? []
+  ).filter((r) => r && typeof r.nom === "string");
 
   const docList = docs ?? [];
   const { data: facts } = docList.length
@@ -269,34 +273,47 @@ export default async function CaseDetailPage({
     description: e.description,
     source: e.source,
   }));
-  const cahierSections = (
-    <>
-      <div className="mt-6">
-        <CaseContextPanel
-          caseId={c.id}
-          contentMd={lastCtx?.content_md ?? null}
-          version={lastCtx?.version ?? 0}
-          consignedAtLabel={lastCtx ? fmtDateTime(lastCtx.created_at) : null}
-          pending={briefPending}
-          versions={(ctxVersions ?? []).map((v) => ({
-            version: v.version,
-            causeLabel: v.cause_label,
-            createdAtLabel: fmtDateTime(v.created_at),
-          }))}
-        />
-      </div>
+  // Contexte + chronologie : matière de référence, repliable et reléguée en bas
+  // de page (le cœur de l'écran reste l'action en cours). Fermés par défaut sur
+  // un dossier actif ; le Contexte s'ouvre d'emblée sur un dossier soldé/clos,
+  // où il devient le livrable.
+  const cahierSections = (open?: boolean) => (
+    <div className="mt-8 flex flex-col gap-4">
+      <CaseContextPanel
+        caseId={c.id}
+        contentMd={lastCtx?.content_md ?? null}
+        version={lastCtx?.version ?? 0}
+        consignedAtLabel={lastCtx ? fmtDateTime(lastCtx.created_at) : null}
+        pending={briefPending}
+        defaultOpen={open ?? false}
+        versions={(ctxVersions ?? []).map((v) => ({
+          version: v.version,
+          causeLabel: v.cause_label,
+          createdAtLabel: fmtDateTime(v.created_at),
+        }))}
+      />
       {caseEvents.length > 0 ? (
-        <section className="mt-6 rounded-[1.75rem] border bg-card p-6 sm:p-7">
-          <div className="flex items-center gap-2">
-            <Clock className="size-5 text-brand-strong" />
-            <h2 className="text-lg font-semibold">Chronologie</h2>
-          </div>
-          <div className="mt-4">
+        <details className="group overflow-hidden rounded-[1.5rem] border bg-card">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 p-4 transition-colors hover:bg-muted/30 sm:p-5 [&::-webkit-details-marker]:hidden">
+            <span className="flex items-center gap-3">
+              <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
+                <Clock className="size-5" />
+              </span>
+              <span>
+                <span className="text-base font-semibold">Chronologie</span>
+                <span className="mt-0.5 block text-xs text-muted-foreground">
+                  {caseEvents.length} évènement{caseEvents.length > 1 ? "s" : ""} daté{caseEvents.length > 1 ? "s" : ""}
+                </span>
+              </span>
+            </span>
+            <ChevronDown className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+          </summary>
+          <div className="border-t px-4 pb-5 pt-4 sm:px-5">
             <CaseEventsTimeline events={caseEvents} />
           </div>
-        </section>
+        </details>
       ) : null}
-    </>
+    </div>
   );
 
   // ── Dossier résolu / clos : vue de synthèse en lecture seule ────────────────
@@ -307,7 +324,6 @@ export default async function CaseDetailPage({
         <div className="mt-8">
           <PhaseTrail phase={phase} />
         </div>
-        {cahierSections}
         <section className="mt-6 rounded-[1.75rem] border bg-card p-6 sm:p-7">
           <h2 className="text-lg font-semibold">
             {c.status === "resolved" ? "Dossier résolu" : "Dossier clôturé"}
@@ -325,6 +341,7 @@ export default async function CaseDetailPage({
         </section>
         {courriersSection}
         {piecesSection}
+        {cahierSections(true)}
       </div>
     );
   }
@@ -370,8 +387,11 @@ export default async function CaseDetailPage({
         })}
       </ul>
       <div className="mt-6 border-t pt-6">
-        <p className="mb-3 text-sm font-medium">Ajouter une pièce</p>
-        <Uploader scope={c.id} kinds={DOC_KINDS} />
+        <p className="mb-1 text-sm font-medium">Ajouter une pièce</p>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Déposez le document tel quel : Nora le lit et le classe automatiquement.
+        </p>
+        <Uploader scope={c.id} />
       </div>
     </section>
   );
@@ -446,6 +466,7 @@ export default async function CaseDetailPage({
             defaultEmail={c.debtor_email ?? ""}
             defaultToAddress={defaultToAddress}
             defaultFromAddress={defaultFromAddress}
+            suggestedRecipients={suggestedRecipients}
           />
         </div>
       ) : (
@@ -534,8 +555,6 @@ export default async function CaseDetailPage({
 
       <AgentObservations items={observationItems} />
 
-      {cahierSections}
-
       <div className="mt-6">
         {phase === 1 ? (
           <div className="flex flex-col gap-6">
@@ -565,6 +584,7 @@ export default async function CaseDetailPage({
                   defaultEmail={c.debtor_email ?? ""}
                   defaultToAddress={defaultToAddress}
                   defaultFromAddress={defaultFromAddress}
+                  suggestedRecipients={suggestedRecipients}
                 />
               ) : (
                 <EscalationPanel
@@ -585,6 +605,7 @@ export default async function CaseDetailPage({
 
       {courriersSection}
       {piecesSection}
+      {cahierSections()}
     </div>
   );
 }

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { ReviewLetter, type AddressDefaults } from "@/components/app/review-letter";
+import { ReviewLetter, type AddressDefaults, type SuggestedRecipient } from "@/components/app/review-letter";
 
 export const metadata: Metadata = { title: "Relire le courrier" };
 
@@ -30,7 +30,7 @@ export default async function LetterReviewPage({
   // Préremplissage des coordonnées d'envoi (dernières saisies — corrigeables).
   const { data: c } = await supabase
     .from("cases")
-    .select("debtor_name, debtor_email, debtor_address, organization_id")
+    .select("debtor_name, debtor_email, debtor_address, suggested_recipients, organization_id")
     .eq("id", id)
     .maybeSingle();
   const { data: orgRow } = c
@@ -44,6 +44,9 @@ export default async function LetterReviewPage({
     (c?.debtor_address as AddressDefaults) ?? (c?.debtor_name ? { societe: c.debtor_name } : null);
   const defaultFromAddress: AddressDefaults =
     (orgRow?.address_json as AddressDefaults) ?? (orgRow?.name ? { societe: orgRow.name } : null);
+  const suggestedRecipients = (
+    (c?.suggested_recipients as SuggestedRecipient[] | null) ?? []
+  ).filter((r) => r && typeof r.nom === "string");
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -66,6 +69,7 @@ export default async function LetterReviewPage({
           defaultEmail={c?.debtor_email ?? ""}
           defaultToAddress={defaultToAddress}
           defaultFromAddress={defaultFromAddress}
+          suggestedRecipients={suggestedRecipients}
         />
       </div>
     </div>

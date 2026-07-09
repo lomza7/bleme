@@ -7,7 +7,7 @@ import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { recordDebtorReply, generateAdaptedResponse, type ReplyState } from "@/lib/cases/replies";
 import { escalateCase, type EscState } from "@/lib/cases/escalation";
 import { GenerateLetterButtons } from "@/components/app/letters";
-import { ReviewLetter, type AddressDefaults } from "@/components/app/review-letter";
+import { ReviewLetter, type AddressDefaults, type SuggestedRecipient } from "@/components/app/review-letter";
 import { RecordPayment } from "@/components/app/record-payment";
 
 const INITIAL: ReplyState = {};
@@ -38,6 +38,7 @@ export function Phase2Flow({
   defaultEmail = "",
   defaultToAddress = null,
   defaultFromAddress = null,
+  suggestedRecipients = [],
 }: {
   caseId: string;
   caseType: string;
@@ -48,6 +49,7 @@ export function Phase2Flow({
   defaultEmail?: string;
   defaultToAddress?: AddressDefaults;
   defaultFromAddress?: AddressDefaults;
+  suggestedRecipients?: SuggestedRecipient[];
 }) {
   const [replyState, replyAction, replyPending] = useActionState(recordDebtorReply, INITIAL);
   const [adaptState, adaptAction, adaptPending] = useActionState(generateAdaptedResponse, INITIAL);
@@ -73,6 +75,7 @@ export function Phase2Flow({
             defaultEmail={defaultEmail}
             defaultToAddress={defaultToAddress}
             defaultFromAddress={defaultFromAddress}
+            suggestedRecipients={suggestedRecipients}
           />
         </div>
       </section>

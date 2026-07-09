@@ -68,11 +68,12 @@ function wrap(text: string, font: Font, size: number, maxWidth: number): string[
 }
 
 function addressLines(a: LetterAddress): string[] {
+  // Ordre AFNOR : dénomination, personne, complément/service, voie, CP+ville.
   return [
     a.societe?.trim() || null,
     a.nom?.trim() || null,
-    a.adresse.trim(),
     a.complement?.trim() || null,
+    a.adresse.trim(),
     `${a.codePostal.trim()} ${a.ville.trim().toUpperCase()}`,
   ].filter((l): l is string => Boolean(l));
 }

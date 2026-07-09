@@ -8,8 +8,9 @@ import { Markdown } from "@/components/app/markdown";
 import { getContextVersion } from "@/lib/cases/context-actions";
 
 /*
- * « Contexte du dossier » — le point central : ce que le dossier sait, consigné
- * au fil des évènements. Chaque version est HORODATÉE (serveur) et FIGÉE
+ * « Contexte du dossier » — ce que le dossier sait, consigné au fil des
+ * évènements. Panneau REPLIABLE (fermé par défaut, prend peu de place ; placé
+ * en bas de la page dossier). Chaque version est HORODATÉE (serveur) et FIGÉE
  * (journal append-only) : l'historique montre ce qu'on savait, et quand.
  * Lecture seule absolue (aucune restauration/édition — contrat d'opposabilité).
  * Toutes les dates arrivent déjà formatées du serveur (zéro mismatch d'hydratation).
@@ -30,6 +31,7 @@ export function CaseContextPanel({
   consignedAtLabel,
   pending,
   versions,
+  defaultOpen = false,
 }: {
   caseId: string;
   contentMd: string | null;
@@ -37,11 +39,12 @@ export function CaseContextPanel({
   consignedAtLabel: string | null;
   pending: boolean;
   versions: ContextVersionMeta[];
+  defaultOpen?: boolean;
 }) {
   const router = useRouter();
   const reduce = useReducedMotion();
+  const [open, setOpen] = useState(defaultOpen);
   const [justUpdated, setJustUpdated] = useState(false);
-  const [expanded, setExpanded] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const prevVersion = useRef(version);
 
@@ -59,6 +62,7 @@ export function CaseContextPanel({
   // Watcher temps réel : quand une génération est en cours, on interroge l'état
   // (~60 octets) toutes les 5 s, onglet visible uniquement, 24 essais max ; à
   // l'incrément de version → router.refresh() recharge le RSC (nouveau contenu).
+  // Tourne même panneau replié (le badge d'état reste visible dans l'en-tête).
   useEffect(() => {
     if (!pending) return;
     let tries = 0;
@@ -98,117 +102,146 @@ export function CaseContextPanel({
   }, [pending, version, caseId, router]);
 
   const sections = (contentMd ?? "").split(/\n(?=## )/).filter((s) => s.trim());
+  const teaser = pending
+    ? "Mise à jour en cours…"
+    : version > 0
+      ? `${sections.length} rubrique${sections.length > 1 ? "s" : ""}${consignedAtLabel ? ` · consigné le ${consignedAtLabel}` : ""}`
+      : "Le contexte se constitue au fil du dossier.";
 
   return (
-    <section className="rounded-[1.75rem] border bg-card p-5 sm:p-7">
-      {/* En-tête */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-brand-soft text-brand-strong">
+    <section className="overflow-hidden rounded-[1.5rem] border bg-card">
+      {/* En-tête cliquable : ouvre / referme le panneau */}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 p-4 text-left transition-colors hover:bg-muted/30 sm:p-5"
+      >
+        <span className="flex min-w-0 items-center gap-3">
+          <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
             <BookOpenText className="size-5" />
           </span>
-          <div>
-            <h2 className="text-lg font-semibold">Contexte du dossier</h2>
-            <p className="text-xs text-muted-foreground">
-              Ce que le dossier sait, consigné au fil des évènements — chaque version est horodatée et conservée telle quelle.
-            </p>
-          </div>
-        </div>
-        {/* Badge 3 états */}
-        <AnimatePresence mode="wait" initial={false}>
-          {justUpdated ? (
-            <motion.span
-              key="updated"
-              initial={reduce ? false : { opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0 }}
-              className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-medium text-emerald-800"
-            >
-              Mis à jour à l’instant
-            </motion.span>
-          ) : pending ? (
-            <span
-              key="pending"
-              className="inline-flex items-center gap-2 rounded-full bg-brand-soft px-3 py-1 text-xs font-medium text-brand-strong"
-            >
-              <span className="size-1.5 rounded-full bg-brand motion-safe:animate-pulse" />
-              {version > 0 ? `v${version} · ` : ""}mise à jour en cours…
+          <span className="min-w-0">
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-base font-semibold">Contexte du dossier</span>
+              <StateBadge justUpdated={justUpdated} pending={pending} version={version} reduce={reduce} />
             </span>
-          ) : version > 0 ? (
-            <span key="upto" className="rounded-full bg-muted px-3 py-1 text-xs tabular-nums text-muted-foreground">
-              v{version}
-              {consignedAtLabel ? ` · consigné le ${consignedAtLabel}` : ""}
-            </span>
-          ) : null}
-        </AnimatePresence>
-      </div>
+            <span className="mt-0.5 block truncate text-xs text-muted-foreground">{teaser}</span>
+          </span>
+        </span>
+        <ChevronDown className={`size-4 shrink-0 text-muted-foreground transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
 
-      {/* Contenu : sections révélées en cascade. Le contenu v{n} reste lisible
-          pendant une mise à jour (jamais de skeleton par-dessus l'existant). */}
-      {sections.length > 0 ? (
-        <div className="relative mt-5">
-          <div className={expanded ? "" : "max-h-[24rem] overflow-hidden sm:max-h-none"}>
-            {sections.map((s, i) => (
-              <motion.div
-                key={`${version}-${i}`}
-                initial={reduce ? false : { opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.45, ease: EASE, delay: reduce ? 0 : Math.min(i * 0.06, 0.5) }}
-                className="mt-5 first:mt-0"
-              >
-                <Markdown content={s} />
-              </motion.div>
-            ))}
-          </div>
-          {!expanded ? (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-24 items-end justify-center bg-gradient-to-t from-card to-transparent sm:hidden">
-              <button
-                type="button"
-                onClick={() => setExpanded(true)}
-                aria-expanded={false}
-                className="pointer-events-auto mb-1 rounded-full border bg-background px-4 py-1.5 text-xs font-medium"
-              >
-                Voir tout le contexte
-              </button>
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <div className="mt-5">
-          <div className="flex flex-col gap-2" aria-hidden>
-            <span className="h-3 w-3/4 animate-pulse rounded bg-muted" />
-            <span className="h-3 w-2/3 animate-pulse rounded bg-muted" />
-            <span className="h-3 w-1/2 animate-pulse rounded bg-muted" />
-          </div>
-          <p className="mt-3 text-sm text-muted-foreground">
-            Le contexte du dossier se constitue — quelques instants.
-          </p>
-        </div>
-      )}
-
-      {/* Historique daté (lecture seule absolue) */}
-      {versions.length > 0 ? (
-        <div className="mt-6 border-t pt-4">
-          <button
-            type="button"
-            onClick={() => setShowHistory((v) => !v)}
-            aria-expanded={showHistory}
-            className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      {/* Corps replié/déplié */}
+      <AnimatePresence initial={false}>
+        {open ? (
+          <motion.div
+            key="body"
+            initial={reduce ? false : { height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={reduce ? { opacity: 0 } : { height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: EASE }}
+            className="overflow-hidden"
           >
-            <History className="size-4" />
-            Historique des versions ({versions.length})
-            <ChevronDown className={`size-4 transition-transform ${showHistory ? "rotate-180" : ""}`} />
-          </button>
-          {showHistory ? (
-            <ol className="mt-4 border-l pl-4">
-              {versions.map((v) => (
-                <HistoryRow key={v.version} caseId={caseId} meta={v} current={v.version === version} />
-              ))}
-            </ol>
-          ) : null}
-        </div>
-      ) : null}
+            <div className="border-t px-4 pb-5 pt-4 sm:px-5">
+              <p className="text-xs text-muted-foreground">
+                Ce que le dossier sait, consigné au fil des évènements — chaque version est horodatée et conservée telle quelle.
+              </p>
+
+              {sections.length > 0 ? (
+                <div className="mt-4">
+                  {sections.map((s, i) => (
+                    <motion.div
+                      key={`${version}-${i}`}
+                      initial={reduce ? false : { opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.4, ease: EASE, delay: reduce ? 0 : Math.min(i * 0.05, 0.4) }}
+                      className="mt-4 first:mt-0"
+                    >
+                      <Markdown content={s} />
+                    </motion.div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-4">
+                  <div className="flex flex-col gap-2" aria-hidden>
+                    <span className="h-3 w-3/4 animate-pulse rounded bg-muted" />
+                    <span className="h-3 w-2/3 animate-pulse rounded bg-muted" />
+                    <span className="h-3 w-1/2 animate-pulse rounded bg-muted" />
+                  </div>
+                  <p className="mt-3 text-sm text-muted-foreground">
+                    Le contexte du dossier se constitue — quelques instants.
+                  </p>
+                </div>
+              )}
+
+              {/* Historique daté (lecture seule absolue) */}
+              {versions.length > 0 ? (
+                <div className="mt-6 border-t pt-4">
+                  <button
+                    type="button"
+                    onClick={() => setShowHistory((v) => !v)}
+                    aria-expanded={showHistory}
+                    className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    <History className="size-4" />
+                    Historique des versions ({versions.length})
+                    <ChevronDown className={`size-4 transition-transform ${showHistory ? "rotate-180" : ""}`} />
+                  </button>
+                  {showHistory ? (
+                    <ol className="mt-4 border-l pl-4">
+                      {versions.map((v) => (
+                        <HistoryRow key={v.version} caseId={caseId} meta={v} current={v.version === version} />
+                      ))}
+                    </ol>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </section>
+  );
+}
+
+function StateBadge({
+  justUpdated,
+  pending,
+  version,
+  reduce,
+}: {
+  justUpdated: boolean;
+  pending: boolean;
+  version: number;
+  reduce: boolean | null;
+}) {
+  return (
+    <AnimatePresence mode="wait" initial={false}>
+      {justUpdated ? (
+        <motion.span
+          key="updated"
+          initial={reduce ? false : { opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0 }}
+          className="rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-medium text-emerald-800"
+        >
+          Mis à jour à l’instant
+        </motion.span>
+      ) : pending ? (
+        <span
+          key="pending"
+          className="inline-flex items-center gap-1.5 rounded-full bg-brand-soft px-2.5 py-0.5 text-[11px] font-medium text-brand-strong"
+        >
+          <span className="size-1.5 rounded-full bg-brand motion-safe:animate-pulse" />
+          en cours…
+        </span>
+      ) : version > 0 ? (
+        <span key="upto" className="rounded-full bg-muted px-2.5 py-0.5 text-[11px] tabular-nums text-muted-foreground">
+          v{version}
+        </span>
+      ) : null}
+    </AnimatePresence>
   );
 }
 

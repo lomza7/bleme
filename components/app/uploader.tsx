@@ -1,19 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import dynamic from "next/dynamic";
-import { CircleAlert, CircleCheck, LoaderCircle, ScanLine, UploadCloud } from "lucide-react";
+import { useRef, useState } from "react";
+import { CircleAlert, CircleCheck, LoaderCircle, UploadCloud } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { prepareUpload, finalizeUpload, type DocState } from "@/lib/documents/actions";
 import { AnalysisModal } from "@/components/app/analysis-modal";
+import { ScanButton, useCanScan } from "@/components/app/scan-button";
 import type { PieceAnalysis } from "@/lib/cases/analysis-types";
-
-// Chargé à la demande : le scanner (caméra + traitement d'image) ne pèse rien
-// tant qu'on ne l'ouvre pas, et n'a aucun sens côté serveur.
-const DocumentScanner = dynamic(
-  () => import("@/components/app/document-scanner").then((m) => m.DocumentScanner),
-  { ssr: false },
-);
 
 const MAX_SIZE = 25 * 1024 * 1024;
 
@@ -35,28 +28,7 @@ export function Uploader({
   const [state, setState] = useState<DocState>({});
   const [dragging, setDragging] = useState(false);
   const [modal, setModal] = useState<PieceAnalysis | null>(null);
-  const [scanOpen, setScanOpen] = useState(false);
-  const [canScan, setCanScan] = useState(false);
-
-  // Le bouton scan n'apparaît que si l'appareil a une caméra (rendu après
-  // montage : pas de mismatch d'hydratation).
-  useEffect(() => {
-    let alive = true;
-    if (!navigator.mediaDevices?.getUserMedia) return;
-    navigator.mediaDevices
-      .enumerateDevices()
-      .then((devices) => {
-        if (alive && devices.some((d) => d.kind === "videoinput")) setCanScan(true);
-      })
-      .catch(() => {
-        // Énumération bloquée avant permission sur certains navigateurs :
-        // on laisse tenter, le scanner gère lui-même le refus caméra.
-        if (alive) setCanScan(true);
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  const canScan = useCanScan();
 
   async function handleFile(file: File | undefined) {
     if (!file || pending) return;
@@ -137,22 +109,7 @@ export function Uploader({
           onChange={(e) => handleFile(e.target.files?.[0] ?? undefined)}
         />
         {canScan ? (
-          <button
-            type="button"
-            disabled={pending}
-            onClick={() => setScanOpen(true)}
-            className="flex w-full items-center gap-4 rounded-[1.75rem] bg-brand px-6 py-5 text-left text-brand-foreground transition-all duration-300 hover:bg-brand-strong active:scale-[0.99] disabled:opacity-60"
-          >
-            <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-white/15">
-              <ScanLine className="size-5" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-semibold">Scanner un document</span>
-              <span className="block text-xs opacity-85">
-                Cadrage automatique, lisibilité vérifiée avant l&apos;ajout au dossier
-              </span>
-            </span>
-          </button>
+          <ScanButton disabled={pending} onFile={(file) => void handleFile(file)} />
         ) : null}
         <button
           type="button"
@@ -205,15 +162,6 @@ export function Uploader({
           </p>
         ) : null}
       </div>
-      {scanOpen ? (
-        <DocumentScanner
-          onClose={() => setScanOpen(false)}
-          onComplete={(file) => {
-            setScanOpen(false);
-            void handleFile(file);
-          }}
-        />
-      ) : null}
       {modal ? <AnalysisModal analysis={modal} onClose={() => setModal(null)} /> : null}
     </>
   );

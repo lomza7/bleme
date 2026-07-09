@@ -12,6 +12,7 @@ import { hasAdvice } from "@/lib/ai/guardrails";
 import { caseMemo } from "@/lib/cases/memo";
 import { buildCaseContext } from "@/lib/cases/context";
 import { legalSocle, hasSources } from "@/lib/cases/legal";
+import { resolveAdministration } from "@/lib/administrations/annuaire";
 import { dispatchLetter } from "@/lib/courrier/dispatch";
 import { serverEnv } from "@/lib/env";
 
@@ -190,6 +191,11 @@ export async function generateLetter(
   let body = tpl.body;
   let griefsCount = 0;
   let adminRefs: { reference: string; intitule: string; source: string; verifie: boolean }[] = [];
+  const suggestedRecipients: {
+    nom: string;
+    motif: string;
+    address: import("@/lib/administrations/types").AdminAddress | null;
+  }[] = [];
   // La réponse à une contestation est écrite par Léna (litiges, grief par grief) ;
   // les courriers à l'administration par Basile (démarches & recours, outillé
   // Légifrance/justice administrative) ; le recouvrement d'impayés par Marius.
@@ -265,15 +271,17 @@ export async function generateLetter(
         key: "basile",
         input: {
           consigne:
-            "Rédige le BROUILLON de ce courrier adressé à l'administration. Qualifie d'abord la démarche (recours gracieux, hiérarchique, réclamation, rectification après décision de justice, relance après silence) à partir du dossier, puis rédige : identification du demandeur, références du dossier, exposé des faits daté, demande expresse, motivation, pièces jointes numérotées. Appuie-toi sur le socle_juridique fourni et cherche les textes propres au cas via les outils (Légifrance, justice administrative, Service-Public)." +
+            "Rédige le BROUILLON de ce courrier adressé à l'administration. Qualifie d'abord la démarche (recours gracieux, hiérarchique, réclamation, rectification après décision de justice, relance après silence) à partir du dossier, puis rédige : identification du demandeur, références du dossier, exposé des faits daté, demande expresse, motivation, pièces jointes numérotées. Appuie-toi sur le socle_juridique fourni et cherche les textes propres au cas via les outils (Légifrance, justice administrative, Service-Public). Renseigne AUSSI destinataires_suggeres : la ou les autorités compétentes à saisir (le NOM du service, pas d'adresse — l'adresse officielle est récupérée séparément) avec le motif de chacune. S'il y a une voie principale et une copie utile (ex. autorité compétente + juridiction en cas de rejet), liste-les." +
             groundingRule +
-            " Réponds en JSON { subject, body_md, demarche, references_utilisees:[{reference, intitule, source, verifie}] }.",
+            " Réponds en JSON { subject, body_md, demarche, references_utilisees:[{reference, intitule, source, verifie}], destinataires_suggeres:[{nom, motif}] }.",
           contexte_dossier: memo,
           socle_juridique: socle,
           type: LETTER_KINDS[kind].label,
           palier: LETTER_PALIER[kind] ?? 0,
           ton: LETTER_KINDS[kind].tone,
           destinataire: c.debtor_name,
+          destinataire_a_determiner:
+            !c.debtor_name || c.debtor_name === "Administration à déterminer",
           montant_en_jeu: c.amount_claimed_cents ? `${euros(c.amount_claimed_cents)} €` : null,
           pieces: (ctx?.documents ?? []).map((d) => ({ nom: d.fileName, type: d.docKind })),
           chronologie: (ctx?.timeline ?? []).map((t) => ({ date: t.date, evenement: t.title })),
@@ -294,8 +302,17 @@ export async function generateLetter(
               }),
             )
             .default([]),
+          destinataires_suggeres: z
+            .array(z.object({ nom: z.string(), motif: z.string().default("") }))
+            .default([]),
         }),
-        simulation: { subject: tpl.subject, body_md: tpl.body, demarche: "", references_utilisees: [] },
+        simulation: {
+          subject: tpl.subject,
+          body_md: tpl.body,
+          demarche: "",
+          references_utilisees: [],
+          destinataires_suggeres: [],
+        },
         organizationId: org.orgId,
         caseId: c.id,
         maxTokens: 1800,
@@ -307,6 +324,25 @@ export async function generateLetter(
         subject = m.subject?.trim() || tpl.subject;
         body = m.body_md?.trim() || tpl.body;
         adminRefs = (m.references_utilisees ?? []).filter((r) => r.reference.trim());
+      }
+      // Destinataires proposés par l'agent → résolus en adresses RÉELLES via
+      // l'annuaire officiel (Basile ne rédige jamais une adresse). Anti-doublon
+      // sur le nom, borné à 4 pour rester lisible.
+      const proposed = (m.destinataires_suggeres ?? [])
+        .map((r) => ({ nom: r.nom.trim(), motif: r.motif.trim() }))
+        .filter((r) => r.nom.length > 2)
+        .slice(0, 4);
+      const seen = new Set<string>();
+      for (const p of proposed) {
+        const key = p.nom.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const hit = await resolveAdministration(p.nom);
+        suggestedRecipients.push({
+          nom: hit?.nom || p.nom,
+          motif: p.motif,
+          address: hit?.address ?? null,
+        });
       }
     } else {
       const { data: m } = await runAgent({
@@ -382,6 +418,37 @@ export async function generateLetter(
         : `À relire et valider avant tout envoi.${refsNote}`,
     source: "ai",
   });
+
+  // Destinataires proposés par Basile (adresses officielles résolues) : stockés
+  // sur le dossier pour préremplir la validation, et journalisés. Si aucun
+  // destinataire n'était connu, on renseigne aussi le principal comme adresse
+  // par défaut du dossier (l'utilisateur garde la main, #3).
+  if (suggestedRecipients.length > 0) {
+    const withAddress = suggestedRecipients.filter((r) => r.address);
+    await supabase.from("cases").update({ suggested_recipients: suggestedRecipients }).eq("id", c.id);
+    const primary = withAddress[0]?.address ?? null;
+    const noRecipientYet = !c.debtor_name || c.debtor_name === "Administration à déterminer";
+    if (noRecipientYet && primary) {
+      await supabase
+        .from("cases")
+        .update({ debtor_name: withAddress[0].nom, debtor_address: primary })
+        .eq("id", c.id);
+    }
+    const list = suggestedRecipients
+      .map((r) => `${r.nom}${r.address ? "" : " (adresse à compléter)"}${r.motif ? ` — ${r.motif}` : ""}`)
+      .join(" ; ");
+    await supabase.from("case_events").insert({
+      case_id: c.id,
+      organization_id: org.orgId,
+      event_type: "recipient_suggested",
+      title:
+        suggestedRecipients.length > 1
+          ? "Destinataires proposés par Basile"
+          : "Destinataire proposé par Basile",
+      description: `${list}. Vérifiez et choisissez avant tout envoi.`,
+      source: "ai",
+    });
+  }
 
   await touchCase(c.id, { type: "letter_draft", label: `Brouillon préparé : ${LETTER_KINDS[kind].label}` });
   revalidatePath(`/app/dossiers/${c.id}`);

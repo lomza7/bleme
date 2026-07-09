@@ -29,10 +29,23 @@ function days(n: number): string {
 
 /* ── Brouillon du wizard ──────────────────────────────────────────────────── */
 
+const adminAddressSchema = z.object({
+  nom: z.string().max(120).default(""),
+  societe: z.string().max(160).default(""),
+  adresse: z.string().max(160).default(""),
+  complement: z.string().max(160).default(""),
+  codePostal: z.string().max(12).default(""),
+  ville: z.string().max(120).default(""),
+});
+
 const draftSchema = z.object({
   kind: z.enum(["unpaid", "dispute", "admin"]),
-  partyName: z.string().trim().min(1).max(200),
+  // Le nom peut être vide quand l'utilisateur demande à Basile de trouver le
+  // destinataire (« je ne sais pas ») ; on retombe alors sur un libellé neutre.
+  partyName: z.string().trim().max(200).optional().default(""),
   debtorSiren: z.string().regex(/^\d{9}$/).nullable().optional().default(null),
+  partyAddress: adminAddressSchema.nullable().optional().default(null),
+  needsRecipientHelp: z.boolean().optional().default(false),
   amount: z.string().optional().default(""),
   age: z.string().optional().default(""),
   subject: z.string().optional().default(""),
@@ -63,10 +76,20 @@ export async function createCaseFromDraft(
   if ("error" in org) return { error: org.error };
 
   const d = parsed.data;
-  const supabase = await createClient();
   const isUnpaid = d.kind === "unpaid";
   const isAdmin = d.kind === "admin";
+  // « Je ne sais pas » (admin) : le destinataire sera déterminé par Basile.
+  const helpRecipient = isAdmin && (d.needsRecipientHelp || !d.partyName.trim());
+  // Hors ce cas, un nom de partie est requis.
+  if (!helpRecipient && !d.partyName.trim()) {
+    return { error: "Indiquez avec qui vous avez ce blème." };
+  }
+  const supabase = await createClient();
   const amountCents = parseAmountToCents(d.amount);
+  // Adresse officielle du service choisi (annuaire) → destinataire du courrier.
+  const adminAddress =
+    isAdmin && d.partyAddress && (d.partyAddress.societe || d.partyAddress.nom) ? d.partyAddress : null;
+  const partyName = d.partyName.trim() || (helpRecipient ? "Administration à déterminer" : "");
 
   const summaryParts: string[] = [];
   // Le récit (dicté → transcrit, ou écrit) arrive toujours en texte : on l'utilise
@@ -95,11 +118,12 @@ export async function createCaseFromDraft(
     .insert({
       organization_id: org.orgId,
       case_type: isUnpaid ? "unpaid_invoice" : isAdmin ? "admin_request" : "client_dispute",
-      title: `${isUnpaid ? "Facture impayée" : isAdmin ? "Démarche administrative" : "Litige client"} · ${d.partyName}`,
+      title: `${isUnpaid ? "Facture impayée" : isAdmin ? "Démarche administrative" : "Litige client"} · ${partyName}`,
       status: isUnpaid ? "awaiting_user" : "awaiting_user",
-      debtor_name: d.partyName,
+      debtor_name: partyName,
       debtor_siren: d.debtorSiren,
       debtor_company: company,
+      debtor_address: adminAddress,
       amount_claimed_cents: amountCents,
       summary_md: summaryParts.join("\n\n") || null,
       weak_points_md: vigilance,
@@ -138,6 +162,19 @@ export async function createCaseFromDraft(
             event_type: "risk_noted",
             title: "Points de vigilance notés",
             description: "La réponse probable de l’autre partie est documentée.",
+            source: "ai" as const,
+          },
+        ]
+      : []),
+    ...(helpRecipient
+      ? [
+          {
+            case_id: created.id,
+            organization_id: org.orgId,
+            event_type: "recipient_help",
+            title: "Destinataire à déterminer",
+            description:
+              "Basile identifiera la ou les administrations compétentes à partir de votre récit et de vos pièces, avec leur adresse officielle.",
             source: "ai" as const,
           },
         ]

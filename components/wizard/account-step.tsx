@@ -41,7 +41,7 @@ export function AccountStep({ data }: { data: WizardData }) {
       label:
         data.kind === "unpaid"
           ? `${kindLabel} · ${data.partyName}${data.amount ? ` · ${data.amount} €` : ""}`
-          : `${kindLabel} · ${data.partyName}`,
+          : `${kindLabel} · ${data.partyName || "destinataire à déterminer"}`,
       sub: data.kind === "unpaid" ? data.age : `${data.subject} · ${data.stage}`,
     },
     {

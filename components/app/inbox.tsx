@@ -26,6 +26,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { LABEL_COLORS } from "@/lib/inbox/label-colors";
 import { EmailAnalysisModal } from "@/components/app/email-analysis-modal";
+import { ScanButton, useCanScan } from "@/components/app/scan-button";
 
 const MAX_SIZE = 25 * 1024 * 1024;
 
@@ -79,12 +80,15 @@ export function CopyAddress({ address }: { address: string }) {
   );
 }
 
-/** Zone de dépôt : upload DIRECT navigateur → Storage (URL signée) vers la boîte. */
+/** Dépôt vers la boîte : le SCAN caméra est mis en avant (cadrage auto,
+ * lisibilité vérifiée avant envoi), le glisser-déposer reste en secondaire.
+ * Upload DIRECT navigateur → Storage (URL signée). */
 export function InboxUploader() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [pending, setPending] = useState(false);
   const [state, setState] = useState<InboxState>({});
   const [dragging, setDragging] = useState(false);
+  const canScan = useCanScan();
 
   async function handleFile(file: File | undefined) {
     if (!file || pending) return;
@@ -125,6 +129,13 @@ export function InboxUploader() {
         accept=".pdf,.jpg,.jpeg,.png,.heic,.heif,.webp,.txt,.eml,.doc,.docx"
         onChange={(e) => handleFile(e.target.files?.[0] ?? undefined)}
       />
+      {canScan ? (
+        <ScanButton
+          disabled={pending}
+          onFile={(file) => void handleFile(file)}
+          subtitle="Cadrage automatique, lisibilité vérifiée avant l'ajout à la boîte"
+        />
+      ) : null}
       <button
         type="button"
         disabled={pending}
@@ -139,7 +150,9 @@ export function InboxUploader() {
           setDragging(false);
           handleFile(e.dataTransfer.files?.[0] ?? undefined);
         }}
-        className={`flex w-full flex-col items-center gap-2 rounded-[1.75rem] border-2 border-dashed px-6 py-7 text-center transition-all duration-300 ${
+        className={`flex w-full flex-col items-center gap-2 rounded-[1.75rem] border-2 border-dashed px-6 text-center transition-all duration-300 ${
+          canScan ? "py-5" : "py-7"
+        } ${
           dragging
             ? "border-brand bg-brand-soft"
             : "border-brand/30 bg-brand-soft/40 hover:border-brand/60 hover:bg-brand-soft/70"
@@ -151,7 +164,11 @@ export function InboxUploader() {
           <UploadCloud className="size-6 text-brand-strong" />
         )}
         <span className="text-sm font-medium">
-          {pending ? "Envoi en cours…" : "Glissez un fichier, un export WhatsApp, une photo"}
+          {pending
+            ? "Envoi en cours…"
+            : canScan
+              ? "ou glissez un fichier, un export WhatsApp, une photo"
+              : "Glissez un fichier, un export WhatsApp, une photo"}
         </span>
         <span className="text-xs text-muted-foreground">
           PDF, photos, Word, email, texte · 25 Mo max

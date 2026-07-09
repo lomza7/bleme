@@ -1,6 +1,7 @@
 "use client";
 
 import { ArrowRight } from "lucide-react";
+import { AdminSearch } from "@/components/app/admin-search";
 import type { WizardData } from "@/components/wizard/types";
 
 function inputClass(light: boolean) {
@@ -108,9 +109,14 @@ export function DetailsStep({
 }) {
   const isUnpaid = data.kind === "unpaid";
   const isAdmin = data.kind === "admin";
+  // Admin : le nom peut rester vide si l'utilisateur laisse Basile trouver le
+  // destinataire (« je ne sais pas »).
+  const partyReady = isAdmin
+    ? data.needsRecipientHelp || data.partyName.trim() !== ""
+    : data.partyName.trim() !== "";
   const ready = isUnpaid
-    ? data.partyName.trim() !== "" && data.amount.trim() !== "" && data.age !== ""
-    : data.partyName.trim() !== "" && data.subject !== "" && data.stage !== "";
+    ? partyReady && data.amount.trim() !== "" && data.age !== ""
+    : partyReady && data.subject !== "" && data.stage !== "";
 
   return (
     <div className="flex flex-1 flex-col justify-center">
@@ -137,13 +143,24 @@ export function DetailsStep({
           }
           light={light}
         >
-          <input
-            className={inputClass(!!light)}
-            placeholder={isAdmin ? "Préfecture, ministère, service des impôts…" : "Nom de l’entreprise ou du client"}
-            value={data.partyName}
-            onChange={(e) => patch({ partyName: e.target.value })}
-            autoFocus
-          />
+          {isAdmin ? (
+            <AdminSearch
+              value={data.partyName}
+              helpActive={data.needsRecipientHelp}
+              onChange={({ name, address }) => patch({ partyName: name, partyAddress: address })}
+              onHelp={(active) =>
+                patch({ needsRecipientHelp: active, ...(active ? { partyName: "", partyAddress: null } : {}) })
+              }
+            />
+          ) : (
+            <input
+              className={inputClass(!!light)}
+              placeholder="Nom de l’entreprise ou du client"
+              value={data.partyName}
+              onChange={(e) => patch({ partyName: e.target.value })}
+              autoFocus
+            />
+          )}
         </Field>
 
         {isUnpaid ? (
