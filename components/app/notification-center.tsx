@@ -14,6 +14,7 @@ import {
   Bell,
   Check,
   Inbox,
+  Landmark,
   Mail,
   Reply,
   TriangleAlert,
@@ -49,6 +50,7 @@ const KIND_ICONS: Record<string, LucideIcon> = {
   alert: TriangleAlert,
   inbox: Inbox,
   system: Mail,
+  integration: Landmark,
 };
 
 function relativeTime(iso: string): string {

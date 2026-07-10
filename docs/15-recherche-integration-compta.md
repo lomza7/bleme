@@ -1,8 +1,9 @@
 # Étape 15 — Recherche : intégration comptable (Pennylane d'abord)
 
 > Recherche menée le 10/07/2026 (API Pennylane v2, panorama marché, points de
-> branchement dans le code). Statut : **recherche consignée — décisions à acter**
-> (voir § Décisions en bas). L'intégration compta figure déjà au plan en V2 /
+> branchement dans le code). Statut : **GO donné le 10/07/2026** — Phase A
+> implémentée (décision 7 du 00-INDEX) ; demande de partenariat OAuth (Phase B)
+> à envoyer. L'intégration compta figure déjà au plan en V2 /
 > Phase 3 (`02-mvp.md` l.72 « gros levier GTM », `12-roadmap.md` « import
 > factures → création dossier en 1 clic », KPI « inscriptions via intégrations
 > > 20 % ») — l'avancer est un arbitrage de roadmap à dater.

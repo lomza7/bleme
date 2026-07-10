@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Building2, ShieldAlert, UserRound } from "lucide-react";
+import { Building2, Cable, ShieldAlert, UserRound } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/app/ui";
 import { OrganizationForm, ProfileForm } from "@/components/app/settings-forms";
+import { PennylaneConnection, type IntegrationInfo } from "@/components/app/settings-connections";
 
 export const metadata: Metadata = { title: "Paramètres" };
 
@@ -15,10 +16,22 @@ export default async function ParametresPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [{ data: profile }, { data: org }] = await Promise.all([
-    supabase.from("profiles").select("full_name, phone").eq("id", user.id).maybeSingle(),
-    supabase.from("organizations").select("name, siret").limit(1).maybeSingle(),
-  ]);
+  const [{ data: profile }, { data: org }, { data: integration }, { count: unpaidCount }] =
+    await Promise.all([
+      supabase.from("profiles").select("full_name, phone").eq("id", user.id).maybeSingle(),
+      supabase.from("organizations").select("name, siret").limit(1).maybeSingle(),
+      supabase
+        .from("org_integrations")
+        .select("status, company_name, last_sync_at, last_error")
+        .eq("provider", "pennylane")
+        .maybeSingle(),
+      supabase
+        .from("accounting_invoices")
+        .select("id", { count: "exact", head: true })
+        .eq("paid", false)
+        .is("case_id", null)
+        .in("status", ["late", "partially_paid"]),
+    ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -51,6 +64,26 @@ export default async function ParametresPage() {
         </div>
         <div className="mt-6">
           <OrganizationForm name={org?.name ?? ""} siret={org?.siret ?? ""} />
+        </div>
+      </section>
+
+      <section className="rounded-[1.75rem] border bg-card p-8">
+        <div className="flex items-center gap-3">
+          <span className="flex size-10 items-center justify-center rounded-full bg-brand-soft text-brand-strong">
+            <Cable className="size-4.5" />
+          </span>
+          <div>
+            <h2 className="text-lg font-semibold">Connexions</h2>
+            <p className="text-xs text-muted-foreground">
+              Votre logiciel comptable, branché sur vos blèmes.
+            </p>
+          </div>
+        </div>
+        <div className="mt-6">
+          <PennylaneConnection
+            integration={integration as IntegrationInfo}
+            unpaidCount={unpaidCount ?? 0}
+          />
         </div>
       </section>
 

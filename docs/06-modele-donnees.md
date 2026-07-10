@@ -97,6 +97,18 @@ Rôle : centre de notifications de l'app (cloche) — suivi des envois, réponse
 Champs : `organization_id`, `case_id null`, `letter_id null`, `kind ('tracking'|'reply'|'alert'|'inbox'|'system')`, `title`, `body`, `href` (lien interne), `read_at`, `email_sent_at`, `created_at`.
 Règles : insertion service-role uniquement ; côté utilisateur, lecture org + marquage lu seul (trigger : seule `read_at` est modifiable).
 
+## Intégrations comptables *(implémentées le 10/07/2026 — voir doc 15)*
+
+### `org_integrations`
+Rôle : connexion d'une organisation à son logiciel comptable (Pennylane en Phase A).
+Champs : `organization_id`, `provider ('pennylane')`, `status ('connected'|'error'|'disconnected')`, `company_name`, `connected_at`, `last_sync_at`, `last_error`, `sync_cursor` (curseur changelog).
+Règles : lecture org (RLS) ; écriture via les actions serveur dédiées uniquement (service-role scopé org). Le token vit dans **`org_integration_secrets`** (RLS sans policy = service-role only), **chiffré AES-256-GCM** côté app (clé maîtresse `INTEGRATIONS_ENCRYPTION_KEY` via le coffre).
+
+### `accounting_invoices`
+Rôle : factures clients importées du logiciel comptable — la matière du « dossier en 1 clic » et de la détection de paiement.
+Champs : `organization_id`, `provider`, `external_id` (unique par org+provider = idempotence du sync), `invoice_number`, `label`, `customer_*` (nom, email, SIREN, adresse — **suggestions sourcées et éditables**, pilier n°3), `amount_cents`/`remaining_cents` (l'API renvoie des euros en string, convertis), `issued_on`, `deadline_on`, `status` (brut fournisseur : `late`, `partially_paid`, `paid`…), `paid`, `case_id` (dossier créé depuis la facture), `synced_at`.
+Règles : lecture org ; écriture service-role (sync horaire par cron + bouton manuel). Passage impayée → payée d'une facture liée à un dossier = notification + case_event `payment_detected` — **jamais de clôture automatique**, l'utilisateur confirme via `recordPayment`. `cases.source` étendu : + `'pennylane'`.
+
 ## IA & conformité
 
 ### `agent_suggestions`

@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, CalendarClock, CalendarDays, PackageSearch } from "lucide-react";
+import { ArrowRight, CalendarClock, CalendarDays, Landmark, PackageSearch } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/app/ui";
 import { DemoTrail, EnvoiCard, FreshnessDot, type EnvoiRow } from "@/components/app/envoi-card";
+import { DetectedInvoices, type DetectedInvoice } from "@/components/app/detected-invoices";
 import { RelanceCalendar, type CalEvent } from "@/components/app/relance-calendar";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { ALERT_STAGES, DONE_STAGES } from "@/lib/courrier/tracking";
@@ -48,9 +49,9 @@ const OPEN = (s: string) => s !== "resolved" && s !== "closed";
 export default async function SuiviPage({
   searchParams,
 }: {
-  searchParams: Promise<{ filtre?: string; vue?: string }>;
+  searchParams: Promise<{ filtre?: string; vue?: string; creation?: string }>;
 }) {
-  const { filtre = "tous", vue } = await searchParams;
+  const { filtre = "tous", vue, creation } = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -136,8 +137,8 @@ export default async function SuiviPage({
     );
   }
 
-  // ── Vue suivi (par défaut) : prochaines étapes + envois suivis ─────────────
-  const [{ data }, { data: upcomingCases }] = await Promise.all([
+  // ── Vue suivi (par défaut) : impayés détectés + prochaines étapes + envois ──
+  const [{ data }, { data: upcomingCases }, detectedRes] = await Promise.all([
     supabase
       .from("letters")
       .select(
@@ -156,7 +157,28 @@ export default async function SuiviPage({
       .order("next_action_at", { ascending: true })
       .limit(8)
       .returns<UpcomingCase[]>(),
+    // Factures impayées importées de la compta (Pennylane), sans dossier :
+    // chacune prête à devenir un blème en un clic.
+    supabase
+      .from("accounting_invoices")
+      .select("id, invoice_number, label, customer_name, amount_cents, remaining_cents, deadline_on, status", {
+        count: "exact",
+      })
+      .eq("paid", false)
+      .is("case_id", null)
+      .in("status", ["late", "partially_paid"])
+      .order("deadline_on", { ascending: true, nullsFirst: false })
+      .limit(24)
+      .returns<DetectedInvoice[]>(),
   ]);
+  const detectedInvoices = detectedRes.data;
+  const detectedTotal = detectedRes.count ?? undefined;
+  // Connexion compta : pilote la carte d'activation (invisible si connectée).
+  const { data: comptaIntegration } = await supabase
+    .from("org_integrations")
+    .select("id")
+    .eq("provider", "pennylane")
+    .maybeSingle();
 
   const all = data ?? [];
   const counts = { tous: all.length, "en-cours": 0, aboutis: 0, "a-verifier": 0 };
@@ -182,6 +204,37 @@ export default async function SuiviPage({
           Vue calendrier
         </Link>
       </PageHeader>
+
+      {creation === "echec" ? (
+        <p className="flex items-start gap-2 rounded-2xl bg-amber-50 px-4 py-3 text-[13px] leading-relaxed text-amber-800 ring-1 ring-amber-200">
+          <PackageSearch className="mt-0.5 size-4 shrink-0" />
+          La création du dossier n’a pas abouti — la facture a peut-être été retirée de votre
+          compta entre-temps. Réessayez, ou créez le dossier depuis « Nouveau blème ».
+        </p>
+      ) : null}
+
+      {/* Impayés détectés dans la compta connectée : un blème en un clic. */}
+      <DetectedInvoices invoices={detectedInvoices ?? []} totalCount={detectedTotal} />
+
+      {/* Compta non connectée : la porte d'entrée vers l'intégration. */}
+      {!comptaIntegration ? (
+        <Link
+          href="/app/parametres"
+          className="anim-load flex items-center gap-3 rounded-2xl border border-dashed bg-card/60 p-4 outline-none transition-all duration-500 ease-fluid hover:border-brand/50 hover:bg-brand-soft/30 focus-visible:border-brand/50 focus-visible:ring-2 focus-visible:ring-brand/40"
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
+            <Landmark className="size-4.5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold">Connectez votre compta (Pennylane)</span>
+            <span className="block truncate text-xs text-muted-foreground">
+              Vos factures impayées apparaissent ici, prêtes à devenir des blèmes en un clic —
+              et vous êtes prévenu quand une facture est réglée.
+            </span>
+          </span>
+          <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
+        </Link>
+      ) : null}
 
       {/* Prochaines étapes (ex-Agenda) : ce que l'utilisateur a à faire ou à
           attendre, en tête — les retards ressortent en ambre. */}

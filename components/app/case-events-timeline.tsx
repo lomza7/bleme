@@ -9,6 +9,7 @@ import {
   CircleCheck,
   FileText,
   Flag,
+  HandCoins,
   Handshake,
   Mail,
   MessageCircle,
@@ -46,6 +47,7 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   escalation: Flag,
   settlement: Handshake,
   payment: CheckCircle2,
+  payment_detected: HandCoins,
   closed: CircleCheck,
   risk_noted: TriangleAlert,
 };

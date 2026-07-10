@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, CalendarClock, FolderPlus, Sparkles, Trash2 } from "lucide-react";
+import { ArrowRight, CalendarClock, FolderPlus, Landmark, Sparkles, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { euros, relativeDays } from "@/lib/format";
 import { FIXED_INDEMNITY_CENTS } from "@/lib/cases/constants";
@@ -46,6 +46,13 @@ export default async function AppHomePage() {
       .order("sent_at", { ascending: false })
       .limit(3),
   ]);
+  // Impayés détectés dans la compta connectée (Pennylane), sans dossier.
+  const { count: detectedCount } = await supabase
+    .from("accounting_invoices")
+    .select("id", { count: "exact", head: true })
+    .eq("paid", false)
+    .is("case_id", null)
+    .in("status", ["late", "partially_paid"]);
 
   const firstName = profile?.full_name?.split(" ")[0] ?? "";
   const all = cases ?? [];
@@ -97,6 +104,29 @@ export default async function AppHomePage() {
       </PageHeader>
 
       <DraftBanner />
+
+      {(detectedCount ?? 0) > 0 ? (
+        <Link
+          href="/app/envois"
+          className="anim-load flex items-center gap-3 rounded-[1.75rem] border border-amber-200 bg-amber-50/60 p-5 transition-all duration-500 ease-fluid hover:-translate-y-0.5 hover:shadow-lg hover:shadow-zinc-950/[0.05]"
+        >
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+            <Landmark className="size-4.5" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold">
+              {detectedCount} facture{(detectedCount ?? 0) > 1 ? "s" : ""} impayée
+              {(detectedCount ?? 0) > 1 ? "s" : ""} détectée{(detectedCount ?? 0) > 1 ? "s" : ""} dans votre compta
+            </span>
+            <span className="block truncate text-xs text-muted-foreground">
+              {(detectedCount ?? 0) > 1
+                ? "Importées de Pennylane — créez les dossiers en un clic, factures jointes."
+                : "Importée de Pennylane — créez le dossier en un clic, facture jointe."}
+            </span>
+          </span>
+          <ArrowRight className="size-4 shrink-0 text-amber-700" />
+        </Link>
+      ) : null}
 
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatTile

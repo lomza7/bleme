@@ -107,6 +107,11 @@ export async function setApiKey(
   if (parsed.data.name === VAULT_HASH_NAME) {
     return { error: "Ce nom est réservé au verrou du coffre." };
   }
+  // Clé maîtresse du chiffrement des tokens d'intégration : une passphrase
+  // courte se brute-force offline — longueur minimale imposée.
+  if (parsed.data.name === "INTEGRATIONS_ENCRYPTION_KEY" && parsed.data.value.length < 32) {
+    return { error: "Cette clé doit faire au moins 32 caractères aléatoires (ex. openssl rand -base64 32)." };
+  }
 
   const service = createServiceClient();
   const { error } = await service.from("app_secrets").upsert({
@@ -208,6 +213,8 @@ const ENV_WATCHLIST = [
   "MERCI_FACTEUR_SERVICE_ID",
   "MERCI_FACTEUR_SECRET_KEY",
   "MERCI_FACTEUR_WEBHOOK_SECRET",
+  "INTEGRATIONS_ENCRYPTION_KEY",
+  "CRON_SECRET",
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
   "STRIPE_PRO_MONTHLY_PRICE_ID",
