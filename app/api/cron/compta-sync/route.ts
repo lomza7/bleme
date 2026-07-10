@@ -6,7 +6,11 @@ import { syncPennylaneOrg } from "@/lib/integrations/sync";
 
 /*
  * Cron de synchronisation comptable (première infra cron du projet —
- * vercel.json, horaire). Vercel appelle ce endpoint avec le header
+ * vercel.json). Cadence QUOTIDIENNE (5 h UTC) : le plan Vercel Hobby limite
+ * les crons à une exécution par jour ; repasser en horaire (0 * * * *) une
+ * fois sur Vercel Pro. La fraîcheur immédiate est couverte par la synchro à
+ * la connexion et le bouton « Synchroniser maintenant ». Vercel appelle ce
+ * endpoint avec le header
  * `Authorization: Bearer ${CRON_SECRET}` (variable d'env du projet ; on la
  * résout via le coffre comme partout). Chaque organisation connectée est
  * synchronisée (changelogs Pennylane → upsert + détections) ; les erreurs
