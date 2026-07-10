@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, CalendarClock, CalendarDays, Landmark, PackageSearch } from "lucide-react";
+import Image from "next/image";
+import { ArrowRight, CalendarClock, CalendarDays, PackageSearch } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/app/ui";
 import { DemoTrail, EnvoiCard, FreshnessDot, type EnvoiRow } from "@/components/app/envoi-card";
@@ -222,11 +223,11 @@ export default async function SuiviPage({
           href="/app/parametres"
           className="anim-load flex items-center gap-3 rounded-2xl border border-dashed bg-card/60 p-4 outline-none transition-all duration-500 ease-fluid hover:border-brand/50 hover:bg-brand-soft/30 focus-visible:border-brand/50 focus-visible:ring-2 focus-visible:ring-brand/40"
         >
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
-            <Landmark className="size-4.5" />
+          <span className="flex h-10 shrink-0 items-center justify-center rounded-xl bg-white px-2.5 shadow-sm ring-1 ring-black/5">
+            <Image src="/logos/pennylane.svg" alt="Pennylane" width={81} height={16} className="h-4 w-auto" />
           </span>
           <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold">Connectez votre compta (Pennylane)</span>
+            <span className="block text-sm font-semibold">Connectez votre compta</span>
             <span className="block truncate text-xs text-muted-foreground">
               Vos factures impayées apparaissent ici, prêtes à devenir des blèmes en un clic —
               et vous êtes prévenu quand une facture est réglée.

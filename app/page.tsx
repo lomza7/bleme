@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { ArrowRight, Check, X } from "lucide-react";
 import { HeroPreview } from "@/components/landing/hero-preview";
 import { Marquee } from "@/components/landing/marquee";
@@ -6,6 +7,7 @@ import { Reveal, RevealItem, RevealStagger } from "@/components/landing/reveal";
 import { JsonLd, ORG_JSONLD } from "@/components/seo/json-ld";
 import { HowItWorks } from "@/components/landing/how-it-works";
 import { KnowledgeGraph } from "@/components/landing/knowledge-graph";
+import { ComptaSync } from "@/components/landing/compta-sync";
 import { EvidenceSources } from "@/components/landing/evidence-sources";
 import { CaseTimeline } from "@/components/landing/case-timeline";
 import { PaperMail } from "@/components/landing/paper-mail";
@@ -66,6 +68,7 @@ export default function Home() {
         <Hero />
         <Marquee />
         <Piliers />
+        <ComptaSync />
         <EvidenceSources />
         <KnowledgeGraph />
         <PaperMail />
@@ -197,6 +200,21 @@ function Hero() {
                 Comment ça marche
               </a>
             </div>
+          </Reveal>
+          <Reveal onLoad delay={0.32}>
+            <a
+              href="#compta"
+              className="group mt-9 inline-flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-ink-muted transition-colors duration-300 hover:text-ink-foreground/90"
+            >
+              <span className="rounded-full bg-brand/20 px-2 py-0.5 text-[11px] font-semibold text-brand">
+                Nouveau
+              </span>
+              <span>Se branche sur</span>
+              <span className="inline-flex items-center rounded-full bg-white px-2.5 py-1 shadow-sm transition-transform duration-500 ease-fluid group-hover:scale-[1.03]">
+                <Image src="/logos/pennylane.svg" alt="Pennylane" width={91} height={18} className="h-[18px] w-auto" />
+              </span>
+              <span>— vos impayés deviennent des dossiers en un clic.</span>
+            </a>
           </Reveal>
         </div>
         <div className="lg:col-span-5">

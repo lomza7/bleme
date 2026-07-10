@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import Image from "next/image";
 import { redirect } from "next/navigation";
 import { ArrowRight, CalendarClock, FolderPlus, Landmark, Sparkles, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
@@ -46,13 +47,17 @@ export default async function AppHomePage() {
       .order("sent_at", { ascending: false })
       .limit(3),
   ]);
-  // Impayés détectés dans la compta connectée (Pennylane), sans dossier.
-  const { count: detectedCount } = await supabase
-    .from("accounting_invoices")
-    .select("id", { count: "exact", head: true })
-    .eq("paid", false)
-    .is("case_id", null)
-    .in("status", ["late", "partially_paid"]);
+  // Impayés détectés dans la compta connectée (Pennylane), sans dossier —
+  // et état de connexion (pilote la carte d'activation).
+  const [{ count: detectedCount }, { data: comptaIntegration }] = await Promise.all([
+    supabase
+      .from("accounting_invoices")
+      .select("id", { count: "exact", head: true })
+      .eq("paid", false)
+      .is("case_id", null)
+      .in("status", ["late", "partially_paid"]),
+    supabase.from("org_integrations").select("id").eq("provider", "pennylane").maybeSingle(),
+  ]);
 
   const firstName = profile?.full_name?.split(" ")[0] ?? "";
   const all = cases ?? [];
@@ -104,6 +109,34 @@ export default async function AppHomePage() {
       </PageHeader>
 
       <DraftBanner />
+
+      {!comptaIntegration && all.length > 0 ? (
+        <Link
+          href="/app/parametres"
+          className="anim-load group flex items-center gap-4 rounded-[1.75rem] border bg-card p-5 transition-all duration-500 ease-fluid hover:-translate-y-0.5 hover:border-brand/50 hover:shadow-lg hover:shadow-zinc-950/[0.05]"
+        >
+          <span className="flex h-11 shrink-0 items-center justify-center rounded-2xl bg-white px-3 shadow-sm ring-1 ring-black/5">
+            <Image src="/logos/pennylane.svg" alt="Pennylane" width={91} height={18} className="h-[18px] w-auto" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-semibold">Connectez votre compta</span>
+              <span className="rounded-full bg-brand px-2 py-0.5 text-[10px] font-medium text-brand-foreground">
+                Nouveau
+              </span>
+            </span>
+            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+              Vos factures impayées Pennylane deviennent des blèmes en un clic — et vous êtes
+              prévenu quand une facture est réglée.
+            </span>
+          </span>
+          <span className="hidden shrink-0 items-center gap-1 rounded-full bg-brand px-4 py-2 text-xs font-medium text-brand-foreground transition-transform duration-500 ease-fluid group-hover:scale-[1.03] sm:inline-flex">
+            Connecter
+            <ArrowRight className="size-3.5" />
+          </span>
+          <ArrowRight className="size-4 shrink-0 text-muted-foreground sm:hidden" />
+        </Link>
+      ) : null}
 
       {(detectedCount ?? 0) > 0 ? (
         <Link

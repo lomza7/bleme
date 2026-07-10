@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useActionState, useState, useTransition } from "react";
 import {
   Check,
@@ -169,6 +170,9 @@ export function PennylaneConnection({
 
   return (
     <div className="flex flex-col gap-4">
+      <span className="inline-flex h-10 w-fit items-center rounded-xl bg-white px-3 shadow-sm ring-1 ring-black/5">
+        <Image src="/logos/pennylane.svg" alt="Pennylane" width={101} height={20} className="h-5 w-auto" />
+      </span>
       <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
         Connectez votre comptabilité : vos factures clients impayées apparaissent
         dans BLEME, chacune prête à devenir un dossier en un clic — et quand une
