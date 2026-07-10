@@ -11,6 +11,7 @@
 4. **V1 sans Gmail OAuth** (audit CASA → V2/V3) : adresse email dédiée par dossier + transfert.
 5. Stack : Next.js + Vercel + Supabase (RLS partout) + Claude API + Deepgram (voix) + Resend (email in/out) + Stripe. Recommandé : PDF prêt à poster en V1, API **Merci Facteur** en V1.5 (décision du 04/07/2026).
 6. Pricing *(révisé le 05/07/2026)* : **Pro Starter à 9 €/mois (1 dossier actif) en produit d'appel**, Business 49 €, Scale 99 €, –20 % annuel, frais variables au réel. Le one-shot « premier dossier 39 € » est abandonné : l'entrée se fait par l'abonnement, la rétention par la valeur accumulée (historique, cadences, adresse par dossier).
+7. Suivi temps réel des envois *(décision du 10/07/2026)* : chaque étape d'un envoi (imprimé, remis à La Poste, distribué, avisé, AR signé côté recommandé ; délivré, ouvert, réponse reçue côté email) est normalisée en événement structuré (`letter_tracking_events`), affichée en stepper type « suivi colis » sur le courrier et la carte du dossier, et poussée dans un **centre de notifications** in-app (cloche) + email à l'utilisateur pour les jalons marquants. L'AR signé et la preuve de dépôt sont archivés en pièces du dossier. L'ouverture d'email est présentée comme **indicative** (fiabilité limitée). Voir doc 06 (tables `letter_tracking_events`, `notifications`).
 
 ## Documents
 

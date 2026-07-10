@@ -105,12 +105,23 @@ function NewCaseButton({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export function SidebarNav({ userCard, isAdmin }: { userCard: React.ReactNode; isAdmin?: boolean }) {
+export function SidebarNav({
+  userCard,
+  isAdmin,
+  bell,
+}: {
+  userCard: React.ReactNode;
+  isAdmin?: boolean;
+  bell?: React.ReactNode;
+}) {
   return (
     <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col gap-6 border-r bg-background px-4 py-6 lg:flex">
-      <Link href="/app" className="px-3 text-xl font-bold tracking-tight">
-        BLEME<span className="text-brand">.</span>
-      </Link>
+      <div className="flex items-center justify-between pl-3 pr-1">
+        <Link href="/app" className="text-xl font-bold tracking-tight">
+          BLEME<span className="text-brand">.</span>
+        </Link>
+        {bell}
+      </div>
       <NewCaseButton />
       <NavItems isAdmin={isAdmin} />
       {userCard}
@@ -118,7 +129,15 @@ export function SidebarNav({ userCard, isAdmin }: { userCard: React.ReactNode; i
   );
 }
 
-export function MobileTopBar({ userCard, isAdmin }: { userCard: React.ReactNode; isAdmin?: boolean }) {
+export function MobileTopBar({
+  userCard,
+  isAdmin,
+  bell,
+}: {
+  userCard: React.ReactNode;
+  isAdmin?: boolean;
+  bell?: React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -134,6 +153,7 @@ export function MobileTopBar({ userCard, isAdmin }: { userCard: React.ReactNode;
             <Plus className="size-3.5" />
             Nouveau
           </Link>
+          {bell}
           <button
             type="button"
             onClick={() => setOpen(true)}

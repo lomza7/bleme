@@ -6,6 +6,7 @@ import { ArrowRight, CircleAlert, FileText, LoaderCircle, PenLine } from "lucide
 import { generateLetter, type LetterState } from "@/lib/cases/letters";
 import { LETTER_KINDS, LETTER_STATUS_LABEL } from "@/lib/cases/letter-meta";
 import { AgentThinkingOverlay, writerFor } from "@/components/app/agent-thinking";
+import { LetterTrackingCompact } from "@/components/app/letter-tracking";
 
 const INITIAL: LetterState = {};
 
@@ -86,17 +87,28 @@ export function GenerateLetterButtons({
   );
 }
 
-/** Ligne d'un courrier dans la liste du dossier. */
+/** Ligne d'un courrier dans la liste du dossier, avec suivi d'envoi compact. */
 export function LetterRow({
   letter,
   caseId,
 }: {
-  letter: { id: string; kind: string; status: string; subject: string; created_at: string };
+  letter: {
+    id: string;
+    kind: string;
+    status: string;
+    subject: string;
+    created_at: string;
+    channel?: string | null;
+    sent_at?: string | null;
+    tracking_status?: string | null;
+    tracking_status_at?: string | null;
+  };
   caseId: string;
 }) {
   const meta = LETTER_KINDS[letter.kind] ?? { label: letter.kind };
   const sent = letter.status === "sent";
-  const tone = sent
+  const reallySent = Boolean(letter.sent_at);
+  const tone = sent && reallySent
     ? "bg-emerald-100 text-emerald-800"
     : "bg-amber-100 text-amber-800";
   return (
@@ -110,9 +122,19 @@ export function LetterRow({
       <span className="min-w-0 flex-1">
         <span className="block truncate text-sm font-medium">{meta.label}</span>
         <span className="block truncate text-xs text-muted-foreground">{letter.subject}</span>
+        {reallySent ? (
+          <LetterTrackingCompact
+            tracking={{
+              channel: letter.channel ?? null,
+              sentAt: letter.sent_at ?? null,
+              trackingStatus: letter.tracking_status ?? null,
+              trackingStatusAt: letter.tracking_status_at ?? null,
+            }}
+          />
+        ) : null}
       </span>
       <span className={`shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-medium ${tone}`}>
-        {LETTER_STATUS_LABEL[letter.status] ?? letter.status}
+        {sent && !reallySent ? "Validé" : (LETTER_STATUS_LABEL[letter.status] ?? letter.status)}
       </span>
       <ArrowRight className="size-4 shrink-0 text-muted-foreground" />
     </Link>

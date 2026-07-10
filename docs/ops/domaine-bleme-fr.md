@@ -71,6 +71,16 @@ Réception (MX sur `dossiers.bleme.fr`) et envoi (retour/SPF sur `send.dossiers.
 
 Le catch-all est implicite : tout `*@dossiers.bleme.fr` déclenche le webhook ; BLEME retrouve l'organisation via le champ `to` / `received_for` (le local-part = `inbox_slug`).
 
+## Étape 3 bis — Suivi des emails SORTANTS (webhook de tracking)
+
+Le suivi type « colis » des courriers envoyés par email (délivré / ouvert / bounce → stepper + notifications) passe par un **second webhook Resend**, dédié aux événements sortants :
+
+1. Resend → **Webhooks** → ajouter un endpoint `https://bleme.fr/api/courrier/email-webhook`, événements : `email.sent`, `email.delivered`, `email.delivery_delayed`, `email.bounced`, `email.complained`, `email.opened`, `email.clicked`, `email.failed`, `email.suppressed` (PAS `email.received` — il a son endpoint).
+2. Copier le **Signing Secret** de CE webhook (chaque webhook a le sien) → `/admin/cles` sous **`RESEND_TRACKING_SECRET`**.
+3. (Optionnel, pour les jalons « ouvert »/« lien consulté ») Resend → **Domains** → `dossiers.bleme.fr` → Configuration → **Enable tracking metrics** : activer open + click tracking et déclarer le sous-domaine de tracking (ex. `links.dossiers.bleme.fr`), puis ajouter le **CNAME** demandé chez Hostinger. Sans cette étape, le suivi s'arrête proprement à « délivré » (aucune erreur). Rappel produit : l'ouverture est **indicative** (proxys Apple/Gmail) — l'UI l'affiche déjà comme telle.
+
+Côté Merci Facteur (suivi postal), rien de nouveau : le webhook existant `https://bleme.fr/api/courrier/webhook` (clé `MERCI_FACTEUR_WEBHOOK_SECRET`, onglet API du compte Pro) alimente désormais aussi les étapes structurées, l'archivage de l'AR signé/preuve de dépôt et les notifications. L'interface Pro de Merci Facteur permet de **tester chaque événement** sur l'endpoint — utile pour valider la chaîne complète sans envoi réel.
+
 ## Étape 4 — Supabase (liens des emails d'auth)
 
 1. **Authentication → URL Configuration** : Site URL `https://bleme.fr` ; Redirect URLs `https://bleme.fr/**`, `https://www.bleme.fr/**`, `https://*-<slug>.vercel.app/**`, `http://localhost:3000/**`.

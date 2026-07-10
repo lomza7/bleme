@@ -808,6 +808,9 @@ export async function approveAndSendLetter(
       to_address: toAddress,
       ...(snapshots.length > 0 ? { attachments: snapshots } : {}),
       postal_envoi_id: reallySent && dispatch.via === "postal" ? dispatch.ref : null,
+      // Id Resend de l'email parti : clé de corrélation du suivi (webhook
+      // email-webhook) — delivered/ouvert/bounce remontent par lui.
+      email_message_id: reallySent && dispatch.via === "email" ? dispatch.ref : null,
       status: "sent",
       approved_by: user?.id ?? null,
       approved_at: new Date().toISOString(),

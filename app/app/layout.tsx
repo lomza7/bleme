@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/env";
 import { signOut } from "@/lib/auth/actions";
 import { MobileTopBar, SidebarNav } from "@/components/app/sidebar-nav";
+import { NotificationBell, NotificationsProvider } from "@/components/app/notification-center";
+import type { NotificationItem } from "@/lib/notifications/actions";
 
 export default async function AppLayout({
   children,
@@ -17,10 +19,20 @@ export default async function AppLayout({
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [{ data: profile }, { data: org }] = await Promise.all([
-    supabase.from("profiles").select("full_name, is_admin, onboarding_state, email_verified").eq("id", user.id).maybeSingle(),
-    supabase.from("organizations").select("name").limit(1).maybeSingle(),
-  ]);
+  const [{ data: profile }, { data: org }, { data: notifItems }, { count: notifUnread }] =
+    await Promise.all([
+      supabase.from("profiles").select("full_name, is_admin, onboarding_state, email_verified").eq("id", user.id).maybeSingle(),
+      supabase.from("organizations").select("name").limit(1).maybeSingle(),
+      supabase
+        .from("notifications")
+        .select("id, kind, title, body, href, read_at, created_at")
+        .order("created_at", { ascending: false })
+        .limit(20),
+      supabase
+        .from("notifications")
+        .select("id", { count: "exact", head: true })
+        .is("read_at", null),
+    ]);
   // Email non vérifié → écran de code d'abord (rempart anti-faux-comptes).
   if (profile && profile.email_verified === false) redirect("/verifier-email");
   // Onboarding /bienvenue pas encore terminé → on y passe ensuite (une fois).
@@ -58,17 +70,27 @@ export default async function AppLayout({
     </div>
   );
 
+  // Cloche de notifications : données initiales rendues serveur, état et
+  // polling PARTAGÉS entre les deux cloches (sidebar desktop / barre mobile)
+  // via le provider — un seul rafraîchissement, badge toujours synchronisé.
+  const bell = <NotificationBell />;
+
   return (
     <div className="min-h-dvh bg-muted/40 text-foreground">
-      <div className="flex">
-        <SidebarNav userCard={userCard} isAdmin={isAdmin} />
-        <div className="min-w-0 flex-1">
-          <MobileTopBar userCard={userCard} isAdmin={isAdmin} />
-          <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-10 lg:py-10">
-            {children}
-          </main>
+      <NotificationsProvider
+        initialItems={(notifItems as NotificationItem[]) ?? []}
+        initialUnread={notifUnread ?? 0}
+      >
+        <div className="flex">
+          <SidebarNav userCard={userCard} isAdmin={isAdmin} bell={bell} />
+          <div className="min-w-0 flex-1">
+            <MobileTopBar userCard={userCard} isAdmin={isAdmin} bell={bell} />
+            <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-10 lg:py-10">
+              {children}
+            </main>
+          </div>
         </div>
-      </div>
+      </NotificationsProvider>
     </div>
   );
 }

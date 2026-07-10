@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { euros, relativeDays } from "@/lib/format";
 import { FIXED_INDEMNITY_CENTS } from "@/lib/cases/constants";
 import { createSampleCases, deleteSampleCases } from "@/lib/cases/actions";
+import { lastSendByCase } from "@/lib/cases/tracking-summary";
 import { DraftBanner } from "@/components/app/draft-banner";
 import {
   CaseCard,
@@ -38,6 +39,8 @@ export default async function AppHomePage() {
 
   const firstName = profile?.full_name?.split(" ")[0] ?? "";
   const all = cases ?? [];
+  // Suivi du dernier envoi par dossier (indicateur sur les cartes récentes).
+  const lastSends = await lastSendByCase(supabase, all.slice(0, 3).map((c) => c.id));
   const open = all.filter((c) => OPEN_STATUSES.includes(c.status));
   const hasSamples = all.some((c) => c.is_sample);
 
@@ -127,7 +130,7 @@ export default async function AppHomePage() {
             </div>
             <div className="mt-3 flex flex-col gap-3">
               {recents.map((c) => (
-                <CaseCard key={c.id} c={c} />
+                <CaseCard key={c.id} c={c} lastSend={lastSends[c.id]} />
               ))}
             </div>
           </section>

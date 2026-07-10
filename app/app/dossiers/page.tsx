@@ -3,6 +3,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { FolderPlus } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { lastSendByCase } from "@/lib/cases/tracking-summary";
 import {
   CaseCard,
   OPEN_STATUSES,
@@ -41,6 +42,8 @@ export default async function DossiersPage({
     .returns<CaseRow[]>();
 
   const all = data ?? [];
+  // Suivi du dernier envoi par dossier (visible sur la carte sans l'ouvrir).
+  const lastSends = await lastSendByCase(supabase, all.map((c) => c.id));
   const filtered = all.filter((c) => {
     switch (filtre) {
       case "en-cours":
@@ -104,7 +107,7 @@ export default async function DossiersPage({
       ) : (
         <div className="flex flex-col gap-3">
           {filtered.map((c) => (
-            <CaseCard key={c.id} c={c} />
+            <CaseCard key={c.id} c={c} lastSend={lastSends[c.id]} />
           ))}
         </div>
       )}

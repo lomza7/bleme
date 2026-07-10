@@ -72,7 +72,9 @@ export default async function CaseDetailPage({
         .order("created_at", { ascending: false }),
       supabase
         .from("letters")
-        .select("id, kind, status, subject, body_md, channel, approved_at, created_at, redaction_note")
+        .select(
+          "id, kind, status, subject, body_md, channel, approved_at, created_at, redaction_note, sent_at, tracking_status, tracking_status_at",
+        )
         .eq("case_id", id)
         .order("created_at", { ascending: false }),
       supabase.from("debtor_replies").select("handled").eq("case_id", id),

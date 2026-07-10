@@ -64,6 +64,9 @@ export async function dispatchLetter(input: {
         // Réponses du débiteur → boîte de réception BLEME du dossier (ingérées
         // par le webhook inbound), pour fermer la boucle dans le dossier.
         replyTo: input.replyTo?.trim() || undefined,
+        // Le tag revient dans chaque webhook Resend : corrélation de secours
+        // du suivi (la principale étant l'id d'email persisté sur le courrier).
+        tags: input.reference ? [{ name: "letter_id", value: input.reference }] : undefined,
         attachments: input.attachments?.length
           ? input.attachments.map((a) => ({
               filename: a.fileName,

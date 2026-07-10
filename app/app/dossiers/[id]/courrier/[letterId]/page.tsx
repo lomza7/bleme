@@ -22,11 +22,23 @@ export default async function LetterReviewPage({
 
   const { data: letter } = await supabase
     .from("letters")
-    .select("id, kind, subject, body_md, status, channel, approved_at, sent_at, case_id, redaction_note")
+    .select(
+      "id, kind, subject, body_md, status, channel, approved_at, sent_at, case_id, redaction_note, postal_tracking, tracking_status, tracking_status_at",
+    )
     .eq("id", letterId)
     .eq("case_id", id)
     .maybeSingle();
   if (!letter) notFound();
+
+  // Historique de suivi (webhooks Merci Facteur / Resend) : chaque passage
+  // horodaté, affiché dans le stepper de la vue « envoyé ».
+  const { data: trackingEvents } = letter.sent_at
+    ? await supabase
+        .from("letter_tracking_events")
+        .select("stage, label, detail, occurred_at")
+        .eq("letter_id", letter.id)
+        .order("occurred_at", { ascending: true })
+    : { data: null };
 
   // Préremplissage des coordonnées d'envoi (dernières saisies — corrigeables)
   // + pièces du dossier proposées en annexes dans l'écran de validation.
@@ -81,6 +93,7 @@ export default async function LetterReviewPage({
           defaultFromAddress={defaultFromAddress}
           suggestedRecipients={suggestedRecipients}
           documents={toAttachableDocs(docs)}
+          trackingEvents={trackingEvents ?? []}
         />
       </div>
     </div>

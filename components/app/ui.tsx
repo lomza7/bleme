@@ -2,7 +2,11 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { euros, relativeDays } from "@/lib/format";
 import { CASE_TYPE_LABEL, STATUS_META } from "@/lib/cases/constants";
+import { LETTER_KINDS } from "@/lib/cases/letter-meta";
+import { trackingProgress } from "@/lib/courrier/tracking";
 import { PhaseTrail } from "@/components/app/phase-trail";
+import { TrackingDots } from "@/components/app/letter-tracking";
+import type { LastSend } from "@/lib/cases/tracking-summary";
 import type { Phase } from "@/lib/cases/phases";
 
 export type CaseRow = {
@@ -126,8 +130,18 @@ export function StatTile({
   );
 }
 
-export function CaseCard({ c }: { c: CaseRow }) {
+export function CaseCard({ c, lastSend }: { c: CaseRow; lastSend?: LastSend | null }) {
   const remaining = c.amount_claimed_cents - c.amount_recovered_cents;
+  // Suivi du dernier envoi, visible sans ouvrir le dossier : « Mise en
+  // demeure · En acheminement par La Poste », pastilles de progression.
+  const send = lastSend?.sent_at ? lastSend : null;
+  const sendProgress = send
+    ? trackingProgress({
+        channel: send.channel,
+        sentAt: send.sent_at,
+        trackingStatus: send.tracking_status,
+      })
+    : null;
   return (
     <Link
       href={`/app/dossiers/${c.id}`}
@@ -150,6 +164,23 @@ export function CaseCard({ c }: { c: CaseRow }) {
           ) : c.status === "resolved" ? (
             <p className="mt-1 text-sm text-emerald-700">
               {euros(c.amount_recovered_cents)} récupérés
+            </p>
+          ) : null}
+          {send && sendProgress ? (
+            <p className="mt-2 flex min-w-0 items-center gap-2">
+              <TrackingDots
+                tracking={{
+                  channel: send.channel,
+                  sentAt: send.sent_at,
+                  trackingStatus: send.tracking_status,
+                }}
+                className="shrink-0"
+              />
+              <span
+                className={`truncate text-xs ${sendProgress.alert ? "font-medium text-amber-700" : "text-muted-foreground"}`}
+              >
+                {LETTER_KINDS[send.kind]?.label ?? "Courrier"} · {sendProgress.label}
+              </span>
             </p>
           ) : null}
         </div>

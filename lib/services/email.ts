@@ -34,6 +34,7 @@ export async function sendEmail({
   replyTo,
   from = DEFAULT_FROM,
   attachments,
+  tags,
 }: {
   to: string | string[];
   subject: string;
@@ -43,6 +44,9 @@ export async function sendEmail({
   from?: string;
   /** Pièces jointes (contenu en base64). Resend borne l'email complet à 40 Mo. */
   attachments?: { filename: string; content: string; contentType?: string }[];
+  /** Tags Resend (ASCII, ≤256 car.) : reviennent dans chaque webhook — sert à
+   * corréler les événements de suivi (letter_id…). */
+  tags?: { name: string; value: string }[];
 }) {
   const client = await resend();
   const { data, error } = await client.emails.send({
@@ -53,6 +57,7 @@ export async function sendEmail({
     text,
     replyTo,
     attachments,
+    tags,
   });
   if (error) {
     throw new Error(`Échec d'envoi email (${subject}) : ${error.message}`);

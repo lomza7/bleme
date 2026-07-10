@@ -17,6 +17,7 @@ import {
   ShieldQuestion,
   Sparkles,
   TriangleAlert,
+  Truck,
   type LucideIcon,
 } from "lucide-react";
 
@@ -34,6 +35,7 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   documents: FileText,
   letter_ready: PenLine,
   letter_sent: Send,
+  letter_tracking: Truck,
   response: PenLine,
   debtor_reply: MessageCircle,
   email: Mail,

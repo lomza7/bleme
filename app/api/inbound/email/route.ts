@@ -3,6 +3,9 @@ import { Resend } from "resend";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getSecret } from "@/lib/secrets";
 import { ALLOWED_MIME, MAX_SIZE, resolveMime } from "@/lib/documents/mime";
+import { recomputeLetterTrackingStatus } from "@/lib/courrier/tracking-aggregate";
+import { LETTER_KINDS } from "@/lib/cases/letter-meta";
+import { notifyOrganization } from "@/lib/notifications/notify";
 
 // Webhook non authentifié (exempté par proxy.ts) : c'est Resend qui appelle.
 // On vérifie la signature Svix, on résout l'organisation par inbox_slug, on
@@ -102,11 +105,20 @@ export async function POST(req: Request): Promise<Response> {
     if (dup) return NextResponse.json({ duplicate: true });
   }
 
-  // 4. Récupérer le CORPS (le webhook n'a que des métadonnées).
+  // 4. Récupérer le CORPS (le webhook n'a que des métadonnées) + les headers
+  //    (In-Reply-To/References : reconnaissance des réponses aux courriers).
   let text = "";
+  let replyHeader = "";
   try {
     const { data: full } = await resend.emails.receiving.get(data.email_id);
-    if (full) text = full.text || (full.html ? htmlToText(full.html) : "");
+    if (full) {
+      text = full.text || (full.html ? htmlToText(full.html) : "");
+      const headers = full.headers ?? {};
+      for (const [k, v] of Object.entries(headers)) {
+        const key = k.toLowerCase();
+        if (key === "in-reply-to" || key === "references") replyHeader += ` ${v}`;
+      }
+    }
   } catch {
     // Corps indisponible : on continue avec l'objet seul (rien n'est perdu).
   }
@@ -114,6 +126,8 @@ export async function POST(req: Request): Promise<Response> {
   const from = data.from ?? "";
   const subject = data.subject || "(sans objet)";
   const excerpt = (text || subject).replace(/\s+/g, " ").slice(0, 160);
+  // Message-IDs référencés par la réponse (<id@host>, In-Reply-To + References).
+  const referencedIds = (replyHeader.match(/<[^<>\s]+>/g) ?? []).slice(0, 20);
 
   // 5. Créer l'élément de boîte de réception.
   const { data: item, error: insErr } = await sb
@@ -127,6 +141,7 @@ export async function POST(req: Request): Promise<Response> {
       excerpt,
       body_text: text || null,
       message_id: data.message_id ?? null,
+      in_reply_to: referencedIds[0] ?? null,
     })
     .select("id")
     .single();
@@ -171,6 +186,114 @@ export async function POST(req: Request): Promise<Response> {
     } catch {
       // Liste des pièces jointes indisponible : l'email reste reçu.
     }
+  }
+
+  // 7. Est-ce la réponse à un courrier envoyé ? D'abord par In-Reply-To/
+  //    References (Message-ID RFC persisté à l'envoi), sinon par l'expéditeur
+  //    (= email du destinataire d'un dossier). Si oui : jalon « Réponse reçue »
+  //    sur le suivi du courrier + notification email ; sinon, simple
+  //    notification cloche « nouvel email reçu ».
+  const fromContact = emailAddr(from) || null;
+  const letterCols = "id, case_id, organization_id, kind, subject";
+  let repliedLetter: {
+    id: string;
+    case_id: string;
+    organization_id: string;
+    kind: string;
+    subject: string;
+  } | null = null;
+  if (referencedIds.length > 0) {
+    repliedLetter = (
+      await sb
+        .from("letters")
+        .select(letterCols)
+        .eq("organization_id", orgId)
+        .in("email_rfc_message_id", referencedIds)
+        .not("sent_at", "is", null)
+        .limit(1)
+        .maybeSingle()
+    ).data;
+  }
+  if (!repliedLetter && fromContact) {
+    // Repli par expéditeur : dossier OUVERT dont le destinataire a cette
+    // adresse (comparaison insensible à la casse — % et _ échappés pour ilike).
+    const { data: matchedCase } = await sb
+      .from("cases")
+      .select("id")
+      .eq("organization_id", orgId)
+      .ilike("debtor_email", fromContact.replace(/[%_\\]/g, "\\$&"))
+      .in("status", ["active", "awaiting_user", "awaiting_debtor", "escalated"])
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (matchedCase) {
+      repliedLetter = (
+        await sb
+          .from("letters")
+          .select(letterCols)
+          .eq("case_id", matchedCase.id)
+          .eq("channel", "email")
+          .not("sent_at", "is", null)
+          .order("sent_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      ).data;
+    }
+  }
+
+  if (repliedLetter) {
+    const quote = excerpt.length >= 160 ? `${excerpt.slice(0, 159)}…` : excerpt;
+    // Un jalon par email reçu (status_code = id de l'élément de boîte) : une
+    // DEUXIÈME réponse notifie aussi ; un rejeu du webhook ne duplique rien
+    // (l'idempotence amont sur message_id fait déjà barrage).
+    const { data: fresh } = await sb
+      .from("letter_tracking_events")
+      .upsert(
+        {
+          organization_id: repliedLetter.organization_id,
+          case_id: repliedLetter.case_id,
+          letter_id: repliedLetter.id,
+          channel: "email",
+          stage: "replied",
+          status_code: `inbound:${item.id}`,
+          label: "Réponse reçue",
+          detail: quote || null,
+          occurred_at: new Date().toISOString(),
+        },
+        { onConflict: "letter_id,stage,status_code", ignoreDuplicates: true },
+      )
+      .select("id");
+    if (fresh && fresh.length > 0) {
+      await recomputeLetterTrackingStatus(sb, repliedLetter.id);
+      await sb.from("case_events").insert({
+        case_id: repliedLetter.case_id,
+        organization_id: repliedLetter.organization_id,
+        event_type: "letter_tracking",
+        title: "Réponse reçue par email",
+        description: quote || null,
+        source: "system",
+      });
+      const kindLabel = LETTER_KINDS[repliedLetter.kind]?.label ?? "Courrier";
+      await notifyOrganization(sb, {
+        organizationId: orgId,
+        caseId: repliedLetter.case_id,
+        letterId: repliedLetter.id,
+        kind: "reply",
+        title: `Réponse reçue à votre ${kindLabel.toLowerCase()}`,
+        body: `${displayName(from) ?? fromContact ?? "Le destinataire"} a répondu : « ${quote} »`,
+        href: "/app/inbox",
+        email: true,
+      });
+    }
+  } else {
+    await notifyOrganization(sb, {
+      organizationId: orgId,
+      kind: "inbox",
+      title: `Nouvel email de ${displayName(from) ?? fromContact ?? "expéditeur inconnu"}`,
+      body: subject,
+      href: "/app/inbox",
+      email: false,
+    });
   }
 
   return NextResponse.json({ ok: true, itemId: item.id });

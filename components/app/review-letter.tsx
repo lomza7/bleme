@@ -25,6 +25,7 @@ import {
   type AttachableDoc,
 } from "@/lib/courrier/attachment-rules";
 import { fileSize } from "@/lib/format";
+import { LetterTrackingPanel, type TrackingEventRow } from "@/components/app/letter-tracking";
 
 const INITIAL: LetterState = {};
 
@@ -54,6 +55,7 @@ export function ReviewLetter({
   suggestedRecipients = [],
   documents = [],
   caseType = "",
+  trackingEvents = [],
 }: {
   letter: {
     id: string;
@@ -68,6 +70,10 @@ export function ReviewLetter({
     kind?: string | null;
     /** Provenance : « Rédigé par Basile… » ou explication du repli gabarit. */
     redaction_note?: string | null;
+    /** Suivi d'envoi (webhooks Merci Facteur / Resend). */
+    postal_tracking?: string | null;
+    tracking_status?: string | null;
+    tracking_status_at?: string | null;
   };
   caseId: string;
   embedded?: boolean;
@@ -82,6 +88,8 @@ export function ReviewLetter({
   suggestedRecipients?: SuggestedRecipient[];
   /** Pièces du dossier proposées en annexes (rien n'est joint sans sélection). */
   documents?: AttachableDoc[];
+  /** Historique du suivi d'envoi (chronologique croissant), vue « envoyé ». */
+  trackingEvents?: TrackingEventRow[];
 }) {
   const router = useRouter();
   const [state, action, pending] = useActionState(
@@ -131,6 +139,18 @@ export function ReviewLetter({
             Votre validation et sa preuve sont enregistrées ; l’expédition réelle n’est pas
             encore partie (interrupteur d’envoi ou coordonnées à compléter — voir la chronologie).
           </p>
+        ) : null}
+        {reallySent ? (
+          <LetterTrackingPanel
+            tracking={{
+              channel: letter.channel,
+              sentAt: letter.sent_at ?? null,
+              trackingStatus: letter.tracking_status ?? null,
+              trackingStatusAt: letter.tracking_status_at ?? null,
+            }}
+            trackingNumber={letter.postal_tracking}
+            events={trackingEvents}
+          />
         ) : null}
         <article className="mt-5 whitespace-pre-line rounded-2xl bg-muted/50 p-5 text-[15px] leading-relaxed">
           {letter.body_md}

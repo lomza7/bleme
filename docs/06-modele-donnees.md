@@ -83,8 +83,19 @@ Champs : `case_id`, `kind ('reminder_1'|'reminder_2'|'formal_notice'|'response'|
 Règle : passage à `sent` impossible sans `approval_logs` correspondant.
 
 ### `postal_shipments`
-Rôle : suivi des recommandés.
-Champs : `letter_id`, `case_id`, `provider ('manual'|'maileva'|'merci_facteur')`, `tracking_number`, `status ('preparing'|'handed'|'in_transit'|'delivered'|'notice_left'|'returned'|'unknown')`, `cost_cents`, `ar_document_id fk null`, `status_history jsonb`, `shipped_at`, `delivered_at`.
+Rôle : suivi des recommandés. **Remplacée en implémentation (10/07/2026) par `letter_tracking_events` + colonnes de suivi sur `letters`** — le suivi couvre les deux canaux (postal ET email), pas seulement le recommandé.
+Champs (spécification d'origine) : `letter_id`, `case_id`, `provider ('manual'|'maileva'|'merci_facteur')`, `tracking_number`, `status ('preparing'|'handed'|'in_transit'|'delivered'|'notice_left'|'returned'|'unknown')`, `cost_cents`, `ar_document_id fk null`, `status_history jsonb`, `shipped_at`, `delivered_at`.
+
+### `letter_tracking_events` *(implémentée le 10/07/2026)*
+Rôle : chaque franchissement d'étape d'un envoi (postal via webhook Merci Facteur, email via webhook Resend) — la matière du « suivi colis » affiché sur le courrier, la carte du dossier et le centre de notifications.
+Champs : `organization_id`, `case_id`, `letter_id`, `channel ('email'|'postal')`, `stage` (étape normalisée : `accepted|printed|in_transit|notice_left|delivered|ar_signed|returned|problem|deposit_proof` côté postal ; `email_sent|delayed|email_delivered|opened|clicked|replied|bounced|failed|suppressed|complained` côté email), `status_code` (code brut fournisseur), `label` (libellé FR), `detail`, `occurred_at`, `provider_event_id` (svix-id Resend).
+Règles : idempotence par `unique (letter_id, stage, status_code)` (retries webhook sans doublon) ; écriture service-role uniquement (lecture org) ; statut agrégé reporté sur `letters.tracking_status` par machine à états **monotone** (jamais de retour en arrière, les webhooks arrivent dans le désordre). L'AR signé (`are_base64_jpeg`) et la preuve de dépôt (`pdd_base64_pdf`) sont archivés en `documents` (`doc_class 'postal_receipt'`).
+Colonnes ajoutées à `letters` : `tracking_status`, `tracking_status_at` (protégées par trigger, service-role only), `email_message_id` (id Resend, corrélation des webhooks sortants), `email_rfc_message_id` (Message-ID RFC, comparé au In-Reply-To des emails entrants pour le jalon « réponse reçue »).
+
+### `notifications` *(implémentée le 10/07/2026)*
+Rôle : centre de notifications de l'app (cloche) — suivi des envois, réponses reçues, alertes (pli retourné, email non délivré). Les étapes marquantes déclenchent AUSSI un email aux membres de l'organisation.
+Champs : `organization_id`, `case_id null`, `letter_id null`, `kind ('tracking'|'reply'|'alert'|'inbox'|'system')`, `title`, `body`, `href` (lien interne), `read_at`, `email_sent_at`, `created_at`.
+Règles : insertion service-role uniquement ; côté utilisateur, lecture org + marquage lu seul (trigger : seule `read_at` est modifiable).
 
 ## IA & conformité
 
