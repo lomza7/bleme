@@ -32,6 +32,17 @@ export function relativeDays(d: string | Date): string {
   return `dans ${days} j`;
 }
 
+/** Fraîcheur fine (« à l’instant », « il y a 2 h », « il y a 3 j »). */
+export function relativeTimeFr(d: string | Date): string {
+  const min = Math.round((Date.now() - new Date(d).getTime()) / 60_000);
+  if (min < 1) return "à l’instant";
+  if (min < 60) return `il y a ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `il y a ${h} h`;
+  const days = Math.round(h / 24);
+  return days === 1 ? "hier" : `il y a ${days} j`;
+}
+
 export function fileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} o`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} Ko`;

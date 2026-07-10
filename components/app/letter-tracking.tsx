@@ -54,7 +54,7 @@ const ALERT_ADVICE: Record<string, string> = {
   complained: "Le destinataire a signalé cet email comme indésirable. Privilégiez un envoi en recommandé.",
 };
 
-const STEP_ICONS: Record<string, LucideIcon> = {
+export const STEP_ICONS: Record<string, LucideIcon> = {
   submitted: Send,
   printed: Printer,
   in_transit: Truck,

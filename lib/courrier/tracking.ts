@@ -69,6 +69,9 @@ export const ALERT_STAGES: ReadonlySet<string> = new Set([
   "complained",
 ]);
 
+/** Jalons terminaux « heureux » : le pli/l'email est arrivé (ou mieux). */
+export const DONE_STAGES: ReadonlySet<string> = new Set(["delivered", "ar_signed", "replied"]);
+
 export const STAGE_LABEL: Record<TrackingStage, string> = {
   accepted: "Pris en compte par l’imprimeur",
   printed: "Imprimé et posté",

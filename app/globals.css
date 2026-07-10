@@ -218,6 +218,15 @@
   }
 }
 
+@keyframes grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
 @keyframes spin-slow {
   to {
     transform: rotate(360deg);
@@ -267,6 +276,14 @@
 
   .anim-load {
     animation: reveal-up 0.8s cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: var(--delay, 0s);
+  }
+
+  /* Segments de progression (suivi des envois) : se dessinent au chargement,
+     de gauche à droite, en cascade via --delay. */
+  .anim-grow-x {
+    transform-origin: left;
+    animation: grow-x 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
     animation-delay: var(--delay, 0s);
   }
 
