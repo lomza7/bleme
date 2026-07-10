@@ -30,6 +30,8 @@
 | 11 | [11-slogans.md](11-slogans.md) | 30 slogans + top 5 justifié |
 | 12 | [12-roadmap.md](12-roadmap.md) | 3 phases : MVP 30 j, bêta 90 j, commercial 6 mois |
 | 13 | [13-plan-claude-code.md](13-plan-claude-code.md) | 14 tâches techniques exécutables par Claude Code |
+| 14 | [14-recherche-whatsapp.md](14-recherche-whatsapp.md) | Recherche : ingestion des échanges WhatsApp |
+| 15 | [15-recherche-integration-compta.md](15-recherche-integration-compta.md) | Recherche : intégration comptable (Pennylane) — API v2, marché, architecture, décisions à acter |
 
 ## Comment utiliser cette base avec Claude Code
 
