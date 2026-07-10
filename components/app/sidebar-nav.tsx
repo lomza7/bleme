@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  CalendarDays,
   CreditCard,
   Download,
   FileText,
@@ -27,8 +26,7 @@ const SECTIONS = [
       { href: "/app", label: "Tableau de bord", icon: LayoutDashboard, exact: true },
       { href: "/app/inbox", label: "Boîte de réception", icon: Inbox },
       { href: "/app/dossiers", label: "Mes dossiers", icon: FolderOpen },
-      { href: "/app/envois", label: "Suivi des envois", icon: Truck },
-      { href: "/app/calendrier", label: "Agenda", icon: CalendarDays },
+      { href: "/app/envois", label: "Suivi", icon: Truck },
       { href: "/app/documents", label: "Mes documents", icon: FileText },
     ],
   },
