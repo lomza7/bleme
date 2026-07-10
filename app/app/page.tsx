@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import Image from "next/image";
 import { redirect } from "next/navigation";
-import { ArrowRight, CalendarClock, FolderPlus, Landmark, Sparkles, Trash2 } from "lucide-react";
+import { ArrowRight, CalendarClock, FolderPlus, Sparkles, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { euros, relativeDays } from "@/lib/format";
 import { FIXED_INDEMNITY_CENTS } from "@/lib/cases/constants";
@@ -10,6 +9,7 @@ import { createSampleCases, deleteSampleCases } from "@/lib/cases/actions";
 import { lastSendByCase } from "@/lib/cases/tracking-summary";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { DraftBanner } from "@/components/app/draft-banner";
+import { ComptaPanel } from "@/components/app/compta-panel";
 import { LetterTrackingCompact } from "@/components/app/letter-tracking";
 import {
   CaseCard,
@@ -47,18 +47,6 @@ export default async function AppHomePage() {
       .order("sent_at", { ascending: false })
       .limit(3),
   ]);
-  // Impayés détectés dans la compta connectée (Pennylane), sans dossier —
-  // et état de connexion (pilote la carte d'activation).
-  const [{ count: detectedCount }, { data: comptaIntegration }] = await Promise.all([
-    supabase
-      .from("accounting_invoices")
-      .select("id", { count: "exact", head: true })
-      .eq("paid", false)
-      .is("case_id", null)
-      .in("status", ["late", "partially_paid"]),
-    supabase.from("org_integrations").select("id").eq("provider", "pennylane").maybeSingle(),
-  ]);
-
   const firstName = profile?.full_name?.split(" ")[0] ?? "";
   const all = cases ?? [];
   // Suivi du dernier envoi par dossier (indicateur sur les cartes récentes).
@@ -110,56 +98,9 @@ export default async function AppHomePage() {
 
       <DraftBanner />
 
-      {!comptaIntegration && all.length > 0 ? (
-        <Link
-          href="/app/parametres"
-          className="anim-load group flex items-center gap-4 rounded-[1.75rem] border bg-card p-5 transition-all duration-500 ease-fluid hover:-translate-y-0.5 hover:border-brand/50 hover:shadow-lg hover:shadow-zinc-950/[0.05]"
-        >
-          <span className="flex h-11 shrink-0 items-center justify-center rounded-2xl bg-white px-3 shadow-sm ring-1 ring-black/5">
-            <Image src="/logos/pennylane.svg" alt="Pennylane" width={91} height={18} className="h-[18px] w-auto" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="flex flex-wrap items-center gap-2">
-              <span className="text-sm font-semibold">Connectez votre compta</span>
-              <span className="rounded-full bg-brand px-2 py-0.5 text-[10px] font-medium text-brand-foreground">
-                Nouveau
-              </span>
-            </span>
-            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-              Vos factures impayées Pennylane deviennent des blèmes en un clic — et vous êtes
-              prévenu quand une facture est réglée.
-            </span>
-          </span>
-          <span className="hidden shrink-0 items-center gap-1 rounded-full bg-brand px-4 py-2 text-xs font-medium text-brand-foreground transition-transform duration-500 ease-fluid group-hover:scale-[1.03] sm:inline-flex">
-            Connecter
-            <ArrowRight className="size-3.5" />
-          </span>
-          <ArrowRight className="size-4 shrink-0 text-muted-foreground sm:hidden" />
-        </Link>
-      ) : null}
-
-      {(detectedCount ?? 0) > 0 ? (
-        <Link
-          href="/app/envois"
-          className="anim-load flex items-center gap-3 rounded-[1.75rem] border border-amber-200 bg-amber-50/60 p-5 transition-all duration-500 ease-fluid hover:-translate-y-0.5 hover:shadow-lg hover:shadow-zinc-950/[0.05]"
-        >
-          <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700">
-            <Landmark className="size-4.5" />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-semibold">
-              {detectedCount} facture{(detectedCount ?? 0) > 1 ? "s" : ""} impayée
-              {(detectedCount ?? 0) > 1 ? "s" : ""} détectée{(detectedCount ?? 0) > 1 ? "s" : ""} dans votre compta
-            </span>
-            <span className="block truncate text-xs text-muted-foreground">
-              {(detectedCount ?? 0) > 1
-                ? "Importées de Pennylane — créez les dossiers en un clic, factures jointes."
-                : "Importée de Pennylane — créez le dossier en un clic, facture jointe."}
-            </span>
-          </span>
-          <ArrowRight className="size-4 shrink-0 text-amber-700" />
-        </Link>
-      ) : null}
+      {/* La compta au centre du cockpit : vitrine de connexion, puis santé
+          des factures + blème en un clic une fois Pennylane branché. */}
+      <ComptaPanel />
 
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <StatTile
@@ -319,6 +260,16 @@ function EmptyState() {
           </button>
         </form>
       </div>
+      <p className="mt-1 text-xs text-muted-foreground">
+        Vos impayés sont dans votre compta ?{" "}
+        <Link
+          href="/app/parametres"
+          className="font-medium text-brand-strong underline-offset-2 hover:underline"
+        >
+          Connectez Pennylane
+        </Link>{" "}
+        — ils remonteront tout seuls, prêts à devenir des blèmes.
+      </p>
     </section>
   );
 }
