@@ -8,6 +8,7 @@ import { HowItWorks } from "@/components/landing/how-it-works";
 import { KnowledgeGraph } from "@/components/landing/knowledge-graph";
 import { EvidenceSources } from "@/components/landing/evidence-sources";
 import { CaseTimeline } from "@/components/landing/case-timeline";
+import { PaperMail } from "@/components/landing/paper-mail";
 import { DashboardDemo } from "@/components/landing/dashboard-demo";
 import { AgentsTeam } from "@/components/landing/agents";
 import { SITE_URL } from "@/lib/site";
@@ -67,6 +68,7 @@ export default function Home() {
         <Piliers />
         <EvidenceSources />
         <KnowledgeGraph />
+        <PaperMail />
         <HowItWorks />
         <CaseTimeline />
         <DashboardDemo />
@@ -528,6 +530,10 @@ const FAQ_ITEMS = [
       r: "Oui. Tout créancier peut mettre en demeure son débiteur. BLEME prépare le courrier selon les usages, vous le relisez et l’envoyez en votre nom.",
     },
     {
+      q: "Vous envoyez vraiment des courriers papier ?",
+      r: "Oui. Après votre validation, la lettre est imprimée, mise sous pli et remise à La Poste — en lettre suivie (5 € HT) ou en recommandé avec accusé de réception (10 € HT). Le numéro de suivi est versé au dossier, chaque étape de distribution s'y affiche, et l'accusé de réception signé revient numérisé, archivé en preuve.",
+    },
+    {
       q: "Et si le client conteste la facture ?",
       r: "Sa réponse arrive dans le dossier, l’IA la résume et vous aide à documenter votre position : preuves à ajouter, points de vigilance. Si ça se durcit, vous exportez tout pour un professionnel.",
     },
@@ -638,6 +644,7 @@ function Footer() {
             </p>
             <ul className="mt-4 space-y-2.5 text-sm">
               <li><a href="#comment" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Comment ça marche</a></li>
+              <li><a href="#papier" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">L’envoi papier</a></li>
               <li><a href="#suivi" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Suivi des dossiers</a></li>
               <li><Link href="/tarifs" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Tarifs</Link></li>
               <li><a href="#faq" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">FAQ</a></li>

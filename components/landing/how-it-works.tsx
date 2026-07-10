@@ -42,7 +42,7 @@ export function HowItWorks() {
             <VisuelPreuves />
           </StepCard>
 
-          <StepCard index={2} skin="brand" titre="Validez" texte="Le courrier est déjà écrit, avec les bons montants et les bonnes références. Vous relisez, vous cliquez, il part en votre nom. Jamais rien ne s’envoie sans vous.">
+          <StepCard index={2} skin="brand" titre="Validez" texte="Le courrier est déjà écrit, avec les bons montants et les bonnes références. Vous relisez, vous cliquez, il part en votre nom — par email ou en vrai recommandé papier, posté pour vous. Jamais rien ne s’envoie sans vous.">
             <VisuelCourrier />
           </StepCard>
 
