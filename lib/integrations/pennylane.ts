@@ -55,7 +55,11 @@ async function plFetch(
       };
     }
     if (!res.ok) {
-      return { error: `L’API Pennylane a répondu ${res.status}.`, status: res.status };
+      // On capture le corps : les 400 Pennylane expliquent le champ fautif.
+      const body = await res.text().catch(() => "");
+      if (body) console.error(`[pennylane] ${res.status} sur ${path} :`, body.slice(0, 500));
+      const detail = body ? ` ${body.replace(/\s+/g, " ").slice(0, 180)}` : "";
+      return { error: `L’API Pennylane a répondu ${res.status}.${detail}`, status: res.status };
     }
     return res.json().catch(() => ({ error: "Réponse Pennylane illisible." }));
   }
@@ -83,6 +87,7 @@ const invoiceSchema = z.looseObject({
   paid: z.boolean().nullable().optional(),
   status: z.string().nullable().optional(),
   draft: z.boolean().nullable().optional(),
+  credit_note: z.boolean().nullable().optional(),
   public_file_url: z.string().nullable().optional(),
   filename: z.string().nullable().optional(),
   customer: z.looseObject({ id: z.union([z.number(), z.string()]).nullable().optional() }).nullable().optional(),
@@ -159,10 +164,10 @@ export async function listInvoices(
   token: string,
   opts?: { sinceDate?: string; maxPages?: number },
 ): Promise<{ invoices: PennylaneInvoice[] } | PennylaneError> {
-  const filters: { field: string; operator: string; value: unknown }[] = [
-    { field: "draft", operator: "eq", value: false },
-    { field: "credit_note", operator: "eq", value: false },
-  ];
+  // ⚠️ `draft` et `credit_note` NE SONT PAS des champs de filtre valides côté
+  // Pennylane (400) — seul `date` l'est. Les brouillons et avoirs sont donc
+  // écartés côté BLEME (dans le sync), pas dans la requête.
+  const filters: { field: string; operator: string; value: unknown }[] = [];
   if (opts?.sinceDate) filters.push({ field: "date", operator: "gteq", value: opts.sinceDate });
 
   const invoices: PennylaneInvoice[] = [];
@@ -172,8 +177,8 @@ export async function listInvoices(
     const params: Record<string, string> = {
       limit: "100",
       sort: "-date",
-      filter: JSON.stringify(filters),
     };
+    if (filters.length > 0) params.filter = JSON.stringify(filters);
     if (cursor) params.cursor = cursor;
     const raw = await plFetch(token, "/customer_invoices", params);
     if (typeof raw === "object" && raw !== null && "error" in raw) return raw as PennylaneError;

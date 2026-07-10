@@ -214,15 +214,23 @@ export async function syncPennylaneOrg(
   let hadWriteError = false;
 
   for (const inv of invoices) {
+    // Brouillons et avoirs écartés côté BLEME (le filtre serveur ne les
+    // supporte pas) : on ne stocke que des factures finalisées.
+    if (
+      inv.draft === true ||
+      inv.credit_note === true ||
+      inv.status === "draft" ||
+      inv.status === "credit_note"
+    ) {
+      continue;
+    }
     const externalId = String(inv.id);
     const before = previous.get(externalId) ?? null;
-    // Fiche client : seulement quand elle manque ET que la facture le mérite
-    // (impayée actionnable, ou liée à un dossier) — économie de requêtes sur
-    // les gros historiques payés.
+    // Fiche client : pour TOUTE facture non réglée (en retard, à échoir,
+    // partielle) ou liée à un dossier — on évite l'appel seulement sur le gros
+    // historique déjà payé.
     const needCustomer =
-      (!before || !before.customer_name) &&
-      (isActionableUnpaid({ paid: inv.paid ?? false, status: inv.status ?? null }) ||
-        Boolean(before?.case_id));
+      (!before || !before.customer_name) && (!inv.paid || Boolean(before?.case_id));
     const customer = needCustomer
       ? await customers.get(inv.customer?.id != null ? String(inv.customer.id) : null)
       : null;

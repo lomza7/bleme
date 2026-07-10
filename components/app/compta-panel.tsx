@@ -6,7 +6,7 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowRight, Check, CircleAlert, Settings, TriangleAlert } from "lucide-react";
+import { ArrowRight, CalendarClock, Check, CircleAlert, Settings, TriangleAlert } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { createCaseFromInvoice } from "@/lib/integrations/actions";
 import { CreateCaseFromInvoiceButton } from "@/components/app/create-case-button";
@@ -136,8 +136,14 @@ export async function ComptaPanel() {
   const upcoming = unpaid.filter((r) => r.status === "upcoming");
   const lateSum = late.reduce((s, r) => s + due(r), 0);
   const upcomingSum = upcoming.reduce((s, r) => s + due(r), 0);
-  const actionable = late.filter((r) => !r.case_id).slice(0, 5);
-  const actionableTotal = late.filter((r) => !r.case_id).length;
+  // Factures OUVERTES sans dossier (en retard + à échoir + partielles),
+  // déjà triées par échéance (la plus urgente d'abord) — chacune déclarable
+  // en blème en un clic. On exclut les statuts non-recouvrables
+  // (annulée, archivée, proforma, devis).
+  const OPEN = ["late", "partially_paid", "upcoming"];
+  const openInvoices = unpaid.filter((r) => !r.case_id && OPEN.includes(r.status ?? ""));
+  const shown = openInvoices.slice(0, 6);
+  const hiddenCount = openInvoices.length - shown.length;
 
   return (
     <section className="overflow-hidden rounded-[1.75rem] border bg-card">
@@ -216,21 +222,26 @@ export async function ComptaPanel() {
         </div>
       </div>
 
-      {/* Les impayées, déclarables en blème en un clic */}
-      {actionable.length > 0 ? (
+      {/* Les factures ouvertes, déclarables en blème en un clic */}
+      {shown.length > 0 ? (
         <div className="px-4 py-4 sm:px-7 sm:py-5">
           <div className="flex flex-col gap-2">
-            {actionable.map((inv) => {
+            {shown.map((inv) => {
               const lateDays = overdueDays(inv.deadline_on);
               const partial = inv.status === "partially_paid";
+              const isLate = inv.status === "late" || partial || (lateDays ?? 0) > 0;
               return (
                 <div
                   key={inv.id}
                   className="flex flex-col gap-2.5 rounded-2xl bg-muted/50 px-4 py-3 ring-1 ring-black/5 sm:flex-row sm:items-center sm:gap-4"
                 >
                   <span className="flex min-w-0 flex-1 items-center gap-3">
-                    <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700">
-                      <TriangleAlert className="size-3.5" />
+                    <span
+                      className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${
+                        isLate ? "bg-amber-100 text-amber-700" : "bg-brand-soft text-brand-strong"
+                      }`}
+                    >
+                      {isLate ? <TriangleAlert className="size-3.5" /> : <CalendarClock className="size-3.5" />}
                     </span>
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-semibold">
@@ -238,7 +249,13 @@ export async function ComptaPanel() {
                       </span>
                       <span className="block truncate text-[11px] text-muted-foreground">
                         {inv.invoice_number ? `Facture nº ${inv.invoice_number}` : "Facture"}
-                        {lateDays ? ` · ${lateDays} j de retard` : ""}
+                        {isLate
+                          ? lateDays
+                            ? ` · ${lateDays} j de retard`
+                            : " · en retard"
+                          : inv.deadline_on
+                            ? ` · échéance le ${new Date(inv.deadline_on).toLocaleDateString("fr-FR")}`
+                            : ""}
                         {partial ? " · paiement partiel" : ""}
                       </span>
                     </span>
@@ -258,8 +275,8 @@ export async function ComptaPanel() {
           </div>
           <div className="mt-3 flex items-center justify-between gap-3">
             <p className="text-[11px] text-muted-foreground">
-              {actionableTotal > actionable.length
-                ? `${actionableTotal - actionable.length} autre${actionableTotal - actionable.length > 1 ? "s" : ""} facture${actionableTotal - actionable.length > 1 ? "s" : ""} en retard dans le Suivi`
+              {hiddenCount > 0
+                ? `${hiddenCount} autre${hiddenCount > 1 ? "s" : ""} facture${hiddenCount > 1 ? "s" : ""} ouverte${hiddenCount > 1 ? "s" : ""} dans le Suivi`
                 : "Montants et clients importés de votre compta — vérifiables et corrigeables dans le dossier"}
             </p>
             <Link
@@ -276,9 +293,9 @@ export async function ComptaPanel() {
           <span className="flex size-7 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
             <Check className="size-3.5" />
           </span>
-          {late.length > 0
-            ? "Toutes vos factures en retard ont déjà leur dossier — le suivi s’en occupe."
-            : "Aucune facture en retard détectée dans votre compta."}
+          {unpaid.length > 0
+            ? "Toutes vos factures ouvertes ont déjà leur dossier — le suivi s’en occupe."
+            : "Aucune facture ouverte détectée dans votre compta."}
         </p>
       )}
     </section>
