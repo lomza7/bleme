@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getSecret } from "@/lib/secrets";
-import { syncPennylaneOrg } from "@/lib/integrations/sync";
+import { syncOrg } from "@/lib/integrations/sync";
 
 /*
  * Cron de synchronisation comptable (première infra cron du projet —
@@ -57,7 +57,7 @@ export async function GET(req: Request): Promise<Response> {
       .from("org_integrations")
       .update({ last_sync_at: new Date().toISOString() })
       .eq("id", integration.id);
-    const res = await syncPennylaneOrg(sb, integration);
+    const res = await syncOrg(sb, integration);
     if (res.ok) ok++;
     else failed++;
   }

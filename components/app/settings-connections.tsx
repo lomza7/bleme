@@ -2,69 +2,64 @@
 
 import Image from "next/image";
 import { useActionState, useState, useTransition } from "react";
+import { Check, CircleAlert, ExternalLink, LoaderCircle, Unplug } from "lucide-react";
 import {
-  Check,
-  CircleAlert,
-  ExternalLink,
-  LoaderCircle,
-  RefreshCw,
-  Unplug,
-} from "lucide-react";
-import {
-  connectPennylane,
-  disconnectPennylane,
-  syncPennylaneNow,
+  connectIntegration,
+  disconnectIntegration,
   type IntegrationState,
 } from "@/lib/integrations/actions";
+import { PROVIDERS, SUPPORTED_PROVIDERS, type ProviderId } from "@/lib/integrations/providers-meta";
+import { SyncNowButton } from "@/components/app/sync-now-button";
 import { relativeTimeFr } from "@/lib/format";
 
 /*
- * Connexion Pennylane (Paramètres → Connexions). Le token est vérifié contre
- * l'API puis chiffré côté serveur — il n'est jamais réaffiché. Lecture seule :
- * BLEME ne modifie RIEN dans la comptabilité de l'utilisateur.
+ * Connexion d'un logiciel comptable (Paramètres → Connexions). Générique :
+ * piloté par le descripteur du fournisseur (logo, champs, aide). Les
+ * identifiants sont vérifiés contre l'API puis chiffrés côté serveur ; jamais
+ * réaffichés. Lecture seule : BLEME ne modifie rien dans la comptabilité.
  */
 
 const INITIAL: IntegrationState = {};
 
 export type IntegrationInfo = {
+  provider: string;
   status: string;
   company_name: string | null;
   last_sync_at: string | null;
   last_error: string | null;
 } | null;
 
-export function PennylaneConnection({
-  integration,
-  unpaidCount,
-}: {
-  integration: IntegrationInfo;
-  unpaidCount: number;
-}) {
-  const [state, action, pending] = useActionState(connectPennylane, INITIAL);
-  const [syncing, startSync] = useTransition();
-  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
-  const [disconnecting, startDisconnect] = useTransition();
+function Logo({ provider, className }: { provider: ProviderId; className?: string }) {
+  const m = PROVIDERS[provider];
+  return <Image src={m.logo} alt={m.label} width={Math.round(20 * m.logoAspect)} height={20} className={className ?? "h-5 w-auto"} />;
+}
 
-  const tokenForm = (
-    <form action={action} className="flex flex-col gap-2">
-      <div className="flex flex-col gap-2 sm:flex-row">
+function ConnectForm({ provider }: { provider: ProviderId }) {
+  const meta = PROVIDERS[provider];
+  const [state, action, pending] = useActionState(connectIntegration, INITIAL);
+  return (
+    <form action={action} className="flex flex-col gap-3">
+      <input type="hidden" name="provider" value={provider} />
+      {meta.fields.map((f) => (
         <input
+          key={f.name}
           type="password"
-          name="token"
+          name={f.name}
           required
           autoComplete="off"
-          placeholder="Collez votre token API Pennylane"
-          className="h-11 flex-1 rounded-full border bg-background px-4 font-mono text-sm outline-none transition-colors focus-visible:border-brand/60 focus-visible:ring-2 focus-visible:ring-brand/30"
+          aria-label={f.label}
+          placeholder={f.placeholder}
+          className="h-11 w-full rounded-full border bg-background px-4 font-mono text-sm outline-none transition-colors focus-visible:border-brand/60 focus-visible:ring-2 focus-visible:ring-brand/30"
         />
-        <button
-          type="submit"
-          disabled={pending}
-          className="inline-flex h-11 items-center justify-center gap-2 rounded-full bg-brand px-5 text-sm font-medium text-brand-foreground transition-all duration-300 hover:bg-brand-strong active:scale-[0.98] disabled:opacity-60"
-        >
-          {pending ? <LoaderCircle className="size-4 animate-spin" /> : null}
-          {pending ? "Vérification…" : "Connecter"}
-        </button>
-      </div>
+      ))}
+      <button
+        type="submit"
+        disabled={pending}
+        className="inline-flex h-11 items-center justify-center gap-2 self-start rounded-full bg-brand px-5 text-sm font-medium text-brand-foreground transition-all duration-300 hover:bg-brand-strong active:scale-[0.98] disabled:opacity-60"
+      >
+        {pending ? <LoaderCircle className="size-4 animate-spin" /> : null}
+        {pending ? "Vérification…" : `Connecter ${meta.label}`}
+      </button>
       {state.error ? (
         <p role="alert" className="flex items-center gap-2 text-sm text-red-600">
           <CircleAlert className="size-4 shrink-0" />
@@ -79,24 +74,40 @@ export function PennylaneConnection({
       ) : null}
     </form>
   );
+}
+
+export function IntegrationConnection({
+  provider,
+  integration,
+}: {
+  provider: ProviderId;
+  integration: IntegrationInfo;
+}) {
+  const meta = PROVIDERS[provider];
+  const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  const [disconnecting, startDisconnect] = useTransition();
 
   if (integration) {
     return (
-      <div className="flex flex-col gap-4">
-        <div className="flex flex-wrap items-center gap-3 rounded-2xl bg-emerald-50 px-4 py-3 ring-1 ring-emerald-200">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
-            <Check className="size-4" />
+      <div className="flex flex-col gap-4 rounded-2xl border bg-background p-5">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="inline-flex h-8 items-center rounded-full bg-white px-2.5 shadow-sm ring-1 ring-black/5">
+            <Logo provider={provider} />
           </span>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-emerald-800">
-              Pennylane connecté{integration.company_name ? ` — ${integration.company_name}` : ""}
-            </p>
-            <p className="text-xs text-emerald-700/80" suppressHydrationWarning>
-              {integration.last_sync_at
-                ? `Dernière synchronisation ${relativeTimeFr(integration.last_sync_at)} · ${unpaidCount} facture${unpaidCount > 1 ? "s" : ""} impayée${unpaidCount > 1 ? "s" : ""} détectée${unpaidCount > 1 ? "s" : ""}`
-                : "Première synchronisation en attente"}
-            </p>
-          </div>
+          <span
+            className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
+              integration.status === "error"
+                ? "bg-amber-100 text-amber-800"
+                : "bg-emerald-100 text-emerald-700"
+            }`}
+          >
+            <Check className="size-3.5" />
+            {integration.status === "error" ? "À reconnecter" : "Connecté"}
+            {integration.company_name ? ` · ${integration.company_name}` : ""}
+          </span>
+          <span className="text-xs text-muted-foreground" suppressHydrationWarning>
+            {integration.last_sync_at ? `synchronisé ${relativeTimeFr(integration.last_sync_at)}` : "sync en attente"}
+          </span>
         </div>
 
         {integration.status === "error" && integration.last_error ? (
@@ -106,45 +117,20 @@ export function PennylaneConnection({
           </p>
         ) : null}
 
-        {integration.status === "error" ? (
-          <div className="rounded-2xl border bg-background p-4">
-            <p className="mb-3 text-sm font-medium">
-              Reconnecter avec un nouveau token (vos factures et dossiers sont conservés) :
-            </p>
-            {tokenForm}
-          </div>
-        ) : null}
-
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            disabled={syncing}
-            onClick={() => startSync(async () => syncPennylaneNow())}
-            className="inline-flex items-center gap-2 rounded-full border bg-background px-4 py-2 text-sm font-medium transition-colors duration-300 hover:border-brand/60 hover:bg-brand-soft disabled:opacity-60"
-          >
-            {syncing ? (
-              <LoaderCircle className="size-4 animate-spin" />
-            ) : (
-              <RefreshCw className="size-4 text-brand-strong" />
-            )}
-            Synchroniser maintenant
-          </button>
+          <SyncNowButton provider={provider} />
           {confirmDisconnect ? (
             <span className="flex items-center gap-2">
               <button
                 type="button"
                 disabled={disconnecting}
-                onClick={() => startDisconnect(async () => disconnectPennylane())}
+                onClick={() => startDisconnect(async () => disconnectIntegration(provider))}
                 className="inline-flex items-center gap-2 rounded-full bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors duration-300 hover:bg-red-700 disabled:opacity-60"
               >
                 {disconnecting ? <LoaderCircle className="size-4 animate-spin" /> : <Unplug className="size-4" />}
-                Confirmer la déconnexion
+                Confirmer
               </button>
-              <button
-                type="button"
-                onClick={() => setConfirmDisconnect(false)}
-                className="text-sm text-muted-foreground hover:text-foreground"
-              >
+              <button type="button" onClick={() => setConfirmDisconnect(false)} className="text-sm text-muted-foreground hover:text-foreground">
                 Annuler
               </button>
             </span>
@@ -159,57 +145,69 @@ export function PennylaneConnection({
             </button>
           )}
         </div>
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          Lecture seule : BLEME lit vos factures clients et leur statut de règlement,
-          et n’écrit jamais rien dans votre comptabilité. Déconnecter supprime les
-          factures importées (vos dossiers créés restent).
-        </p>
+
+        {integration.status === "error" ? (
+          <div className="border-t pt-4">
+            <p className="mb-3 text-sm font-medium">Reconnecter (vos factures et dossiers sont conservés) :</p>
+            <ConnectForm provider={provider} />
+          </div>
+        ) : null}
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <span className="inline-flex h-10 w-fit items-center rounded-xl bg-white px-3 shadow-sm ring-1 ring-black/5">
-        <Image src="/logos/pennylane.svg" alt="Pennylane" width={101} height={20} className="h-5 w-auto" />
-      </span>
-      <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
-        Connectez votre comptabilité : vos factures clients impayées apparaissent
-        dans BLEME, chacune prête à devenir un dossier en un clic — et quand une
-        facture est réglée, vous êtes prévenu pour solder le dossier.
-      </p>
+    <div className="flex flex-col gap-4 rounded-2xl border bg-background p-5">
+      <div className="flex items-center gap-3">
+        <span className="inline-flex h-8 items-center rounded-full bg-white px-2.5 shadow-sm ring-1 ring-black/5">
+          <Logo provider={provider} />
+        </span>
+      </div>
+      <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">{meta.blurb}</p>
 
-      <details className="rounded-2xl border bg-background px-4 py-3">
-        <summary className="cursor-pointer text-sm font-medium">
-          Où trouver votre token API Pennylane ?
-        </summary>
+      <details className="rounded-2xl border bg-card px-4 py-3">
+        <summary className="cursor-pointer text-sm font-medium">Où trouver vos identifiants ?</summary>
         <ol className="mt-3 list-decimal space-y-1.5 pl-5 text-sm leading-relaxed text-muted-foreground">
-          <li>
-            Dans Pennylane : <span className="font-medium text-foreground">Paramètres → Connectivité → Développeurs</span>{" "}
-            → « Générer un token API ».
-          </li>
-          <li>
-            Choisissez les permissions <span className="font-medium text-foreground">Lecture seule</span> (BLEME n’a
-            besoin que de lire vos factures clients).
-          </li>
-          <li>Copiez le token affiché (il ne sera montré qu’une fois) et collez-le ci-dessous.</li>
+          {meta.howto.map((step, i) => (
+            <li key={i}>{step}</li>
+          ))}
         </ol>
-        <p className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800 ring-1 ring-amber-200">
-          <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
-          L’onglet Développeurs nécessite un plan Pennylane Essential ou supérieur.
-        </p>
-        <a
-          href="https://pennylane.readme.io/docs/generating-my-api-token"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-brand-strong hover:underline"
-        >
-          Guide officiel Pennylane
-          <ExternalLink className="size-3" />
-        </a>
+        {meta.planNote ? (
+          <p className="mt-3 flex items-start gap-2 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800 ring-1 ring-amber-200">
+            <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+            {meta.planNote}
+          </p>
+        ) : null}
+        {meta.howtoUrl ? (
+          <a
+            href={meta.howtoUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-brand-strong hover:underline"
+          >
+            Guide officiel {meta.label}
+            <ExternalLink className="size-3" />
+          </a>
+        ) : null}
       </details>
 
-      {tokenForm}
+      <ConnectForm provider={provider} />
+    </div>
+  );
+}
+
+/** Liste des connexions (une carte par fournisseur supporté). */
+export function IntegrationConnections({ integrations }: { integrations: NonNullable<IntegrationInfo>[] }) {
+  const byProvider = new Map(integrations.map((i) => [i.provider, i]));
+  return (
+    <div className="flex flex-col gap-3">
+      {SUPPORTED_PROVIDERS.map((p) => (
+        <IntegrationConnection key={p} provider={p} integration={byProvider.get(p) ?? null} />
+      ))}
+      <p className="px-1 text-xs leading-relaxed text-muted-foreground">
+        Lecture seule : BLEME lit vos factures clients et leur statut de règlement, et n’écrit jamais rien
+        dans votre comptabilité. Déconnecter un logiciel supprime les factures importées ; vos dossiers créés restent.
+      </p>
     </div>
   );
 }

@@ -9,9 +9,28 @@ import Image from "next/image";
 import { ArrowRight, CalendarClock, Check, CircleAlert, Settings, TriangleAlert } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { createCaseFromInvoice } from "@/lib/integrations/actions";
+import { PROVIDERS, SUPPORTED_PROVIDERS, type ProviderId } from "@/lib/integrations/providers-meta";
 import { CreateCaseFromInvoiceButton } from "@/components/app/create-case-button";
 import { SyncNowButton } from "@/components/app/sync-now-button";
 import { euros, relativeTimeFr } from "@/lib/format";
+
+type Integration = {
+  provider: string;
+  status: string;
+  company_name: string | null;
+  last_sync_at: string | null;
+  last_error: string | null;
+};
+
+function ProviderLogo({ provider, h = 18 }: { provider: string; h?: number }) {
+  const m = PROVIDERS[provider as ProviderId];
+  if (!m) return null;
+  return (
+    <span className="inline-flex items-center rounded-full bg-white px-2.5 shadow-sm ring-1 ring-black/5" style={{ height: h + 14 }}>
+      <Image src={m.logo} alt={m.label} width={Math.round(h * m.logoAspect)} height={h} style={{ height: h, width: "auto" }} />
+    </span>
+  );
+}
 
 type InvoiceRow = {
   id: string;
@@ -33,24 +52,24 @@ function overdueDays(deadline: string | null): number | null {
 
 export async function ComptaPanel() {
   const supabase = await createClient();
-  const { data: integration } = await supabase
+  const { data: integrationsData } = await supabase
     .from("org_integrations")
-    .select("status, company_name, last_sync_at, last_error")
-    .eq("provider", "pennylane")
-    .maybeSingle();
+    .select("provider, status, company_name, last_sync_at, last_error")
+    .returns<Integration[]>();
+  const connected = integrationsData ?? [];
 
   // ── Non connecté : la vitrine ──────────────────────────────────────────────
-  if (!integration) {
+  if (connected.length === 0) {
     return (
       <section className="relative overflow-hidden rounded-[1.75rem] bg-ink p-7 text-ink-foreground sm:p-9">
         <div aria-hidden className="absolute -right-24 -top-32 size-80 rounded-full bg-brand/25 blur-[110px]" />
         <div aria-hidden className="absolute -left-28 -bottom-32 size-72 rounded-full bg-emerald-500/10 blur-[100px]" />
         <div className="relative grid grid-cols-1 items-center gap-8 md:grid-cols-[1fr_auto]">
           <div>
-            <div className="flex flex-wrap items-center gap-2.5">
-              <span className="inline-flex h-8 items-center rounded-full bg-white px-2.5 shadow-sm">
-                <Image src="/logos/pennylane.svg" alt="Pennylane" width={91} height={18} className="h-[18px] w-auto" />
-              </span>
+            <div className="flex flex-wrap items-center gap-2">
+              {SUPPORTED_PROVIDERS.map((p) => (
+                <ProviderLogo key={p} provider={p} />
+              ))}
               <span className="rounded-full bg-brand px-2.5 py-0.5 text-[11px] font-medium text-brand-foreground">
                 Nouveau
               </span>
@@ -59,9 +78,9 @@ export async function ComptaPanel() {
               Vos impayés sont déjà dans votre compta.
             </h2>
             <p className="mt-2 max-w-lg text-sm leading-relaxed text-ink-muted">
-              Connectez Pennylane : vos factures en retard remontent ici toutes
-              seules, chacune prête à devenir un blème en un clic — et vous êtes
-              prévenu dès qu’une facture est réglée.
+              Connectez Pennylane, Axonaut ou Sellsy : vos factures en retard
+              remontent ici toutes seules, chacune prête à devenir un blème en un
+              clic — et vous êtes prévenu dès qu’une facture est réglée.
             </p>
             <div className="mt-6 flex flex-wrap items-center gap-4">
               <Link
@@ -130,6 +149,14 @@ export async function ComptaPanel() {
       .eq("paid", true),
   ]);
 
+  const anyError = connected.some((i) => i.status === "error");
+  const errored = connected.find((i) => i.status === "error" && i.last_error);
+  const lastSync = connected
+    .map((i) => i.last_sync_at)
+    .filter((d): d is string => Boolean(d))
+    .sort()
+    .at(-1);
+
   const unpaid = unpaidRows ?? [];
   const due = (r: InvoiceRow) => r.remaining_cents ?? r.amount_cents ?? 0;
   const late = unpaid.filter((r) => ["late", "partially_paid"].includes(r.status ?? ""));
@@ -150,18 +177,19 @@ export async function ComptaPanel() {
       {/* En-tête : identité + synchro */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b px-6 py-4 sm:px-7">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="inline-flex h-8 shrink-0 items-center rounded-full bg-white px-2.5 shadow-sm ring-1 ring-black/5">
-            <Image src="/logos/pennylane.svg" alt="Pennylane" width={91} height={18} className="h-[18px] w-auto" />
+          <span className="flex shrink-0 items-center gap-1.5">
+            {connected.map((i) => (
+              <ProviderLogo key={i.provider} provider={i.provider} />
+            ))}
           </span>
           <span className="min-w-0">
             <span className="block truncate text-sm font-semibold">
-              Ma compta{integration.company_name ? ` · ${integration.company_name}` : ""}
+              Ma compta
+              {connected.length === 1 && connected[0].company_name ? ` · ${connected[0].company_name}` : ""}
             </span>
             <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground" suppressHydrationWarning>
-              <span className={`size-1.5 rounded-full ${integration.status === "error" ? "bg-amber-500" : "bg-emerald-500"}`} />
-              {integration.last_sync_at
-                ? `Synchronisé ${relativeTimeFr(integration.last_sync_at)}`
-                : "Synchronisation en attente"}
+              <span className={`size-1.5 rounded-full ${anyError ? "bg-amber-500" : "bg-emerald-500"}`} />
+              {lastSync ? `Synchronisé ${relativeTimeFr(lastSync)}` : "Synchronisation en attente"}
             </span>
           </span>
         </div>
@@ -177,10 +205,10 @@ export async function ComptaPanel() {
         </div>
       </div>
 
-      {integration.status === "error" ? (
+      {anyError ? (
         <p className="flex items-start gap-2 border-b bg-amber-50 px-6 py-3 text-[13px] leading-relaxed text-amber-800 sm:px-7">
           <CircleAlert className="mt-0.5 size-4 shrink-0" />
-          {integration.last_error ?? "Synchronisation en échec."}{" "}
+          {errored?.last_error ?? "Une connexion est en échec."}{" "}
           <Link href="/app/parametres" className="font-medium underline underline-offset-2">
             Vérifier la connexion
           </Link>

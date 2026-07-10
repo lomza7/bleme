@@ -100,9 +100,9 @@ Règles : insertion service-role uniquement ; côté utilisateur, lecture org + 
 ## Intégrations comptables *(implémentées le 10/07/2026 — voir doc 15)*
 
 ### `org_integrations`
-Rôle : connexion d'une organisation à son logiciel comptable (Pennylane en Phase A).
-Champs : `organization_id`, `provider ('pennylane')`, `status ('connected'|'error'|'disconnected')`, `company_name`, `connected_at`, `last_sync_at`, `last_error`, `sync_cursor` (curseur changelog).
-Règles : lecture org (RLS) ; écriture via les actions serveur dédiées uniquement (service-role scopé org). Le token vit dans **`org_integration_secrets`** (RLS sans policy = service-role only), **chiffré AES-256-GCM** côté app (clé maîtresse `INTEGRATIONS_ENCRYPTION_KEY` via le coffre).
+Rôle : connexion d'une organisation à son logiciel comptable — **multi-fournisseurs** (étendu le 11/07/2026).
+Champs : `organization_id`, `provider ('pennylane'|'sellsy'|'axonaut')`, `status ('connected'|'error'|'disconnected')`, `company_name`, `connected_at`, `last_sync_at`, `last_error`, `sync_cursor` (**text** : processed_at ISO pour Pennylane, date/offset pour les autres). Unique `(organization_id, provider)` → une org peut connecter plusieurs logiciels.
+Règles : lecture org (RLS) ; écriture via les actions serveur dédiées uniquement (service-role scopé org). Les identifiants vivent dans **`org_integration_secrets`** (RLS sans policy = service-role only), **chiffrés AES-256-GCM** côté app (clé maîtresse `INTEGRATIONS_ENCRYPTION_KEY` via le coffre) — sac opaque : token brut (Pennylane/Axonaut) ou JSON `{client_id,client_secret}` (Sellsy). Architecture : interface pivot `ComptaAdapter` (`lib/integrations/types.ts`) + un adaptateur par fournisseur (`lib/integrations/adapters/`), sync (`syncOrg`) et actions agnostiques.
 
 ### `accounting_invoices`
 Rôle : factures clients importées du logiciel comptable — la matière du « dossier en 1 clic » et de la détection de paiement.

@@ -266,7 +266,7 @@ function EmptyState() {
           href="/app/parametres"
           className="font-medium text-brand-strong underline-offset-2 hover:underline"
         >
-          Connectez Pennylane
+          Connectez Pennylane, Axonaut ou Sellsy
         </Link>{" "}
         — ils remonteront tout seuls, prêts à devenir des blèmes.
       </p>

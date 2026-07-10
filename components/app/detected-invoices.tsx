@@ -40,7 +40,7 @@ export function DetectedInvoices({
           Impayés détectés dans votre compta
         </h2>
         <span className="text-xs text-muted-foreground">
-          via Pennylane · valeurs vérifiables et corrigeables
+          via votre compta · valeurs vérifiables et corrigeables
           {hidden > 0 ? ` · les ${invoices.length} plus urgentes affichées (${totalCount} au total)` : ""}
         </span>
       </div>

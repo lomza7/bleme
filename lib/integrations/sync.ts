@@ -1,43 +1,24 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { decryptToken } from "@/lib/integrations/crypto";
-import {
-  changedInvoiceIds,
-  euroStringToCents,
-  getCustomer,
-  getInvoicesByIds,
-  isPennylaneError,
-  listInvoices,
-  type PennylaneCustomer,
-  type PennylaneInvoice,
-} from "@/lib/integrations/pennylane";
+import { getAdapter } from "@/lib/integrations/registry";
+import { isIntegrationError, type PivotInvoice } from "@/lib/integrations/types";
+import { PROVIDERS, type ProviderId } from "@/lib/integrations/providers-meta";
 import { notifyOrganization } from "@/lib/notifications/notify";
 
 /*
- * Synchronisation Pennylane d'une organisation (service-role, appelée par le
- * cron /api/cron/compta-sync et le bouton « Synchroniser maintenant »).
+ * Synchronisation comptable d'une organisation, tous fournisseurs (service-role,
+ * appelée par le cron /api/cron/compta-sync et le bouton « Synchroniser »).
  *
- * Premier passage : import des factures finalisées des 18 derniers mois.
- * Passages suivants : /changelogs depuis le curseur → re-fetch des ids
- * modifiés → upsert + détections. Robustesse :
- *  - un curseur plus vieux que la rétention changelog (4 semaines) déclenche
- *    un ré-import complet (pas de trou silencieux) ;
- *  - une erreur d'écriture n'avance PAS le curseur (le lot sera rejoué —
- *    l'upsert et les détections par transition sont idempotents) ;
- *  - les suppressions côté Pennylane suppriment la ligne importée ;
- *  - les factures « upcoming » dont l'échéance passe sont promues « late »
- *    localement (aucun changelog n'est émis pour ce vieillissement passif).
- * Détections :
- *  - facture liée à un dossier qui passe « payée » → notification (cloche +
- *    email) — la clôture reste un geste utilisateur (recordPayment), JAMAIS
- *    automatique ;
- *  - facture qui devient actionnable (en retard / partiellement payée), sans
- *    dossier → notification cloche.
+ * L'adaptateur (Pennylane / Axonaut / Sellsy) fait la récupération + la
+ * normalisation vers le format pivot ; ce module reste agnostique et gère :
+ *  - l'upsert idempotent (clé org+provider+external_id) ;
+ *  - la détection « facture liée à un dossier passée payée » → notification
+ *    (cloche + email), JAMAIS de clôture automatique (pilier produit) ;
+ *  - la détection « nouvelle facture actionnable » → notification cloche ;
+ *  - les suppressions upstream et le vieillissement passif upcoming→late ;
+ *  - le curseur (inchangé en cas d'erreur d'écriture → lot rejoué).
  */
-
-const IMPORT_MONTHS = 18;
-/** Au-delà, le changelog Pennylane (rétention 4 semaines) n'est plus fiable. */
-const CURSOR_MAX_AGE_DAYS = 21;
 
 type IntegrationRow = {
   id: string;
@@ -48,7 +29,6 @@ type IntegrationRow = {
 };
 
 type StoredInvoice = {
-  id: string;
   external_id: string;
   paid: boolean;
   status: string | null;
@@ -60,151 +40,107 @@ type StoredInvoice = {
   customer_address: unknown;
 };
 
-/** Statuts fournisseur considérés « impayé actionnable » côté BLEME. */
+/** Statuts considérés « impayé actionnable » côté BLEME. */
 export function isActionableUnpaid(inv: { paid: boolean | null; status: string | null }): boolean {
   return !inv.paid && ["late", "partially_paid"].includes(inv.status ?? "");
 }
 
-/** Cache clients du run : succès uniquement (un 429 sera retenté au prochain sync). */
-function customerCache(token: string) {
-  const cache = new Map<string, PennylaneCustomer>();
-  let lastCall = 0;
-  return {
-    async get(id: string | null): Promise<PennylaneCustomer | null> {
-      if (!id) return null;
-      const hit = cache.get(id);
-      if (hit) return hit;
-      // Cadence douce (≤ ~5 appels/s) : la limite Pennylane est 25 req/5 s.
-      const wait = 220 - (Date.now() - lastCall);
-      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
-      lastCall = Date.now();
-      const res = await getCustomer(token, id);
-      if (isPennylaneError(res)) return null;
-      cache.set(id, res.customer);
-      return res.customer;
-    },
-  };
+function providerLabel(provider: string): string {
+  return PROVIDERS[provider as ProviderId]?.label ?? "votre compta";
 }
 
-function customerDisplayName(c: PennylaneCustomer | null): string | null {
-  if (!c) return null;
-  return c.name || [c.first_name, c.last_name].filter(Boolean).join(" ") || null;
-}
-
-function invoiceRow(
-  organizationId: string,
-  inv: PennylaneInvoice,
-  customer: PennylaneCustomer | null,
-  before: StoredInvoice | null,
-) {
-  const address = customer?.billing_address;
-  const name = customerDisplayName(customer);
+/** PivotInvoice → ligne DB, en conservant les infos client déjà connues. */
+function toRow(orgId: string, provider: string, inv: PivotInvoice, before: StoredInvoice | null) {
+  const c = inv.customer;
+  const name = c?.name ?? before?.customer_name ?? null;
   return {
-    organization_id: organizationId,
-    provider: "pennylane",
-    external_id: String(inv.id),
-    invoice_number: inv.invoice_number ?? before?.invoice_number ?? null,
+    organization_id: orgId,
+    provider,
+    external_id: inv.externalId,
+    invoice_number: inv.invoiceNumber ?? before?.invoice_number ?? null,
     label: inv.label?.slice(0, 300) ?? null,
-    customer_external_id: inv.customer?.id != null ? String(inv.customer.id) : null,
-    // Fiche client : les valeurs déjà connues sont CONSERVÉES quand on ne
-    // re-consulte pas la fiche (sinon un re-sync les écraserait par null).
-    customer_name: name ?? before?.customer_name ?? null,
-    customer_email: customer?.emails?.[0] ?? before?.customer_email ?? null,
-    customer_siren:
-      (customer?.reg_no && /^\d{9}$/.test(customer.reg_no) ? customer.reg_no : null) ??
-      before?.customer_siren ??
-      null,
-    customer_address:
-      address?.address && address?.postal_code && address?.city
-        ? {
-            // `societe` seul : dupliquer le nom dans `nom` ET `societe`
-            // dédoublerait le destinataire sur le recommandé.
-            nom: "",
-            societe: name ?? "",
-            adresse: address.address,
-            codePostal: address.postal_code,
-            ville: address.city,
-          }
-        : (before?.customer_address ?? null),
-    amount_cents: euroStringToCents(inv.amount),
-    remaining_cents: euroStringToCents(inv.remaining_amount_with_tax),
+    customer_external_id: c?.externalId ?? null,
+    customer_name: name,
+    customer_email: c?.email ?? before?.customer_email ?? null,
+    customer_siren: c?.siren ?? before?.customer_siren ?? null,
+    customer_address: c?.address
+      ? {
+          // `societe` seul : dupliquer le nom dans nom ET societe dédoublerait
+          // le destinataire sur le recommandé.
+          nom: "",
+          societe: name ?? "",
+          adresse: c.address.adresse,
+          codePostal: c.address.codePostal,
+          ville: c.address.ville,
+        }
+      : (before?.customer_address ?? null),
+    amount_cents: inv.amountCents,
+    remaining_cents: inv.remainingCents,
     currency: inv.currency ?? "EUR",
-    issued_on: inv.date ? inv.date.slice(0, 10) : null,
-    deadline_on: inv.deadline ? inv.deadline.slice(0, 10) : null,
-    status: inv.status ?? null,
-    paid: inv.paid === true,
+    issued_on: inv.issuedOn ?? null,
+    deadline_on: inv.deadlineOn ?? null,
+    status: inv.status,
+    paid: inv.paid,
     synced_at: new Date().toISOString(),
   };
 }
 
-export async function syncPennylaneOrg(
+export async function syncOrg(
   sb: SupabaseClient,
   integration: IntegrationRow,
 ): Promise<{ ok: boolean; error?: string }> {
+  const label = providerLabel(integration.provider);
+  const adapter = getAdapter(integration.provider);
+  if (!adapter) return await fail(sb, integration, `Fournisseur ${label} non pris en charge.`);
+
   const { data: secret } = await sb
     .from("org_integration_secrets")
     .select("token_encrypted")
     .eq("integration_id", integration.id)
     .maybeSingle();
-  if (!secret) return await fail(sb, integration, "Token de connexion introuvable — reconnectez Pennylane.");
+  if (!secret) return await fail(sb, integration, `Connexion introuvable — reconnectez ${label}.`);
 
-  let token: string;
+  let creds: string;
   try {
-    token = await decryptToken(secret.token_encrypted);
+    creds = await decryptToken(secret.token_encrypted);
   } catch (e) {
-    // Détail (nom de clé interne…) réservé aux logs serveur.
-    console.error("[compta-sync] déchiffrement du token impossible", e);
-    return await fail(
-      sb,
-      integration,
-      "Impossible de lire le token de connexion — reconnectez Pennylane ou contactez le support.",
-    );
+    console.error("[compta-sync] déchiffrement des identifiants impossible", e);
+    return await fail(sb, integration, `Impossible de lire la connexion — reconnectez ${label} ou contactez le support.`);
   }
 
-  const customers = customerCache(token);
   const syncStartedAt = new Date().toISOString();
-  const isFirstImport =
+  const firstImport =
     !integration.sync_cursor ||
-    Date.now() - new Date(integration.sync_cursor).getTime() >
-      CURSOR_MAX_AGE_DAYS * 24 * 3600 * 1000;
+    (adapter.cursorMaxAgeDays != null &&
+      Date.now() - new Date(integration.sync_cursor).getTime() > adapter.cursorMaxAgeDays * 86_400_000);
 
-  let invoices: PennylaneInvoice[];
-  let deletedIds: string[] = [];
-  let nextCursor: string;
+  // Factures ouvertes déjà stockées : l'adaptateur peut avoir besoin de les
+  // re-vérifier (passées payées/annulées) — Pennylane l'ignore (changelog).
+  const { data: openRows } = await sb
+    .from("accounting_invoices")
+    .select("external_id")
+    .eq("organization_id", integration.organization_id)
+    .eq("provider", integration.provider)
+    .eq("paid", false);
+  const trackedExternalIds = (openRows ?? []).map((r) => r.external_id as string);
 
-  if (isFirstImport) {
-    const since = new Date();
-    since.setMonth(since.getMonth() - IMPORT_MONTHS);
-    const res = await listInvoices(token, { sinceDate: since.toISOString().slice(0, 10) });
-    if (isPennylaneError(res)) return await fail(sb, integration, res.error);
-    invoices = res.invoices;
-    // Marge d'une heure : l'horloge des processed_at est celle de Pennylane —
-    // un léger chevauchement au prochain sync est idempotent, un trou non.
-    nextCursor = new Date(Date.now() - 3600_000).toISOString();
-  } else {
-    const changes = await changedInvoiceIds(token, integration.sync_cursor!);
-    if (isPennylaneError(changes)) return await fail(sb, integration, changes.error);
-    deletedIds = changes.deletedIds;
-    nextCursor = changes.lastProcessedAt ?? integration.sync_cursor!;
-    if (changes.ids.length === 0) {
-      invoices = [];
-    } else {
-      const res = await getInvoicesByIds(token, changes.ids);
-      if (isPennylaneError(res)) return await fail(sb, integration, res.error);
-      invoices = res.invoices;
-    }
-  }
+  const fetched = await adapter.fetchInvoices(creds, {
+    firstImport,
+    cursor: integration.sync_cursor,
+    trackedExternalIds,
+  });
+  if (isIntegrationError(fetched)) return await fail(sb, integration, fetched.error);
 
-  // État précédent (diff : transitions payée / actionnable, champs à conserver).
-  const externalIds = invoices.map((i) => String(i.id));
+  const invoices = fetched.invoices;
+  const externalIds = invoices.map((i) => i.externalId);
   const { data: existingRows } = externalIds.length
     ? await sb
         .from("accounting_invoices")
         .select(
-          "id, external_id, paid, status, case_id, invoice_number, customer_name, customer_email, customer_siren, customer_address",
+          "external_id, paid, status, case_id, invoice_number, customer_name, customer_email, customer_siren, customer_address",
         )
         .eq("organization_id", integration.organization_id)
-        .eq("provider", "pennylane")
+        .eq("provider", integration.provider)
         .in("external_id", externalIds)
     : { data: [] };
   const previous = new Map<string, StoredInvoice>(
@@ -214,33 +150,15 @@ export async function syncPennylaneOrg(
   let hadWriteError = false;
 
   for (const inv of invoices) {
-    // Brouillons et avoirs écartés côté BLEME (le filtre serveur ne les
-    // supporte pas) : on ne stocke que des factures finalisées.
-    if (
-      inv.draft === true ||
-      inv.credit_note === true ||
-      inv.status === "draft" ||
-      inv.status === "credit_note"
-    ) {
-      continue;
-    }
-    const externalId = String(inv.id);
-    const before = previous.get(externalId) ?? null;
-    // Fiche client : pour TOUTE facture non réglée (en retard, à échoir,
-    // partielle) ou liée à un dossier — on évite l'appel seulement sur le gros
-    // historique déjà payé.
-    const needCustomer =
-      (!before || !before.customer_name) && (!inv.paid || Boolean(before?.case_id));
-    const customer = needCustomer
-      ? await customers.get(inv.customer?.id != null ? String(inv.customer.id) : null)
-      : null;
-    const row = invoiceRow(integration.organization_id, inv, customer, before);
+    // Brouillons et avoirs : jamais stockés.
+    if (inv.status === "draft" || inv.status === "credit_note") continue;
+    const before = previous.get(inv.externalId) ?? null;
+    const row = toRow(integration.organization_id, integration.provider, inv, before);
 
     const { error: upsertErr } = await sb
       .from("accounting_invoices")
       .upsert(row, { onConflict: "organization_id,provider,external_id" });
     if (upsertErr) {
-      // Le curseur n'avancera pas : ce lot sera rejoué (idempotent).
       hadWriteError = true;
       continue;
     }
@@ -249,21 +167,18 @@ export async function syncPennylaneOrg(
     const numberLabel = row.invoice_number ? `nº ${row.invoice_number}` : "";
     const becamePaid = before && !before.paid && inv.paid === true;
     const becameActionable =
-      !isFirstImport &&
-      !row.paid &&
+      !firstImport &&
       isActionableUnpaid({ paid: row.paid, status: row.status }) &&
       (!before || !isActionableUnpaid(before)) &&
       !before?.case_id;
 
     if (becamePaid && before?.case_id) {
-      // 🎉 Rentrée d'argent sur un dossier suivi : suggestion — jamais de
-      // clôture automatique (pilier produit).
       await sb.from("case_events").insert({
         case_id: before.case_id,
         organization_id: integration.organization_id,
         event_type: "payment_detected",
         title: "Facture marquée payée dans votre compta",
-        description: `Pennylane indique la facture ${numberLabel || "liée au dossier"} comme payée. Confirmez l’encaissement pour solder le dossier.`,
+        description: `${label} indique la facture ${numberLabel || "liée au dossier"} comme payée. Confirmez l’encaissement pour solder le dossier.`,
         source: "system",
       });
       await notifyOrganization(sb, {
@@ -271,7 +186,7 @@ export async function syncPennylaneOrg(
         caseId: before.case_id,
         kind: "integration",
         title: `Rentrée d’argent détectée — facture ${numberLabel || "payée"}`,
-        body: `Pennylane marque la facture de ${displayName} comme payée. Ouvrez le dossier pour confirmer l’encaissement et le solder.`,
+        body: `${label} marque la facture de ${displayName} comme payée. Ouvrez le dossier pour confirmer l’encaissement et le solder.`,
         href: `/app/dossiers/${before.case_id}`,
         email: true,
       });
@@ -287,42 +202,41 @@ export async function syncPennylaneOrg(
     }
   }
 
-  // Factures supprimées côté Pennylane : on retire la ligne importée (le
-  // dossier BLEME éventuel reste, évidemment).
-  if (deletedIds.length > 0) {
+  // Suppressions upstream (Pennylane) : on retire la ligne importée (le dossier
+  // BLEME éventuel reste).
+  if (fetched.deletedExternalIds.length > 0) {
     await sb
       .from("accounting_invoices")
       .delete()
       .eq("organization_id", integration.organization_id)
-      .eq("provider", "pennylane")
-      .in("external_id", deletedIds);
+      .eq("provider", integration.provider)
+      .in("external_id", fetched.deletedExternalIds);
   }
 
-  // Vieillissement passif : une « upcoming » dont l'échéance est passée ne
-  // génère AUCUN changelog — on la promeut « late » localement (le statut
-  // Pennylane la confirmera au prochain vrai événement) + notification.
+  // Vieillissement passif : une « upcoming » dont l'échéance est dépassée est
+  // promue « late » localement (aucun événement fournisseur pour ça).
   const today = new Date().toISOString().slice(0, 10);
   const { data: newlyLate } = await sb
     .from("accounting_invoices")
     .select("id, invoice_number, customer_name, case_id")
     .eq("organization_id", integration.organization_id)
-    .eq("provider", "pennylane")
+    .eq("provider", integration.provider)
     .eq("paid", false)
     .eq("status", "upcoming")
     .lt("deadline_on", today);
-  for (const row of newlyLate ?? []) {
+  for (const r of newlyLate ?? []) {
     const { error: promoteErr } = await sb
       .from("accounting_invoices")
       .update({ status: "late" })
-      .eq("id", row.id)
+      .eq("id", r.id)
       .eq("status", "upcoming");
-    if (promoteErr || isFirstImport || row.case_id) continue;
-    const numberLabel = row.invoice_number ? `nº ${row.invoice_number}` : "";
+    if (promoteErr || firstImport || r.case_id) continue;
+    const numberLabel = r.invoice_number ? `nº ${r.invoice_number}` : "";
     await notifyOrganization(sb, {
       organizationId: integration.organization_id,
       kind: "integration",
       title: `Facture en retard détectée ${numberLabel}`.trim(),
-      body: `L’échéance de la facture ${numberLabel || "importée"}${row.customer_name ? ` de ${row.customer_name}` : ""} est dépassée. Créez le dossier en un clic depuis le Suivi.`,
+      body: `L’échéance de la facture ${numberLabel || "importée"}${r.customer_name ? ` de ${r.customer_name}` : ""} est dépassée. Créez le dossier en un clic depuis le Suivi.`,
       href: "/app/envois",
       email: false,
     });
@@ -334,8 +248,7 @@ export async function syncPennylaneOrg(
       status: "connected",
       last_sync_at: syncStartedAt,
       last_error: hadWriteError ? "Synchronisation partielle — reprise au prochain passage." : null,
-      // Erreur d'écriture → curseur inchangé, le lot sera rejoué.
-      sync_cursor: hadWriteError ? integration.sync_cursor : nextCursor,
+      sync_cursor: hadWriteError ? integration.sync_cursor : fetched.nextCursor,
     })
     .eq("id", integration.id);
   return { ok: true };
@@ -346,22 +259,16 @@ async function fail(
   integration: IntegrationRow,
   message: string,
 ): Promise<{ ok: false; error: string }> {
+  const label = providerLabel(integration.provider);
   await sb
     .from("org_integrations")
-    .update({
-      status: "error",
-      last_error: message.slice(0, 300),
-      last_sync_at: new Date().toISOString(),
-    })
+    .update({ status: "error", last_error: message.slice(0, 300), last_sync_at: new Date().toISOString() })
     .eq("id", integration.id);
-  // Première bascule en erreur → l'utilisateur est prévenu (cloche) : sans
-  // ça, les données vieillissent en silence jusqu'à sa prochaine visite des
-  // Paramètres.
   if (integration.status !== "error") {
     await notifyOrganization(sb, {
       organizationId: integration.organization_id,
       kind: "alert",
-      title: "Synchronisation Pennylane en échec",
+      title: `Synchronisation ${label} en échec`,
       body: `${message} Vérifiez la connexion dans Paramètres → Connexions.`,
       href: "/app/parametres",
       email: false,

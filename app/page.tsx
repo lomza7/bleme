@@ -210,8 +210,16 @@ function Hero() {
                 Nouveau
               </span>
               <span>Se branche sur</span>
-              <span className="inline-flex items-center rounded-full bg-white px-2.5 py-1 shadow-sm transition-transform duration-500 ease-fluid group-hover:scale-[1.03]">
-                <Image src="/logos/pennylane.svg" alt="Pennylane" width={91} height={18} className="h-[18px] w-auto" />
+              <span className="inline-flex items-center gap-1.5 transition-transform duration-500 ease-fluid group-hover:scale-[1.03]">
+                {[
+                  { src: "/logos/pennylane.svg", alt: "Pennylane", w: 81 },
+                  { src: "/logos/axonaut.svg", alt: "Axonaut", w: 75 },
+                  { src: "/logos/sellsy.svg", alt: "Sellsy", w: 66 },
+                ].map((l) => (
+                  <span key={l.alt} className="inline-flex items-center rounded-full bg-white px-2 py-1 shadow-sm">
+                    <Image src={l.src} alt={l.alt} width={l.w} height={16} className="h-4 w-auto" />
+                  </span>
+                ))}
               </span>
               <span>— vos impayés deviennent des dossiers en un clic.</span>
             </a>

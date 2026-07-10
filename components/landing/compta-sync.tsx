@@ -43,13 +43,21 @@ export function ComptaSync() {
               </span>
             </h2>
             <p className="mt-5 max-w-lg text-lg leading-relaxed text-ink-muted">
-              Branchez{" "}
-              <span className="inline-flex translate-y-[3px] items-center rounded-full bg-white px-2.5 py-1">
-                <Image src="/logos/pennylane.svg" alt="Pennylane" width={101} height={20} className="h-5 w-auto" />
-              </span>{" "}
-              en deux minutes : vos factures en retard arrivent dans BLEME,
-              chacune prête à devenir un dossier.
+              Branchez votre logiciel de facturation en deux minutes : vos
+              factures en retard arrivent dans BLEME, chacune prête à devenir un
+              dossier.
             </p>
+            <div className="mt-5 flex flex-wrap items-center gap-2.5">
+              {[
+                { src: "/logos/pennylane.svg", alt: "Pennylane", w: 101 },
+                { src: "/logos/axonaut.svg", alt: "Axonaut", w: 94 },
+                { src: "/logos/sellsy.svg", alt: "Sellsy", w: 83 },
+              ].map((l) => (
+                <span key={l.alt} className="inline-flex items-center rounded-full bg-white px-3 py-1.5 shadow-sm">
+                  <Image src={l.src} alt={l.alt} width={l.w} height={20} className="h-5 w-auto" />
+                </span>
+              ))}
+            </div>
           </Reveal>
 
           <Reveal delay={0.1}>

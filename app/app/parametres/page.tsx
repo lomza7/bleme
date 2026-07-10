@@ -5,7 +5,7 @@ import { Building2, Cable, ShieldAlert, UserRound } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/app/ui";
 import { OrganizationForm, ProfileForm } from "@/components/app/settings-forms";
-import { PennylaneConnection, type IntegrationInfo } from "@/components/app/settings-connections";
+import { IntegrationConnections, type IntegrationInfo } from "@/components/app/settings-connections";
 
 export const metadata: Metadata = { title: "Paramètres" };
 
@@ -16,22 +16,14 @@ export default async function ParametresPage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [{ data: profile }, { data: org }, { data: integration }, { count: unpaidCount }] =
-    await Promise.all([
-      supabase.from("profiles").select("full_name, phone").eq("id", user.id).maybeSingle(),
-      supabase.from("organizations").select("name, siret").limit(1).maybeSingle(),
-      supabase
-        .from("org_integrations")
-        .select("status, company_name, last_sync_at, last_error")
-        .eq("provider", "pennylane")
-        .maybeSingle(),
-      supabase
-        .from("accounting_invoices")
-        .select("id", { count: "exact", head: true })
-        .eq("paid", false)
-        .is("case_id", null)
-        .in("status", ["late", "partially_paid"]),
-    ]);
+  const [{ data: profile }, { data: org }, { data: integrations }] = await Promise.all([
+    supabase.from("profiles").select("full_name, phone").eq("id", user.id).maybeSingle(),
+    supabase.from("organizations").select("name, siret").limit(1).maybeSingle(),
+    supabase
+      .from("org_integrations")
+      .select("provider, status, company_name, last_sync_at, last_error")
+      .returns<NonNullable<IntegrationInfo>[]>(),
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -80,10 +72,7 @@ export default async function ParametresPage() {
           </div>
         </div>
         <div className="mt-6">
-          <PennylaneConnection
-            integration={integration as IntegrationInfo}
-            unpaidCount={unpaidCount ?? 0}
-          />
+          <IntegrationConnections integrations={integrations ?? []} />
         </div>
       </section>
 

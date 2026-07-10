@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import { PageHeader } from "@/components/app/ui";
 import { DemoTrail, EnvoiCard, FreshnessDot, type EnvoiRow } from "@/components/app/envoi-card";
 import { DetectedInvoices, type DetectedInvoice } from "@/components/app/detected-invoices";
+import { PROVIDERS, SUPPORTED_PROVIDERS } from "@/lib/integrations/providers-meta";
 import { RelanceCalendar, type CalEvent } from "@/components/app/relance-calendar";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { ALERT_STAGES, DONE_STAGES } from "@/lib/courrier/tracking";
@@ -174,12 +175,11 @@ export default async function SuiviPage({
   ]);
   const detectedInvoices = detectedRes.data;
   const detectedTotal = detectedRes.count ?? undefined;
-  // Connexion compta : pilote la carte d'activation (invisible si connectée).
-  const { data: comptaIntegration } = await supabase
+  // Compta connectée ? (au moins un fournisseur) → pilote la carte d'activation.
+  const { count: comptaCount } = await supabase
     .from("org_integrations")
-    .select("id")
-    .eq("provider", "pennylane")
-    .maybeSingle();
+    .select("id", { count: "exact", head: true });
+  const comptaConnected = (comptaCount ?? 0) > 0;
 
   const all = data ?? [];
   const counts = { tous: all.length, "en-cours": 0, aboutis: 0, "a-verifier": 0 };
@@ -218,19 +218,29 @@ export default async function SuiviPage({
       <DetectedInvoices invoices={detectedInvoices ?? []} totalCount={detectedTotal} />
 
       {/* Compta non connectée : la porte d'entrée vers l'intégration. */}
-      {!comptaIntegration ? (
+      {!comptaConnected ? (
         <Link
           href="/app/parametres"
           className="anim-load flex items-center gap-3 rounded-2xl border border-dashed bg-card/60 p-4 outline-none transition-all duration-500 ease-fluid hover:border-brand/50 hover:bg-brand-soft/30 focus-visible:border-brand/50 focus-visible:ring-2 focus-visible:ring-brand/40"
         >
-          <span className="flex h-10 shrink-0 items-center justify-center rounded-xl bg-white px-2.5 shadow-sm ring-1 ring-black/5">
-            <Image src="/logos/pennylane.svg" alt="Pennylane" width={81} height={16} className="h-4 w-auto" />
+          <span className="flex shrink-0 items-center gap-1.5">
+            {SUPPORTED_PROVIDERS.map((p) => (
+              <span key={p} className="inline-flex h-9 items-center rounded-xl bg-white px-2 shadow-sm ring-1 ring-black/5">
+                <Image
+                  src={PROVIDERS[p].logo}
+                  alt={PROVIDERS[p].label}
+                  width={Math.round(15 * PROVIDERS[p].logoAspect)}
+                  height={15}
+                  style={{ height: 15, width: "auto" }}
+                />
+              </span>
+            ))}
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-sm font-semibold">Connectez votre compta</span>
             <span className="block truncate text-xs text-muted-foreground">
-              Vos factures impayées apparaissent ici, prêtes à devenir des blèmes en un clic —
-              et vous êtes prévenu quand une facture est réglée.
+              Pennylane, Axonaut ou Sellsy : vos factures impayées apparaissent ici, prêtes à
+              devenir des blèmes en un clic — et vous êtes prévenu quand une facture est réglée.
             </span>
           </span>
           <ArrowRight className="size-4 shrink-0 text-muted-foreground" />

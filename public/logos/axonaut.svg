@@ -1,0 +1,5 @@
+<svg width="150" height="32" viewBox="0 0 150 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <circle cx="16" cy="16" r="16" fill="#12123D"/>
+  <path d="M16 7l7 12.5H9L16 7z" fill="#4F6BFF"/>
+  <text x="40" y="22" textLength="106" lengthAdjust="spacingAndGlyphs" font-family="Helvetica, Arial, sans-serif" font-size="19" font-weight="700" letter-spacing="-0.5" fill="#12123D">axonaut</text>
+</svg>

@@ -5,19 +5,25 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { decryptToken, encryptToken } from "@/lib/integrations/crypto";
-import { verifyToken, downloadInvoicePdf, isPennylaneError } from "@/lib/integrations/pennylane";
-import { syncPennylaneOrg } from "@/lib/integrations/sync";
+import { getAdapter } from "@/lib/integrations/registry";
+import { isIntegrationError } from "@/lib/integrations/types";
+import { PROVIDERS, SUPPORTED_PROVIDERS, type ProviderId } from "@/lib/integrations/providers-meta";
+import { syncOrg } from "@/lib/integrations/sync";
 import { touchCase } from "@/lib/cases/touch";
 
 /*
- * Actions de l'intégration comptable (Pennylane). Le token ne transite que
- * par ces actions : vérifié contre l'API, chiffré (AES-GCM), stocké dans
- * org_integration_secrets (service-role only). Les écritures service-role
- * sont TOUJOURS scoppées à l'organisation résolue depuis la session (même
- * doctrine que les webhooks : « RLS-bypass mais scopé org »).
+ * Actions de l'intégration comptable, tous fournisseurs (Pennylane, Axonaut,
+ * Sellsy). Les identifiants ne transitent que par ici : vérifiés contre l'API,
+ * chiffrés (AES-256-GCM), stockés dans org_integration_secrets (service-role
+ * only). Les écritures service-role sont TOUJOURS scoppées à l'organisation
+ * résolue depuis la session (« RLS-bypass mais scopé org »).
  */
 
 export type IntegrationState = { error?: string; success?: string };
+
+function isProvider(v: unknown): v is ProviderId {
+  return typeof v === "string" && (SUPPORTED_PROVIDERS as string[]).includes(v);
+}
 
 /** Organisation du membre connecté (client user-scoped — RLS). */
 async function currentOrg(): Promise<{ orgId: string } | { error: string }> {
@@ -36,73 +42,73 @@ async function currentOrg(): Promise<{ orgId: string } | { error: string }> {
   return { orgId: data.organization_id };
 }
 
-// Garde anti-rafale de la vérification de token (BLEME ne doit pas servir
-// d'oracle de validation de tokens volés) : fenêtre glissante en mémoire par
-// org — best-effort (par instance), suffisant pour casser les boucles.
+// Anti-rafale de la vérification d'identifiants (BLEME ne doit pas servir
+// d'oracle de validation). Fenêtre glissante en mémoire, clé org:provider.
 const connectAttempts = new Map<string, number[]>();
-function allowConnectAttempt(orgId: string): boolean {
+function allowConnectAttempt(orgId: string, provider: string): boolean {
+  const key = `${orgId}:${provider}`;
   const now = Date.now();
-  const recent = (connectAttempts.get(orgId) ?? []).filter((t) => now - t < 15 * 60_000);
+  const recent = (connectAttempts.get(key) ?? []).filter((t) => now - t < 15 * 60_000);
   recent.push(now);
-  connectAttempts.set(orgId, recent);
+  connectAttempts.set(key, recent);
   return recent.length <= 8;
 }
 
-export async function connectPennylane(
+function revalidateAll() {
+  revalidatePath("/app/parametres");
+  revalidatePath("/app/envois");
+  revalidatePath("/app");
+}
+
+export async function connectIntegration(
   _prev: IntegrationState,
   formData: FormData,
 ): Promise<IntegrationState> {
-  const token = z
-    .string()
-    .trim()
-    .min(20, "Le token semble trop court.")
-    .max(500)
-    .safeParse(formData.get("token"));
-  if (!token.success) {
-    return { error: "Collez le token API généré dans Pennylane (Paramètres → Connectivité → Développeurs)." };
-  }
+  const provider = formData.get("provider");
+  if (!isProvider(provider)) return { error: "Fournisseur inconnu." };
+  const adapter = getAdapter(provider);
+  if (!adapter) return { error: "Fournisseur non pris en charge." };
+  const label = PROVIDERS[provider].label;
+
+  const parsed = adapter.parseConnectForm(formData);
+  if ("error" in parsed) return { error: parsed.error };
+
   const org = await currentOrg();
   if ("error" in org) return { error: org.error };
-  if (!allowConnectAttempt(org.orgId)) {
+  if (!allowConnectAttempt(org.orgId, provider)) {
     return { error: "Trop de tentatives — réessayez dans quelques minutes." };
   }
 
   // Vérification réelle contre l'API avant tout stockage.
-  const check = await verifyToken(token.data);
-  if (isPennylaneError(check)) {
-    console.warn("[pennylane] tentative de connexion refusée", { orgId: org.orgId, status: check.status });
-    return {
-      error:
-        check.status === 401 || check.status === 403
-          ? "Token refusé par Pennylane — vérifiez qu’il est copié en entier, encore actif, et généré sur un plan Essential ou supérieur."
-          : check.error,
-    };
+  const check = await adapter.verifyCredentials(parsed.creds);
+  if (isIntegrationError(check)) {
+    console.warn(`[${provider}] connexion refusée`, { orgId: org.orgId, status: check.status });
+    return { error: check.error };
   }
 
-  // Chiffrement AVANT toute écriture : une rotation qui échoue ne doit jamais
-  // laisser l'ancien token actif à l'insu de l'utilisateur.
-  const encrypted = await encryptToken(token.data).catch((e) => {
-    console.error("[pennylane] chiffrement du token impossible", e);
+  // Chiffrement AVANT toute écriture : une reconnexion qui échoue ne doit
+  // jamais laisser d'anciens identifiants actifs à l'insu de l'utilisateur.
+  const encrypted = await encryptToken(parsed.creds).catch((e) => {
+    console.error(`[${provider}] chiffrement impossible`, e);
     return null;
   });
   if (!encrypted) {
-    return { error: "Connexion momentanément indisponible (configuration du chiffrement) — prévenez le support." };
+    return { error: "Connexion momentanément indisponible (chiffrement) — prévenez le support." };
   }
 
   const sb = createServiceClient();
   // Statut transitoire 'disconnected' (ignoré par le cron) tant que le secret
-  // n'est pas écrit — 'connected' n'est posé qu'en tout dernier.
+  // n'est pas écrit — 'connected' n'est posé qu'en dernier.
   const { data: integration, error: upErr } = await sb
     .from("org_integrations")
     .upsert(
       {
         organization_id: org.orgId,
-        provider: "pennylane",
+        provider,
         status: "disconnected",
         company_name: check.companyName,
         connected_at: new Date().toISOString(),
         last_error: null,
-        // Reconnexion = repartir d'un import complet propre.
         sync_cursor: null,
       },
       { onConflict: "organization_id,provider" },
@@ -114,58 +120,64 @@ export async function connectPennylane(
   const { error: secretErr } = await sb
     .from("org_integration_secrets")
     .upsert({ integration_id: integration.id, token_encrypted: encrypted });
-  if (secretErr) return { error: "Impossible d’enregistrer le token. Réessayez." };
+  if (secretErr) return { error: "Impossible d’enregistrer les identifiants. Réessayez." };
 
   await sb.from("org_integrations").update({ status: "connected" }).eq("id", integration.id);
 
-  // Premier import dans la foulée : l'utilisateur voit ses impayées tout de suite.
-  const sync = await syncPennylaneOrg(sb, { ...integration, status: "connected", sync_cursor: null });
+  const sync = await syncOrg(sb, { ...integration, status: "connected", sync_cursor: null });
 
-  revalidatePath("/app/parametres");
-  revalidatePath("/app/envois");
-  revalidatePath("/app");
+  revalidateAll();
   return sync.ok
-    ? { success: "Pennylane connecté — vos factures impayées sont importées." }
-    : { success: `Pennylane connecté. Première synchronisation à réessayer : ${sync.error}` };
+    ? { success: `${label} connecté — vos factures impayées sont importées.` }
+    : { success: `${label} connecté. Première synchronisation à réessayer : ${sync.error}` };
 }
 
-export async function disconnectPennylane(): Promise<void> {
+export async function disconnectIntegration(provider: string): Promise<void> {
+  if (!isProvider(provider)) return;
   const org = await currentOrg();
   if ("error" in org) return;
   const sb = createServiceClient();
-  // Supprime la connexion ET les factures importées (minimisation : on ne
-  // garde pas la compta d'un utilisateur déconnecté). Les dossiers créés
-  // restent, évidemment.
+  // Minimisation : on retire les factures importées de CE fournisseur (les
+  // dossiers créés restent). La connexion tombe → cascade sur le secret.
   await sb
     .from("accounting_invoices")
     .delete()
     .eq("organization_id", org.orgId)
-    .eq("provider", "pennylane");
-  await sb
-    .from("org_integrations")
-    .delete()
-    .eq("organization_id", org.orgId)
-    .eq("provider", "pennylane");
-  revalidatePath("/app/parametres");
-  revalidatePath("/app/envois");
-  revalidatePath("/app");
+    .eq("provider", provider);
+  await sb.from("org_integrations").delete().eq("organization_id", org.orgId).eq("provider", provider);
+  revalidateAll();
 }
 
-export async function syncPennylaneNow(): Promise<void> {
+export async function syncIntegration(provider: string): Promise<void> {
+  if (!isProvider(provider)) return;
   const org = await currentOrg();
   if ("error" in org) return;
   const sb = createServiceClient();
   const { data: integration } = await sb
     .from("org_integrations")
-    .select("id, organization_id, provider, sync_cursor")
+    .select("id, organization_id, provider, status, sync_cursor")
     .eq("organization_id", org.orgId)
-    .eq("provider", "pennylane")
+    .eq("provider", provider)
     .maybeSingle();
   if (!integration) return;
-  await syncPennylaneOrg(sb, integration);
-  revalidatePath("/app/parametres");
-  revalidatePath("/app/envois");
-  revalidatePath("/app");
+  await syncOrg(sb, integration);
+  revalidateAll();
+}
+
+/** Synchronise toutes les connexions comptables de l'organisation (cockpit). */
+export async function syncAllIntegrations(): Promise<void> {
+  const org = await currentOrg();
+  if ("error" in org) return;
+  const sb = createServiceClient();
+  const { data: integrations } = await sb
+    .from("org_integrations")
+    .select("id, organization_id, provider, status, sync_cursor")
+    .eq("organization_id", org.orgId)
+    .neq("status", "disconnected");
+  for (const integration of integrations ?? []) {
+    await syncOrg(sb, integration);
+  }
+  revalidateAll();
 }
 
 function days(n: number): string {
@@ -177,10 +189,10 @@ function euros(cents: number | null): string {
 }
 
 /**
- * « Créer le dossier » depuis une facture impayée importée : dossier
- * pré-rempli (client, montant, échéance), PDF de la facture joint en pièce.
- * Toutes les valeurs importées sont des SUGGESTIONS sourcées « Pennylane »,
- * modifiables partout — la correction utilisateur prime (pilier n°3).
+ * « Créer le dossier » depuis une facture importée : dossier pré-rempli
+ * (client, montant, échéance), PDF de la facture joint en pièce. Toutes les
+ * valeurs importées sont des SUGGESTIONS sourcées et modifiables — la
+ * correction utilisateur prime (pilier n°3).
  */
 export async function createCaseFromInvoice(formData: FormData): Promise<void> {
   const invoiceId = z.uuid().safeParse(formData.get("invoiceId"));
@@ -198,12 +210,14 @@ export async function createCaseFromInvoice(formData: FormData): Promise<void> {
   if (!invoice) redirect("/app/envois?creation=echec");
   if (invoice.case_id) redirect(`/app/dossiers/${invoice.case_id}`);
 
+  const provider: string = invoice.provider ?? "pennylane";
+  const label = PROVIDERS[provider as ProviderId]?.label ?? "votre compta";
   const customerName = invoice.customer_name ?? "Client à préciser";
   const numberLabel = invoice.invoice_number ? `nº ${invoice.invoice_number}` : "";
   const claimedCents = invoice.remaining_cents ?? invoice.amount_cents ?? 0;
 
   const summary = [
-    `Dossier créé depuis Pennylane — facture ${numberLabel || "importée"}${invoice.label ? ` (« ${invoice.label} »)` : ""}.`,
+    `Dossier créé depuis ${label} — facture ${numberLabel || "importée"}${invoice.label ? ` (« ${invoice.label} »)` : ""}.`,
     `Montant total : ${euros(invoice.amount_cents)} · Reste dû : ${euros(invoice.remaining_cents ?? invoice.amount_cents)}.`,
     invoice.issued_on ? `Émise le ${new Date(invoice.issued_on).toLocaleDateString("fr-FR")}.` : null,
     invoice.deadline_on
@@ -216,8 +230,6 @@ export async function createCaseFromInvoice(formData: FormData): Promise<void> {
     .filter(Boolean)
     .join("\n\n");
 
-  // Création du dossier via le client USER-scoped (RLS) : c'est un geste
-  // utilisateur, au même titre que le wizard.
   const supabase = await createClient();
   const { data: created, error } = await supabase
     .from("cases")
@@ -238,15 +250,13 @@ export async function createCaseFromInvoice(formData: FormData): Promise<void> {
       next_action_label: "Vérifier les informations importées, puis préparer la relance",
       next_action_at: days(1),
       expected_recovery_at: days(28),
-      source: "pennylane",
+      source: isProvider(provider) ? provider : "pennylane",
     })
     .select("id")
     .single();
   if (error || !created) redirect("/app/envois?creation=echec");
 
-  // Liaison IMMÉDIATE et conditionnelle (anti double-clic) : si une autre
-  // requête a déjà lié cette facture, on jette le dossier tout juste créé et
-  // on rejoint le sien — jamais deux dossiers pour la même facture.
+  // Liaison IMMÉDIATE et conditionnelle (anti double-clic).
   const { data: claimed } = await sb
     .from("accounting_invoices")
     .update({ case_id: created.id })
@@ -267,24 +277,25 @@ export async function createCaseFromInvoice(formData: FormData): Promise<void> {
     case_id: created.id,
     organization_id: org.orgId,
     event_type: "created",
-    title: "Dossier créé depuis Pennylane",
+    title: `Dossier créé depuis ${label}`,
     description: `Facture ${numberLabel || "importée"} — ${customerName}, reste dû ${euros(claimedCents)}.`,
     source: "user",
   });
 
-  // PDF de la facture → pièce du dossier (l'URL Pennylane expire en 30 min :
-  // téléchargement immédiat). Un échec n'empêche pas la création du dossier.
+  // PDF de la facture → pièce du dossier (URLs éphémères : téléchargement
+  // immédiat). Un échec n'empêche pas la création.
+  const adapter = getAdapter(provider);
   const { data: secretRow } = await sb
     .from("org_integration_secrets")
     .select("token_encrypted, org_integrations!inner(organization_id, provider)")
     .eq("org_integrations.organization_id", org.orgId)
-    .eq("org_integrations.provider", "pennylane")
+    .eq("org_integrations.provider", provider)
     .maybeSingle();
-  if (secretRow) {
+  if (adapter && secretRow) {
     try {
-      const token = await decryptToken(secretRow.token_encrypted);
-      const pdf = await downloadInvoicePdf(token, invoice.external_id);
-      if (!isPennylaneError(pdf)) {
+      const creds = await decryptToken(secretRow.token_encrypted);
+      const pdf = await adapter.downloadInvoicePdf(creds, invoice.external_id);
+      if (!isIntegrationError(pdf)) {
         const safeName = (invoice.invoice_number ?? "facture").replace(/[^\p{L}\p{N}._-]/gu, "-");
         const path = `${org.orgId}/${created.id}/${crypto.randomUUID()}-facture-${safeName}.pdf`;
         const up = await sb.storage.from("documents").upload(path, pdf.buffer, {
@@ -295,9 +306,7 @@ export async function createCaseFromInvoice(formData: FormData): Promise<void> {
           await sb.from("documents").insert({
             organization_id: org.orgId,
             case_id: created.id,
-            file_name: invoice.invoice_number
-              ? `Facture ${invoice.invoice_number}.pdf`
-              : "Facture Pennylane.pdf",
+            file_name: invoice.invoice_number ? `Facture ${invoice.invoice_number}.pdf` : `Facture ${label}.pdf`,
             storage_path: path,
             mime_type: "application/pdf",
             size_bytes: pdf.buffer.length,
@@ -311,8 +320,7 @@ export async function createCaseFromInvoice(formData: FormData): Promise<void> {
     }
   }
 
-  // recompute:false — on préserve la prochaine action posée ci-dessus.
-  await touchCase(created.id, { type: "case_created", label: "Dossier créé depuis Pennylane" }, { recompute: false });
+  await touchCase(created.id, { type: "case_created", label: `Dossier créé depuis ${label}` }, { recompute: false });
   revalidatePath("/app");
   revalidatePath("/app/envois");
   redirect(`/app/dossiers/${created.id}`);
