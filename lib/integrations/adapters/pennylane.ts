@@ -29,6 +29,13 @@ import type {
 
 const IMPORT_MONTHS = 18;
 
+/** Curseur → RFC3339 strict (Pennylane le valide), ou null si illisible. */
+function normalizeIso(v: string | null): string | null {
+  if (!v) return null;
+  const t = Date.parse(v);
+  return Number.isFinite(t) ? new Date(t).toISOString() : null;
+}
+
 function mapStatus(s: string | null | undefined, paid: boolean): PivotStatus {
   const v = s ?? "";
   if (paid) return "paid";
@@ -139,19 +146,21 @@ export const pennylaneAdapter: ComptaAdapter = {
       // Pennylane ; un léger chevauchement au prochain sync est idempotent.
       return { invoices, deletedExternalIds: [], nextCursor: new Date(Date.now() - 3600_000).toISOString() };
     }
-    const changes = await changedInvoiceIds(creds, opts.cursor ?? new Date(Date.now() - 86_400_000).toISOString());
+    // Pennylane exige un start_date RFC3339 (…T…Z). Le curseur en base a pu
+    // être écrit au format Postgres (« 2026-07-10 20:05:25+00 ») par la
+    // migration timestamptz→text → on le NORMALISE, et on réécrit toujours un
+    // curseur propre (repli 24 h si illisible) pour que ça s'auto-répare.
+    const since = normalizeIso(opts.cursor) ?? new Date(Date.now() - 86_400_000).toISOString();
+    const changes = await changedInvoiceIds(creds, since);
     if (isPennylaneError(changes)) return changes;
+    const nextCursor = changes.lastProcessedAt ?? since;
     if (changes.ids.length === 0) {
-      return { invoices: [], deletedExternalIds: changes.deletedIds, nextCursor: changes.lastProcessedAt ?? opts.cursor };
+      return { invoices: [], deletedExternalIds: changes.deletedIds, nextCursor };
     }
     const res = await getInvoicesByIds(creds, changes.ids);
     if (isPennylaneError(res)) return res;
     const invoices = await toPivot(res.invoices, resolveCustomer);
-    return {
-      invoices,
-      deletedExternalIds: changes.deletedIds,
-      nextCursor: changes.lastProcessedAt ?? opts.cursor,
-    };
+    return { invoices, deletedExternalIds: changes.deletedIds, nextCursor };
   },
 
   async downloadInvoicePdf(creds, externalId) {
