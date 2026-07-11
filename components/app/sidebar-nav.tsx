@@ -18,43 +18,75 @@ import {
   Users,
   X,
 } from "lucide-react";
+import {
+  can as hasCapability,
+  type Capability,
+  type PermissionSet,
+} from "@/lib/permissions/capabilities";
 
-const SECTIONS = [
+export type NavAccess = { role: string; permissions: PermissionSet };
+
+type NavItem = {
+  href: string;
+  label: string;
+  icon: typeof Inbox;
+  exact?: boolean;
+  cap?: Capability;
+};
+
+const SECTIONS: { titre: string; items: NavItem[] }[] = [
   {
     titre: "Pilotage",
     items: [
       { href: "/app", label: "Tableau de bord", icon: LayoutDashboard, exact: true },
-      { href: "/app/inbox", label: "Boîte de réception", icon: Inbox },
-      { href: "/app/dossiers", label: "Mes dossiers", icon: FolderOpen },
-      { href: "/app/envois", label: "Suivi", icon: Truck },
-      { href: "/app/documents", label: "Mes documents", icon: FileText },
+      { href: "/app/inbox", label: "Boîte de réception", icon: Inbox, cap: "cases.view" },
+      { href: "/app/dossiers", label: "Mes dossiers", icon: FolderOpen, cap: "cases.view" },
+      { href: "/app/envois", label: "Suivi", icon: Truck, cap: "cases.view" },
+      { href: "/app/documents", label: "Mes documents", icon: FileText, cap: "documents.view" },
     ],
   },
   {
     titre: "Compte",
     items: [
       { href: "/app/equipe", label: "Mon équipe", icon: Users },
-      { href: "/app/abonnement", label: "Mon abonnement", icon: CreditCard },
-      { href: "/app/export", label: "Exporter", icon: Download },
+      { href: "/app/abonnement", label: "Mon abonnement", icon: CreditCard, cap: "billing.view" },
+      { href: "/app/export", label: "Exporter", icon: Download, cap: "export.data" },
       { href: "/app/parametres", label: "Paramètres", icon: Settings },
     ],
   },
 ];
 
-function NavItems({ onNavigate, isAdmin }: { onNavigate?: () => void; isAdmin?: boolean }) {
+function NavItems({
+  onNavigate,
+  isAdmin,
+  access,
+}: {
+  onNavigate?: () => void;
+  isAdmin?: boolean;
+  access?: NavAccess;
+}) {
   const pathname = usePathname();
-  const sections = isAdmin
+  const base = isAdmin
     ? [
         ...SECTIONS.slice(0, -1),
         {
           ...SECTIONS[SECTIONS.length - 1],
           items: [
             ...SECTIONS[SECTIONS.length - 1].items,
-            { href: "/admin", label: "Administration", icon: ShieldCheck },
+            { href: "/admin", label: "Administration", icon: ShieldCheck } as NavItem,
           ],
         },
       ]
     : SECTIONS;
+  // Masque les entrées dont le membre n'a pas la capacité (« voir quoi »).
+  const sections = base
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(
+        (item) => !item.cap || !access || hasCapability(access.role, access.permissions, item.cap),
+      ),
+    }))
+    .filter((section) => section.items.length > 0);
   return (
     <nav className="flex flex-1 flex-col gap-6">
       {sections.map((section) => (
@@ -109,10 +141,12 @@ export function SidebarNav({
   userCard,
   isAdmin,
   bell,
+  access,
 }: {
   userCard: React.ReactNode;
   isAdmin?: boolean;
   bell?: React.ReactNode;
+  access?: NavAccess;
 }) {
   return (
     <aside className="sticky top-0 hidden h-dvh w-64 shrink-0 flex-col gap-6 border-r bg-background px-4 py-6 lg:flex">
@@ -123,7 +157,7 @@ export function SidebarNav({
         {bell}
       </div>
       <NewCaseButton />
-      <NavItems isAdmin={isAdmin} />
+      <NavItems isAdmin={isAdmin} access={access} />
       {userCard}
     </aside>
   );
@@ -133,10 +167,12 @@ export function MobileTopBar({
   userCard,
   isAdmin,
   bell,
+  access,
 }: {
   userCard: React.ReactNode;
   isAdmin?: boolean;
   bell?: React.ReactNode;
+  access?: NavAccess;
 }) {
   const [open, setOpen] = useState(false);
   return (
@@ -188,7 +224,7 @@ export function MobileTopBar({
               </button>
             </div>
             <NewCaseButton onNavigate={() => setOpen(false)} />
-            <NavItems onNavigate={() => setOpen(false)} isAdmin={isAdmin} />
+            <NavItems onNavigate={() => setOpen(false)} isAdmin={isAdmin} access={access} />
             {userCard}
           </div>
         </div>

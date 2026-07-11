@@ -26,6 +26,9 @@ import {
   type InviteKind,
   type InviteState,
 } from "@/lib/team/actions";
+import { ROLE_DESCRIPTIONS } from "@/lib/permissions/capabilities";
+
+type TeamRole = "manager" | "collaborator" | "viewer" | "accountant";
 
 /*
  * Flux d'invitation en modale, en trois temps : choix (équipe / comptable /
@@ -72,7 +75,7 @@ const inputClass =
   "w-full rounded-2xl border bg-background px-4 py-3 text-[15px] transition-all duration-300 placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-brand";
 
 // ── Bouton d'ouverture + orchestration de la modale ──────────────────────────
-export function InviteButton({ canGrantAdmin = false }: { canGrantAdmin?: boolean }) {
+export function InviteButton({ isOwner = false }: { isOwner?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <>
@@ -88,7 +91,7 @@ export function InviteButton({ canGrantAdmin = false }: { canGrantAdmin?: boolea
       </button>
       <AnimatePresence>
         {open ? (
-          <InviteFlow key="invite-flow" canGrantAdmin={canGrantAdmin} onClose={() => setOpen(false)} />
+          <InviteFlow key="invite-flow" isOwner={isOwner} onClose={() => setOpen(false)} />
         ) : null}
       </AnimatePresence>
     </>
@@ -98,10 +101,10 @@ export function InviteButton({ canGrantAdmin = false }: { canGrantAdmin?: boolea
 type Step = "choose" | "form" | "success";
 
 function InviteFlow({
-  canGrantAdmin,
+  isOwner,
   onClose,
 }: {
-  canGrantAdmin: boolean;
+  isOwner: boolean;
   onClose: () => void;
 }) {
   const reduce = useReducedMotion();
@@ -235,7 +238,7 @@ function InviteFlow({
             >
               <FormStep
                 kind={kind}
-                canGrantAdmin={canGrantAdmin}
+                isOwner={isOwner}
                 pending={pending}
                 error={result.error}
                 onBack={() => setStep("choose")}
@@ -330,14 +333,14 @@ function ChooseStep({
 // ── Étape 2 : formulaire adapté au type ──────────────────────────────────────
 function FormStep({
   kind,
-  canGrantAdmin,
+  isOwner,
   pending,
   error,
   onBack,
   onSubmit,
 }: {
   kind: InviteKind;
-  canGrantAdmin: boolean;
+  isOwner: boolean;
   pending: boolean;
   error?: string;
   onBack: () => void;
@@ -373,7 +376,7 @@ function FormStep({
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4 sm:p-5">
         {isTeam ? (
           <>
-            <TeamRoleField canGrantAdmin={canGrantAdmin} />
+            <TeamRoleField isOwner={isOwner} />
             <TextField name="email" label="Son adresse email" type="email" required placeholder="associe@entreprise.fr" autoFocus hint="Il rejoint l'équipe en créant son compte avec cette adresse." />
             <TextField name="fullName" label="Son nom" placeholder="Sacha Morel" optional />
           </>
@@ -420,13 +423,16 @@ function FormStep({
   );
 }
 
-function TeamRoleField({ canGrantAdmin }: { canGrantAdmin: boolean }) {
-  const [role, setRole] = useState<"member" | "admin">("member");
-  if (!canGrantAdmin) return <input type="hidden" name="role" value="member" />;
-  const opts: { value: "member" | "admin"; label: string; hint: string }[] = [
-    { value: "member", label: "Membre", hint: "Suit et prépare les dossiers" },
-    { value: "admin", label: "Administrateur", hint: "Gère aussi l'équipe et le compte" },
-  ];
+const TEAM_ROLE_OPTS: { value: TeamRole; label: string; hint: string; ownerOnly?: boolean }[] = [
+  { value: "collaborator", label: "Collaborateur", hint: "Dossiers & pièces" },
+  { value: "manager", label: "Gestionnaire", hint: "Gère aussi l'équipe & la compta", ownerOnly: true },
+  { value: "viewer", label: "Lecture seule", hint: "Consulte, sans modifier" },
+  { value: "accountant", label: "Comptable externe", hint: "Compta + pièces" },
+];
+
+function TeamRoleField({ isOwner }: { isOwner: boolean }) {
+  const opts = TEAM_ROLE_OPTS.filter((o) => isOwner || !o.ownerOnly);
+  const [role, setRole] = useState<TeamRole>("collaborator");
   return (
     <div className="flex flex-col gap-2">
       <span className="text-sm font-medium">Son rôle</span>
@@ -454,6 +460,7 @@ function TeamRoleField({ canGrantAdmin }: { canGrantAdmin: boolean }) {
           );
         })}
       </div>
+      <p className="text-xs text-muted-foreground">{ROLE_DESCRIPTIONS[role]}</p>
     </div>
   );
 }

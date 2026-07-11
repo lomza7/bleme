@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { can as hasCapability, type PermissionSet } from "@/lib/permissions/capabilities";
 import { publicEnv } from "@/lib/env";
 import { getStripe, isStripeConfigured } from "@/lib/billing/stripe";
 import { casePriceForOrg, hasActivePro } from "@/lib/billing/pricing";
@@ -28,11 +29,16 @@ async function currentBillingContext(): Promise<
 
   const { data: membership } = await supabase
     .from("organization_members")
-    .select("organization_id")
+    .select("organization_id, role, permissions")
     .eq("user_id", user.id)
     .limit(1)
     .maybeSingle();
   if (!membership) return null;
+  // Gérer l'abonnement & le paiement = 'billing.manage' (chemins Stripe en
+  // service-role, hors RLS).
+  if (!hasCapability(membership.role, membership.permissions as PermissionSet, "billing.manage")) {
+    return null;
+  }
 
   const { data: org } = await supabase
     .from("organizations")

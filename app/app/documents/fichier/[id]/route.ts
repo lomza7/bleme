@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { can } from "@/lib/permissions/server";
 
 /** Télécharge un document via une URL signée courte (RLS appliquée). */
 export async function GET(
@@ -7,6 +8,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  if (!(await can("documents.download"))) {
+    return NextResponse.json({ error: "Droit insuffisant" }, { status: 403 });
+  }
   const supabase = await createClient();
   const { data: doc } = await supabase
     .from("documents")

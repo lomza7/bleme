@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { can } from "@/lib/permissions/server";
 
 /** Télécharge une pièce jointe d'email via une URL signée courte (RLS appliquée :
  * un utilisateur ne peut ouvrir que les pièces jointes de son organisation). */
@@ -8,6 +9,9 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+  if (!(await can("documents.download"))) {
+    return NextResponse.json({ error: "Droit insuffisant" }, { status: 403 });
+  }
   const supabase = await createClient();
   const { data: att } = await supabase
     .from("inbox_attachments")

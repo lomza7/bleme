@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { can as hasCapability, type PermissionSet } from "@/lib/permissions/capabilities";
 import { decryptToken, encryptToken } from "@/lib/integrations/crypto";
 import { getAdapter } from "@/lib/integrations/registry";
 import { isIntegrationError } from "@/lib/integrations/types";
@@ -25,7 +26,12 @@ function isProvider(v: unknown): v is ProviderId {
   return typeof v === "string" && (SUPPORTED_PROVIDERS as string[]).includes(v);
 }
 
-/** Organisation du membre connecté (client user-scoped — RLS). */
+/**
+ * Organisation du membre connecté (client user-scoped — RLS) + garde de droit :
+ * toutes les actions de ce module MODIFIENT la compta (connexions, sync,
+ * archivage, dossier depuis facture) et passent en service-role (bypass RLS),
+ * donc on exige 'compta.manage' ici.
+ */
 async function currentOrg(): Promise<{ orgId: string } | { error: string }> {
   const supabase = await createClient();
   const {
@@ -34,11 +40,14 @@ async function currentOrg(): Promise<{ orgId: string } | { error: string }> {
   if (!user) return { error: "Session expirée, reconnectez-vous." };
   const { data } = await supabase
     .from("organization_members")
-    .select("organization_id")
+    .select("organization_id, role, permissions")
     .eq("user_id", user.id)
     .limit(1)
     .maybeSingle();
   if (!data) return { error: "Organisation introuvable." };
+  if (!hasCapability(data.role, data.permissions as PermissionSet, "compta.manage")) {
+    return { error: "Vous n'avez pas le droit de gérer la comptabilité." };
+  }
   return { orgId: data.organization_id };
 }
 

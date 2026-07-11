@@ -1,25 +1,20 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import {
-  Calculator,
-  Clock,
-  Crown,
-  Mail,
-  Scale,
-  Sparkles,
-  Users,
-} from "lucide-react";
+import { Calculator, Clock, Crown, Mail, Scale, Sparkles, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { getMyAccess } from "@/lib/permissions/server";
+import {
+  can as hasCapability,
+  roleFromPermissions,
+  ROLE_LABELS,
+  type MemberRole,
+  type PermissionSet,
+} from "@/lib/permissions/capabilities";
 import { PageHeader } from "@/components/app/ui";
 import { InvitationActions, InviteButton } from "@/components/app/team-invite";
+import { EditInviteButton, MemberAccessButton } from "@/components/app/team-access";
 
 export const metadata: Metadata = { title: "Mon équipe" };
-
-const ROLE_LABEL: Record<string, string> = {
-  owner: "Propriétaire",
-  admin: "Administrateur",
-  member: "Membre",
-};
 
 const PRO = {
   accountant: { label: "Expert-comptable", icon: Calculator, tile: "bg-emerald-50 text-emerald-700 ring-emerald-200" },
@@ -41,6 +36,18 @@ function fmtDate(iso: string): string {
   return new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short" });
 }
 
+/** Libellé de rôle : owner/admin hérités à part, sinon dérivé des droits. */
+function roleLabelOf(role: string, perms: PermissionSet): string {
+  if (role === "owner") return ROLE_LABELS.owner;
+  if (role === "admin") return "Administrateur";
+  return ROLE_LABELS[roleFromPermissions(perms)];
+}
+
+function inviteRoleLabel(role: string): string {
+  if (role in ROLE_LABELS) return ROLE_LABELS[role as MemberRole];
+  return role === "admin" ? "Administrateur" : "Collaborateur";
+}
+
 export default async function EquipePage() {
   const supabase = await createClient();
   const {
@@ -48,28 +55,27 @@ export default async function EquipePage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const access = await getMyAccess();
+  const isOwner = access?.role === "owner";
+  const canManage = isOwner || hasCapability(access?.role, access?.permissions, "team.manage");
+  const canInvite = isOwner || hasCapability(access?.role, access?.permissions, "team.invite");
+
   const [{ data: org }, { data: members }, { data: invitations }, { data: profile }] =
     await Promise.all([
       supabase.from("organizations").select("id, name").limit(1).maybeSingle(),
       supabase
         .from("organization_members")
-        .select("id, role, user_id, created_at")
+        .select("id, role, permissions, user_id, created_at")
         .order("created_at"),
       supabase
         .from("invitations")
         .select(
-          "id, kind, role, email, full_name, firm_name, phone, status, created_at, expires_at, token, accepted_user_id",
+          "id, kind, role, email, full_name, firm_name, phone, status, created_at, expires_at, token",
         )
         .order("created_at", { ascending: false }),
       supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle(),
     ]);
 
-  const myRole = members?.find((m) => m.user_id === user.id)?.role;
-  const canGrantAdmin = myRole === "owner";
-
-  // Identités des coéquipiers : profiles n'est lisible que pour soi et
-  // auth.users est hors RLS → helper SECURITY DEFINER cloisonné à l'org. Repli
-  // silencieux (« Membre ») tant que la fonction n'est pas déployée.
   type MemberDisplay = { user_id: string; full_name: string | null; email: string | null };
   const { data: memberDisplay } = org
     ? await supabase.rpc("org_members_display", { p_org: org.id })
@@ -89,11 +95,12 @@ export default async function EquipePage() {
   const memberRows = (members ?? []).map((m) => {
     const isMe = m.user_id === user.id;
     const disp = displayByUser.get(m.user_id);
+    const perms = (m.permissions as PermissionSet | null) ?? {};
     const name = isMe
       ? profile?.full_name?.trim() || user.email || "Vous"
       : disp?.full_name?.trim() || disp?.email?.split("@")[0] || "Membre";
     const email = isMe ? user.email : (disp?.email ?? "");
-    return { id: m.id, role: m.role, name, email, isMe };
+    return { userId: m.user_id, role: m.role, perms, name, email, isMe };
   });
 
   const teamCount = memberRows.length + teamInvites.length;
@@ -104,11 +111,11 @@ export default async function EquipePage() {
         title="Mon équipe"
         sub={
           org?.name
-            ? `Les personnes qui travaillent sur les dossiers de ${org.name} — et les experts qui vous accompagnent.`
-            : "Invitez vos coéquipiers et les experts qui vous accompagnent."
+            ? `Les personnes qui travaillent sur les dossiers de ${org.name} — chacune avec ses droits.`
+            : "Invitez vos coéquipiers et réglez leurs droits."
         }
       >
-        <InviteButton canGrantAdmin={canGrantAdmin} />
+        {canInvite ? <InviteButton isOwner={isOwner} /> : null}
       </PageHeader>
 
       {/* ── Coéquipiers ─────────────────────────────────────────────────── */}
@@ -131,9 +138,9 @@ export default async function EquipePage() {
         <div>
           {memberRows.map((m, i) => (
             <div
-              key={m.id}
+              key={m.userId}
               style={{ animationDelay: `${120 + i * 45}ms` }}
-              className="flex items-center justify-between gap-4 border-b px-6 py-4 duration-500 animate-in fade-in-0 fill-mode-both last:border-b-0"
+              className="flex items-center justify-between gap-3 border-b px-6 py-4 duration-500 animate-in fade-in-0 fill-mode-both last:border-b-0"
             >
               <div className="flex min-w-0 items-center gap-3.5">
                 <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-brand-soft text-sm font-bold text-brand-strong">
@@ -149,10 +156,15 @@ export default async function EquipePage() {
                   <p className="truncate text-sm text-muted-foreground">{m.email}</p>
                 </div>
               </div>
-              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
-                {m.role === "owner" ? <Crown className="size-3 text-brand" /> : null}
-                {ROLE_LABEL[m.role] ?? m.role}
-              </span>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground">
+                  {m.role === "owner" ? <Crown className="size-3 text-brand" /> : null}
+                  {roleLabelOf(m.role, m.perms)}
+                </span>
+                {canManage && m.role !== "owner" && m.role !== "admin" && !m.isMe ? (
+                  <MemberAccessButton userId={m.userId} name={m.name} role={m.role} permissions={m.perms} />
+                ) : null}
+              </div>
             </div>
           ))}
 
@@ -173,21 +185,23 @@ export default async function EquipePage() {
                     <p className="truncate font-medium">{who}</p>
                     <p className="truncate text-sm text-muted-foreground">
                       {inv.full_name ? inv.email : `Invité·e le ${fmtDate(inv.created_at)}`}
-                      {inv.role === "admin" ? " · Administrateur" : ""}
+                      {" · "}
+                      {inviteRoleLabel(inv.role)}
                     </p>
                   </div>
                 </div>
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex shrink-0 items-center gap-1.5">
                   <span
                     className={`hidden items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium sm:inline-flex ${
-                      expired
-                        ? "bg-muted text-muted-foreground"
-                        : "bg-amber-100 text-amber-800"
+                      expired ? "bg-muted text-muted-foreground" : "bg-amber-100 text-amber-800"
                     }`}
                   >
                     <Clock className="size-3" />
                     {expired ? "Expirée" : "En attente"}
                   </span>
+                  {canInvite ? (
+                    <EditInviteButton id={inv.id} currentEmail={inv.email} currentName={inv.full_name} />
+                  ) : null}
                   <InvitationActions id={inv.id} kind="team" token={inv.token} />
                 </div>
               </div>
@@ -253,11 +267,14 @@ export default async function EquipePage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex shrink-0 items-center gap-1.5">
                     <span className="hidden rounded-full bg-muted px-3 py-1 text-xs font-medium text-muted-foreground sm:inline-flex">
                       {meta.label}
                       {expired ? " · expirée" : ""}
                     </span>
+                    {canInvite ? (
+                      <EditInviteButton id={inv.id} currentEmail={inv.email} currentName={inv.full_name} />
+                    ) : null}
                     <InvitationActions id={inv.id} kind={inv.kind as "accountant" | "lawyer"} token={null} />
                   </div>
                 </div>
@@ -268,9 +285,9 @@ export default async function EquipePage() {
       </section>
 
       <p className="px-1 text-xs leading-relaxed text-muted-foreground">
-        Les coéquipiers accèdent à vos dossiers et peuvent préparer les pièces et valider les
-        envois. Les experts sont invités par email : ils n’ont pas accès à votre espace pour
-        l’instant.
+        Chaque coéquipier a ses propres droits : voir ou modifier les dossiers, télécharger les
+        pièces, valider les envois, gérer la compta… Réglez-les d’un clic sur « Droits ». Les
+        experts sont invités par email et n’ont pas accès à votre espace.
       </p>
     </div>
   );

@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { can } from "@/lib/permissions/server";
 import { touchCase } from "@/lib/cases/touch";
 import { LETTER_KINDS, LETTER_PALIER, LETTER_MENTIONS, INDEMNITE_FORFAITAIRE } from "@/lib/cases/letter-meta";
 import { runAgent } from "@/lib/ai/client";
@@ -701,6 +702,12 @@ export async function approveAndSendLetter(
 
   const org = await orgFor();
   if (!org) return { error: "Session expirée, reconnectez-vous." };
+
+  // Droit de VALIDER & ENVOYER (pilier juridique) — gaté côté action car
+  // l'envoi passe par des chemins que la RLS ne voit pas.
+  if (!(await can("letters.send"))) {
+    return { error: "Vous n'avez pas le droit de valider et d'envoyer un courrier." };
+  }
 
   const supabase = await createClient();
   const { data: letter } = await supabase

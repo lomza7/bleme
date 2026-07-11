@@ -3,6 +3,7 @@ import { LogOut } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/env";
 import { signOut } from "@/lib/auth/actions";
+import { getMyAccess } from "@/lib/permissions/server";
 import { MobileTopBar, SidebarNav } from "@/components/app/sidebar-nav";
 import { NotificationBell, NotificationsProvider } from "@/components/app/notification-center";
 import type { NotificationItem } from "@/lib/notifications/actions";
@@ -38,6 +39,12 @@ export default async function AppLayout({
   // Onboarding /bienvenue pas encore terminé → on y passe ensuite (une fois).
   if (profile && profile.onboarding_state !== "done") redirect("/bienvenue");
   const isAdmin = Boolean(profile?.is_admin);
+
+  // Droits du membre → navigation (masque « voir quoi »).
+  const access = await getMyAccess();
+  const navAccess = access
+    ? { role: access.role, permissions: access.permissions }
+    : undefined;
 
   const name = profile?.full_name ?? user.email ?? "";
   const initials = name
@@ -82,9 +89,9 @@ export default async function AppLayout({
         initialUnread={notifUnread ?? 0}
       >
         <div className="flex">
-          <SidebarNav userCard={userCard} isAdmin={isAdmin} bell={bell} />
+          <SidebarNav userCard={userCard} isAdmin={isAdmin} bell={bell} access={navAccess} />
           <div className="min-w-0 flex-1">
-            <MobileTopBar userCard={userCard} isAdmin={isAdmin} bell={bell} />
+            <MobileTopBar userCard={userCard} isAdmin={isAdmin} bell={bell} access={navAccess} />
             <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 lg:px-10 lg:py-10">
               {children}
             </main>
