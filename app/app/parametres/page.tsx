@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Building2, Cable, ChevronRight, Braces, ShieldAlert, UserRound } from "lucide-react";
+import { Building2, Cable, ChevronRight, Braces, ShieldAlert, UserRound, Webhook } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { accessCan, getMyAccess } from "@/lib/permissions/server";
 import { PageHeader } from "@/components/app/ui";
@@ -92,6 +92,24 @@ export default async function ParametresPage() {
             <h2 className="text-lg font-semibold">Clés API</h2>
             <p className="text-xs text-muted-foreground">
               Connectez BLEME à vos outils (facturation, CRM, scripts) en lecture.
+            </p>
+          </div>
+          <ChevronRight className="size-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        </Link>
+      ) : null}
+
+      {canManageApi ? (
+        <Link
+          href="/app/parametres/webhooks"
+          className="group flex items-center gap-3 rounded-[1.75rem] border bg-card p-8 transition-colors hover:border-brand/40"
+        >
+          <span className="flex size-10 items-center justify-center rounded-full bg-brand-soft text-brand-strong">
+            <Webhook className="size-4.5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-semibold">Webhooks</h2>
+            <p className="text-xs text-muted-foreground">
+              Recevez les événements en temps réel (paiement, réponse, dossier résolu).
             </p>
           </div>
           <ChevronRight className="size-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />

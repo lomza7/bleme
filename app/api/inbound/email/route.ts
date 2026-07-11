@@ -6,6 +6,7 @@ import { ALLOWED_MIME, MAX_SIZE, resolveMime } from "@/lib/documents/mime";
 import { recomputeLetterTrackingStatus } from "@/lib/courrier/tracking-aggregate";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { notifyOrganization } from "@/lib/notifications/notify";
+import { enqueueWebhook } from "@/lib/webhooks/enqueue";
 
 // Webhook non authentifié (exempté par proxy.ts) : c'est Resend qui appelle.
 // On vérifie la signature Svix, on résout l'organisation par inbox_slug, on
@@ -289,6 +290,11 @@ export async function POST(req: Request): Promise<Response> {
         body: `${displayName(from) ?? fromContact ?? "Le destinataire"} a répondu : « ${quote} »`,
         href: "/app/inbox",
         email: true,
+      });
+      await enqueueWebhook(orgId, "reply.received", {
+        case_id: repliedLetter.case_id,
+        letter_id: repliedLetter.id,
+        inbox_item_id: item.id,
       });
     }
   } else {

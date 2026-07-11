@@ -12,6 +12,7 @@ import {
 import { recomputeLetterTrackingStatus } from "@/lib/courrier/tracking-aggregate";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { notifyOrganization } from "@/lib/notifications/notify";
+import { enqueueWebhook } from "@/lib/webhooks/enqueue";
 
 /*
  * Webhook Merci Facteur (suivi des courriers postaux) : chaque événement est
@@ -191,6 +192,11 @@ export async function POST(req: Request) {
     // le statut — un name_event inconnu est journalisé sans agréger.
     if (KNOWN_POSTAL_EVENTS.has(eventName)) {
       await recomputeLetterTrackingStatus(sb, letter.id);
+      await enqueueWebhook(letter.organization_id, "letter.tracking_updated", {
+        case_id: letter.case_id,
+        letter_id: letter.id,
+        stage,
+      });
     }
 
     // Preuves numérisées : archivées comme pièces du dossier (l'AR signé est

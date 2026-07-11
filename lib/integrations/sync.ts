@@ -5,6 +5,7 @@ import { getAdapter } from "@/lib/integrations/registry";
 import { isIntegrationError, type PivotInvoice } from "@/lib/integrations/types";
 import { PROVIDERS, type ProviderId } from "@/lib/integrations/providers-meta";
 import { notifyOrganization } from "@/lib/notifications/notify";
+import { enqueueWebhook } from "@/lib/webhooks/enqueue";
 
 /*
  * Synchronisation comptable d'une organisation, tous fournisseurs (service-role,
@@ -192,6 +193,7 @@ export async function syncOrg(
         href: `/app/dossiers/${before.case_id}`,
         email: true,
       });
+      await enqueueWebhook(integration.organization_id, "invoice.payment_detected", { case_id: before.case_id });
     } else if (becameActionable) {
       await notifyOrganization(sb, {
         organizationId: integration.organization_id,

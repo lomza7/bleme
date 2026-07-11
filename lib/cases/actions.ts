@@ -6,6 +6,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { fetchCompanyFiche } from "@/lib/companies/pappers";
 import { touchCase } from "@/lib/cases/touch";
+import { enqueueWebhook } from "@/lib/webhooks/enqueue";
 
 async function currentOrgId(): Promise<{ orgId: string } | { error: string }> {
   const supabase = await createClient();
@@ -189,6 +190,7 @@ export async function createCaseFromDraft(
   // Contexte initial dès la création (v1 datée) ; recompute:false préserve la
   // prochaine action posée par le wizard (« Ajoutez vos preuves »).
   await touchCase(created.id, { type: "case_created", label: "Dossier créé" }, { recompute: false });
+  await enqueueWebhook(org.orgId, "case.created", { case_id: created.id });
   revalidatePath("/app");
   redirect(`/app/dossiers/${created.id}`);
 }
@@ -251,13 +253,17 @@ export async function recordPayment(
   const supabase = await createClient();
   const { data: current } = await supabase
     .from("cases")
-    .select("amount_claimed_cents, amount_recovered_cents, stage_total")
+    .select("organization_id, status, amount_claimed_cents, amount_recovered_cents, stage_total")
     .eq("id", caseId.data)
     .single();
   if (!current) return { error: "Dossier introuvable." };
 
   const recovered = current.amount_recovered_cents + cents;
   const fullyPaid = recovered >= current.amount_claimed_cents;
+  // Org dérivée du DOSSIER (pas de currentOrgId « première org ») pour ne pas
+  // écrire/émettre sous une org arbitraire d'un membre multi-org.
+  const caseOrgId = current.organization_id as string;
+  const wasResolved = current.status === "resolved";
 
   const { error } = await supabase
     .from("cases")
@@ -277,7 +283,7 @@ export async function recordPayment(
 
   await supabase.from("case_events").insert({
     case_id: caseId.data,
-    organization_id: org.orgId,
+    organization_id: caseOrgId,
     event_type: "payment",
     title: fullyPaid ? "Paiement reçu, dossier soldé" : "Paiement partiel reçu",
     description: `Montant encaissé : ${(cents / 100).toLocaleString("fr-FR")} €.`,
@@ -288,6 +294,8 @@ export async function recordPayment(
     type: "payment",
     label: fullyPaid ? "Paiement reçu — dossier soldé" : "Paiement partiel reçu",
   });
+  // Uniquement à la TRANSITION vers résolu (pas à chaque paiement sur un soldé).
+  if (fullyPaid && !wasResolved) await enqueueWebhook(caseOrgId, "case.resolved", { case_id: caseId.data });
   revalidatePath("/app");
   revalidatePath(`/app/dossiers/${caseId.data}`);
   return {};

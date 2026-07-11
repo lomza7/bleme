@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/compta-sync",
       "schedule": "0 5 * * *"
+    },
+    {
+      "path": "/api/cron/webhooks-drain",
+      "schedule": "0 6 * * *"
     }
   ]
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import { createServiceClient } from "@/lib/supabase/server";
 import { touchCase } from "@/lib/cases/touch";
+import { enqueueWebhook } from "@/lib/webhooks/enqueue";
 
 /*
  * Cœur de création d'un dossier pour l'API publique (service-role, RLS
@@ -76,5 +77,6 @@ export async function createCaseCore(
   });
 
   await touchCase(created.id, { type: "case_created", label: "Dossier créé" }, { recompute: false });
+  await enqueueWebhook(orgId, "case.created", { case_id: created.id });
   return { id: created.id };
 }

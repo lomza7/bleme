@@ -6,6 +6,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { canForOrg } from "@/lib/permissions/server";
+import { enqueueWebhook } from "@/lib/webhooks/enqueue";
 import { touchCase } from "@/lib/cases/touch";
 import { LETTER_KINDS, LETTER_PALIER, LETTER_MENTIONS, INDEMNITE_FORFAITAIRE } from "@/lib/cases/letter-meta";
 import { runAgent } from "@/lib/ai/client";
@@ -862,6 +863,7 @@ export async function approveAndSendLetter(
   });
 
   await touchCase(letter.case_id, { type: "letter_sent", label: "Courrier validé pour envoi" });
+  await enqueueWebhook(orgId, "letter.sent", { case_id: letter.case_id, letter_id: letter.id, channel });
   revalidatePath(`/app/dossiers/${letter.case_id}`);
   return {
     success: reallySent

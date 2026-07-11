@@ -6,6 +6,7 @@ import { ALERT_STAGES, emailStageFor, notifyLevelFor } from "@/lib/courrier/trac
 import { recomputeLetterTrackingStatus } from "@/lib/courrier/tracking-aggregate";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { notifyOrganization } from "@/lib/notifications/notify";
+import { enqueueWebhook } from "@/lib/webhooks/enqueue";
 
 /*
  * Webhook Resend — événements SORTANTS (suivi des emails envoyés aux
@@ -136,6 +137,11 @@ export async function POST(req: Request): Promise<Response> {
   // Statut agrégé recalculé depuis les événements : pas de régression, même
   // si les webhooks arrivent dans le désordre ou en concurrence.
   await recomputeLetterTrackingStatus(sb, letter.id);
+  await enqueueWebhook(letter.organization_id, "letter.tracking_updated", {
+    case_id: letter.case_id,
+    letter_id: letter.id,
+    stage,
+  });
 
   // Chronologie du dossier : jalons significatifs seulement (les ouvertures/
   // clics restent dans l'historique du courrier, indicatifs par nature).
