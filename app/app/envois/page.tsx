@@ -168,6 +168,7 @@ export default async function SuiviPage({
       })
       .eq("paid", false)
       .is("case_id", null)
+      .is("archived_at", null)
       .in("status", ["late", "partially_paid"])
       .order("deadline_on", { ascending: true, nullsFirst: false })
       .limit(24)

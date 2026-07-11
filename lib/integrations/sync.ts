@@ -33,6 +33,7 @@ type StoredInvoice = {
   paid: boolean;
   status: string | null;
   case_id: string | null;
+  archived_at: string | null;
   invoice_number: string | null;
   customer_name: string | null;
   customer_email: string | null;
@@ -137,7 +138,7 @@ export async function syncOrg(
     ? await sb
         .from("accounting_invoices")
         .select(
-          "external_id, paid, status, case_id, invoice_number, customer_name, customer_email, customer_siren, customer_address",
+          "external_id, paid, status, case_id, archived_at, invoice_number, customer_name, customer_email, customer_siren, customer_address",
         )
         .eq("organization_id", integration.organization_id)
         .eq("provider", integration.provider)
@@ -170,7 +171,8 @@ export async function syncOrg(
       !firstImport &&
       isActionableUnpaid({ paid: row.paid, status: row.status }) &&
       (!before || !isActionableUnpaid(before)) &&
-      !before?.case_id;
+      !before?.case_id &&
+      !before?.archived_at; // facture écartée par l'utilisateur → on ne re-notifie pas
 
     if (becamePaid && before?.case_id) {
       await sb.from("case_events").insert({
@@ -223,6 +225,7 @@ export async function syncOrg(
     .eq("provider", integration.provider)
     .eq("paid", false)
     .eq("status", "upcoming")
+    .is("archived_at", null)
     .lt("deadline_on", today);
   for (const r of newlyLate ?? []) {
     const { error: promoteErr } = await sb

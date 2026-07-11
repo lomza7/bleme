@@ -199,7 +199,7 @@ export default async function AppHomePage() {
               À venir
             </h2>
             {/* Mini-timeline : les prochaines actions reliées entre elles,
-                les retards pulsent en ambre. */}
+                les retards cerclés d'ambre. */}
             <div className="mt-3 rounded-[1.75rem] border bg-card p-3">
               {agenda.length === 0 ? (
                 <p className="px-3 py-5 text-sm text-muted-foreground">
@@ -230,19 +230,14 @@ export default async function AppHomePage() {
                           href={`/app/dossiers/${c.id}`}
                           className="relative flex gap-3 rounded-2xl px-2 py-1 transition-colors duration-300 hover:bg-muted"
                         >
-                          <span className="relative mt-1.5 flex size-8 shrink-0 items-center justify-center">
-                            {overdue ? (
-                              <span className="absolute inset-0 animate-ping rounded-full bg-amber-400/50 motion-reduce:hidden" />
-                            ) : null}
-                            <span
-                              className={`relative flex size-8 items-center justify-center rounded-full ${
-                                overdue
-                                  ? "bg-amber-100 text-amber-700"
-                                  : "bg-brand-soft text-brand-strong"
-                              }`}
-                            >
-                              <CalendarClock className="size-4" />
-                            </span>
+                          <span
+                            className={`relative mt-1.5 flex size-8 shrink-0 items-center justify-center rounded-full ${
+                              overdue
+                                ? "bg-amber-100 text-amber-700 ring-1 ring-amber-300"
+                                : "bg-brand-soft text-brand-strong"
+                            }`}
+                          >
+                            <CalendarClock className="size-4" />
                           </span>
                           <span className="min-w-0 py-2.5">
                             <span className="block truncate text-sm font-medium">
@@ -372,10 +367,7 @@ function DashStat({
           <CountUp value={valueCount ?? 0} kind="count" delayMs={delay + 150} />
         )}
         {pulse ? (
-          <span className="relative flex size-2 -translate-y-1" aria-hidden>
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-60 motion-reduce:hidden" />
-            <span className="relative inline-flex size-2 rounded-full bg-brand" />
-          </span>
+          <span className="inline-flex size-2 -translate-y-1 rounded-full bg-brand" aria-hidden />
         ) : null}
       </p>
       <p className={`relative mt-1 text-xs ${accent ? "text-ink-muted" : "text-muted-foreground"}`}>{sub}</p>

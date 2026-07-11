@@ -6,11 +6,10 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { ArrowRight, CalendarClock, Check, CircleAlert, Settings, TriangleAlert } from "lucide-react";
+import { ArrowRight, Check, CircleAlert, Settings } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { createCaseFromInvoice } from "@/lib/integrations/actions";
 import { PROVIDERS, SUPPORTED_PROVIDERS, type ProviderId } from "@/lib/integrations/providers-meta";
-import { CreateCaseFromInvoiceButton } from "@/components/app/create-case-button";
+import { ComptaInvoices } from "@/components/app/compta-invoices";
 import { SyncNowButton } from "@/components/app/sync-now-button";
 import { euros, relativeTimeFr } from "@/lib/format";
 
@@ -42,13 +41,8 @@ type InvoiceRow = {
   status: string | null;
   paid: boolean;
   case_id: string | null;
+  archived_at: string | null;
 };
-
-function overdueDays(deadline: string | null): number | null {
-  if (!deadline) return null;
-  const days = Math.floor((Date.now() - new Date(deadline).getTime()) / (24 * 3600 * 1000));
-  return days > 0 ? days : null;
-}
 
 export async function ComptaPanel() {
   const supabase = await createClient();
@@ -138,7 +132,7 @@ export async function ComptaPanel() {
   const [{ data: unpaidRows }, { count: paidCount }] = await Promise.all([
     supabase
       .from("accounting_invoices")
-      .select("id, invoice_number, customer_name, amount_cents, remaining_cents, deadline_on, status, paid, case_id")
+      .select("id, invoice_number, customer_name, amount_cents, remaining_cents, deadline_on, status, paid, case_id, archived_at")
       .eq("paid", false)
       .order("deadline_on", { ascending: true, nullsFirst: false })
       .limit(500)
@@ -159,19 +153,26 @@ export async function ComptaPanel() {
 
   const unpaid = unpaidRows ?? [];
   const due = (r: InvoiceRow) => r.remaining_cents ?? r.amount_cents ?? 0;
-  const late = unpaid.filter((r) => ["late", "partially_paid"].includes(r.status ?? ""));
-  const upcoming = unpaid.filter((r) => r.status === "upcoming");
+  // Les chiffres de santé excluent les factures archivées (écartées par l'utilisateur).
+  const active = unpaid.filter((r) => !r.archived_at);
+  const late = active.filter((r) => ["late", "partially_paid"].includes(r.status ?? ""));
+  const upcoming = active.filter((r) => r.status === "upcoming");
   const lateSum = late.reduce((s, r) => s + due(r), 0);
   const upcomingSum = upcoming.reduce((s, r) => s + due(r), 0);
-  // Factures OUVERTES sans dossier (en retard + à échoir + partielles),
-  // déjà triées par échéance (la plus urgente d'abord) — chacune déclarable
-  // en blème en un clic. On exclut les statuts non-recouvrables
-  // (annulée, archivée, proforma, devis).
-  const OPEN = ["late", "partially_paid", "upcoming"];
-  const openInvoices = unpaid.filter((r) => !r.case_id && OPEN.includes(r.status ?? ""));
-  const shown = openInvoices.slice(0, 6);
-  const hiddenCount = openInvoices.length - shown.length;
-
+  // Factures « à traiter » (sans dossier) passées au composant client (onglets
+  // En retard / Toutes / Archivées + archivage).
+  const panelInvoices = unpaid
+    .filter((r) => !r.case_id)
+    .map((r) => ({
+      id: r.id,
+      invoice_number: r.invoice_number,
+      customer_name: r.customer_name,
+      amount_cents: r.amount_cents,
+      remaining_cents: r.remaining_cents,
+      deadline_on: r.deadline_on,
+      status: r.status,
+      archived: Boolean(r.archived_at),
+    }));
   return (
     <section className="overflow-hidden rounded-[1.75rem] border bg-card">
       {/* En-tête : identité + synchro */}
@@ -250,72 +251,10 @@ export async function ComptaPanel() {
         </div>
       </div>
 
-      {/* Les factures ouvertes, déclarables en blème en un clic */}
-      {shown.length > 0 ? (
-        <div className="px-4 py-4 sm:px-7 sm:py-5">
-          <div className="flex flex-col gap-2">
-            {shown.map((inv) => {
-              const lateDays = overdueDays(inv.deadline_on);
-              const partial = inv.status === "partially_paid";
-              const isLate = inv.status === "late" || partial || (lateDays ?? 0) > 0;
-              return (
-                <div
-                  key={inv.id}
-                  className="flex flex-col gap-2.5 rounded-2xl bg-muted/50 px-4 py-3 ring-1 ring-black/5 sm:flex-row sm:items-center sm:gap-4"
-                >
-                  <span className="flex min-w-0 flex-1 items-center gap-3">
-                    <span
-                      className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${
-                        isLate ? "bg-amber-100 text-amber-700" : "bg-brand-soft text-brand-strong"
-                      }`}
-                    >
-                      {isLate ? <TriangleAlert className="size-3.5" /> : <CalendarClock className="size-3.5" />}
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-semibold">
-                        {inv.customer_name ?? "Client à préciser"}
-                      </span>
-                      <span className="block truncate text-[11px] text-muted-foreground">
-                        {inv.invoice_number ? `Facture nº ${inv.invoice_number}` : "Facture"}
-                        {isLate
-                          ? lateDays
-                            ? ` · ${lateDays} j de retard`
-                            : " · en retard"
-                          : inv.deadline_on
-                            ? ` · échéance le ${new Date(inv.deadline_on).toLocaleDateString("fr-FR")}`
-                            : ""}
-                        {partial ? " · paiement partiel" : ""}
-                      </span>
-                    </span>
-                  </span>
-                  <span className="flex shrink-0 items-center justify-between gap-4 sm:justify-end">
-                    <span className="text-[15px] font-bold tabular-nums tracking-tight">
-                      {euros(due(inv))}
-                    </span>
-                    <form action={createCaseFromInvoice}>
-                      <input type="hidden" name="invoiceId" value={inv.id} />
-                      <CreateCaseFromInvoiceButton />
-                    </form>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <p className="text-[11px] text-muted-foreground">
-              {hiddenCount > 0
-                ? `${hiddenCount} autre${hiddenCount > 1 ? "s" : ""} facture${hiddenCount > 1 ? "s" : ""} ouverte${hiddenCount > 1 ? "s" : ""} dans le Suivi`
-                : "Montants et clients importés de votre compta — vérifiables et corrigeables dans le dossier"}
-            </p>
-            <Link
-              href="/app/envois"
-              className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-strong transition-colors duration-300 hover:text-brand"
-            >
-              Tout le suivi
-              <ArrowRight className="size-3" />
-            </Link>
-          </div>
-        </div>
+      {/* Factures à traiter : filtre En retard / Toutes / Archivées, chacune
+          déclarable en blème ou archivable (interactif, sans recharger). */}
+      {panelInvoices.length > 0 ? (
+        <ComptaInvoices invoices={panelInvoices} />
       ) : (
         <p className="flex items-center gap-2.5 px-6 py-5 text-sm text-muted-foreground sm:px-7">
           <span className="flex size-7 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
@@ -326,6 +265,15 @@ export async function ComptaPanel() {
             : "Aucune facture ouverte détectée dans votre compta."}
         </p>
       )}
+      <div className="flex items-center justify-end border-t px-4 py-2.5 sm:px-7">
+        <Link
+          href="/app/envois"
+          className="inline-flex items-center gap-1 text-xs font-medium text-brand-strong transition-colors duration-300 hover:text-brand"
+        >
+          Tout le suivi
+          <ArrowRight className="size-3" />
+        </Link>
+      </div>
     </section>
   );
 }

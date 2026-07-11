@@ -180,6 +180,26 @@ export async function syncAllIntegrations(): Promise<void> {
   revalidateAll();
 }
 
+/** Archive / désarchive une facture importée (l'écarte de la liste à traiter). */
+export async function setInvoiceArchived(
+  invoiceId: string,
+  archived: boolean,
+): Promise<{ ok: boolean }> {
+  const id = z.uuid().safeParse(invoiceId);
+  if (!id.success) return { ok: false };
+  const org = await currentOrg();
+  if ("error" in org) return { ok: false };
+  const sb = createServiceClient();
+  const { error } = await sb
+    .from("accounting_invoices")
+    .update({ archived_at: archived ? new Date().toISOString() : null })
+    .eq("id", id.data)
+    .eq("organization_id", org.orgId);
+  if (error) return { ok: false };
+  revalidateAll();
+  return { ok: true };
+}
+
 function days(n: number): string {
   return new Date(Date.now() + n * 24 * 3600 * 1000).toISOString();
 }
