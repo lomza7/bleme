@@ -214,9 +214,15 @@ export async function POST(req: Request): Promise<Response> {
         .maybeSingle()
     ).data;
   }
-  if (!repliedLetter && fromContact) {
-    // Repli par expéditeur : dossier OUVERT dont le destinataire a cette
-    // adresse (comparaison insensible à la casse — % et _ échappés pour ilike).
+  // Repli par expéditeur : UNIQUEMENT si l'objet indique une réponse (Re:/Ré:).
+  // Sans ce garde, un email NON lié (une nouvelle facture envoyée depuis une
+  // adresse par ailleurs enregistrée comme débiteur d'un dossier ouvert) serait
+  // classé « réponse reçue » à tort et déclencherait une notification email.
+  // Fwd:/Tr: (transfert) ne comptent PAS comme réponse.
+  const looksLikeReply = /^\s*r[eé]\s*(\[\d+\])?\s*:/i.test(subject);
+  if (!repliedLetter && fromContact && looksLikeReply) {
+    // Dossier OUVERT dont le destinataire a cette adresse (comparaison
+    // insensible à la casse — % et _ échappés pour ilike).
     const { data: matchedCase } = await sb
       .from("cases")
       .select("id")
