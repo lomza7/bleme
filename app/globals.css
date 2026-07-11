@@ -320,6 +320,11 @@
   .animate-marquee {
     animation: none;
   }
+  /* Neutralise les entrées tw-animate-css (animate-in) : cohérent avec le
+     respect de reduced-motion par les composants motion/react. */
+  [class*="animate-in"] {
+    animation: none !important;
+  }
   html {
     scroll-behavior: auto;
   }

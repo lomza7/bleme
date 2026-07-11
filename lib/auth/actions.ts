@@ -55,12 +55,16 @@ export async function signUp(
       companyName: z.string().trim().optional(),
       email: emailSchema,
       password: passwordSchema,
+      // Token d'invitation d'équipe : porté dans les métadonnées d'inscription,
+      // il déclenche le rattachement à l'organisation (trigger handle_new_user).
+      inviteToken: z.string().uuid().optional().or(z.literal("")),
     })
     .safeParse({
       fullName: formData.get("fullName"),
       companyName: formData.get("companyName") || undefined,
       email: formData.get("email"),
       password: formData.get("password"),
+      inviteToken: formData.get("inviteToken") || undefined,
     });
   if (!parsed.success) {
     return { error: parsed.error.issues[0].message };
@@ -74,6 +78,7 @@ export async function signUp(
       data: {
         full_name: parsed.data.fullName,
         company_name: parsed.data.companyName ?? "",
+        invite_token: parsed.data.inviteToken || "",
       },
       emailRedirectTo: `${publicEnv().NEXT_PUBLIC_APP_URL}/auth/confirm?next=/app`,
     },
