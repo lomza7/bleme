@@ -673,6 +673,7 @@ function Footer() {
               <li><a href="#papier" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">L’envoi papier</a></li>
               <li><a href="#suivi" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Suivi des dossiers</a></li>
               <li><Link href="/tarifs" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">Tarifs</Link></li>
+              <li><Link href="/developpeurs" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">API pour développeurs</Link></li>
               <li><a href="#faq" className="text-ink-foreground/80 transition-colors duration-300 hover:text-ink-foreground">FAQ</a></li>
             </ul>
             <p className="mt-6 text-xs font-semibold uppercase tracking-[0.14em] text-ink-muted">
