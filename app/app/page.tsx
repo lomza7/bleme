@@ -1,7 +1,17 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ArrowRight, CalendarClock, FolderPlus, Sparkles, Trash2 } from "lucide-react";
+import {
+  ArrowRight,
+  CalendarClock,
+  FolderPlus,
+  PiggyBank,
+  Sparkles,
+  Trash2,
+  TrendingUp,
+  Wallet,
+  type LucideIcon,
+} from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { euros, relativeDays } from "@/lib/format";
 import { FIXED_INDEMNITY_CENTS } from "@/lib/cases/constants";
@@ -11,13 +21,8 @@ import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { DraftBanner } from "@/components/app/draft-banner";
 import { ComptaPanel } from "@/components/app/compta-panel";
 import { LetterTrackingCompact } from "@/components/app/letter-tracking";
-import {
-  CaseCard,
-  OPEN_STATUSES,
-  PageHeader,
-  StatTile,
-  type CaseRow,
-} from "@/components/app/ui";
+import { CaseCard, OPEN_STATUSES, PageHeader, type CaseRow } from "@/components/app/ui";
+import { CountUp } from "@/components/app/count-up";
 
 export const metadata: Metadata = { title: "Tableau de bord" };
 
@@ -64,7 +69,8 @@ export default async function AppHomePage() {
     FIXED_INDEMNITY_CENTS;
   // Server component : lire l'horloge au moment de la requête est voulu.
   // eslint-disable-next-line react-hooks/purity
-  const weekHorizon = Date.now() + 7 * 24 * 3600 * 1000;
+  const nowMs = Date.now();
+  const weekHorizon = nowMs + 7 * 24 * 3600 * 1000;
   const weekActions = open.filter(
     (c) => c.next_action_at && new Date(c.next_action_at).getTime() < weekHorizon,
   );
@@ -73,14 +79,29 @@ export default async function AppHomePage() {
     .slice(0, 5);
   const recents = all.slice(0, 3);
 
+  // Salutation contextuelle + date du jour (heure de Paris).
+  // parseInt : Intl renvoie « 18 h » (suffixe) — Number() donnerait NaN.
+  const parisHour = parseInt(
+    new Intl.DateTimeFormat("fr-FR", { hour: "numeric", hour12: false, timeZone: "Europe/Paris" }).format(new Date(nowMs)),
+    10,
+  );
+  const greeting = parisHour >= 18 || parisHour < 5 ? "Bonsoir" : "Bonjour";
+  const todayRaw = new Intl.DateTimeFormat("fr-FR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+    timeZone: "Europe/Paris",
+  }).format(new Date(nowMs));
+  const today = todayRaw.charAt(0).toUpperCase() + todayRaw.slice(1);
+
   return (
     <div className="flex flex-col gap-8">
       <PageHeader
-        title={firstName ? `Bonjour ${firstName}.` : "Bonjour."}
+        title={firstName ? `${greeting} ${firstName}.` : `${greeting}.`}
         sub={
           open.length === 0
-            ? "Aucun blème en cours. Profitez-en, ou prenez de l’avance."
-            : `${open.length} dossier${open.length > 1 ? "s" : ""} en cours, ${weekActions.length} action${weekActions.length > 1 ? "s" : ""} cette semaine.`
+            ? `${today} — aucun blème en cours. Profitez-en, ou prenez de l’avance.`
+            : `${today} — ${open.length} dossier${open.length > 1 ? "s" : ""} en cours, ${weekActions.length} action${weekActions.length > 1 ? "s" : ""} cette semaine.`
         }
       >
         {hasSamples ? (
@@ -102,26 +123,42 @@ export default async function AppHomePage() {
           des factures + blème en un clic une fois Pennylane branché. */}
       <ComptaPanel />
 
+      {/* La situation en quatre chiffres : ils se comptent à l'ouverture,
+          les tuiles se révèlent en cascade. */}
       <section className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <StatTile
+        <DashStat
+          icon={Wallet}
           label="En jeu"
-          value={euros(atStake)}
+          valueCents={atStake}
           sub={`${open.length} dossier${open.length > 1 ? "s" : ""} en cours`}
+          delay={0}
         />
-        <StatTile label="Récupéré" value={euros(recovered)} sub="depuis votre arrivée" accent />
-        <StatTile
+        <DashStat
+          icon={PiggyBank}
+          label="Récupéré"
+          valueCents={recovered}
+          sub="depuis votre arrivée"
+          accent
+          delay={80}
+        />
+        <DashStat
+          icon={TrendingUp}
           label="Récupérable estimé"
-          value={euros(atStake + indemnities)}
+          valueCents={atStake + indemnities}
           sub={
             indemnities > 0
               ? `dont ${euros(indemnities)} d’indemnités légales`
               : "estimation indicative"
           }
+          delay={160}
         />
-        <StatTile
+        <DashStat
+          icon={CalendarClock}
           label="Cette semaine"
-          value={String(weekActions.length)}
+          valueCount={weekActions.length}
           sub={weekActions.length > 1 ? "actions à traiter" : "action à traiter"}
+          pulse={weekActions.length > 0}
+          delay={240}
         />
       </section>
 
@@ -143,8 +180,16 @@ export default async function AppHomePage() {
               </Link>
             </div>
             <div className="mt-3 flex flex-col gap-3">
-              {recents.map((c) => (
-                <CaseCard key={c.id} c={c} lastSend={lastSends[c.id]} />
+              {recents.map((c, i) => (
+                <div
+                  key={c.id}
+                  // flex : CaseCard est un <a> sans display propre — en enfant
+                  // de bloc simple il retomberait en inline (carte cassée).
+                  className="anim-load flex flex-col"
+                  style={{ "--delay": `${320 + i * 90}ms` } as React.CSSProperties}
+                >
+                  <CaseCard c={c} lastSend={lastSends[c.id]} />
+                </div>
               ))}
             </div>
           </section>
@@ -153,35 +198,73 @@ export default async function AppHomePage() {
             <h2 className="px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
               À venir
             </h2>
-            <div className="mt-3 rounded-[1.75rem] border bg-card p-2">
+            {/* Mini-timeline : les prochaines actions reliées entre elles,
+                les retards pulsent en ambre. */}
+            <div className="mt-3 rounded-[1.75rem] border bg-card p-3">
               {agenda.length === 0 ? (
-                <p className="px-4 py-6 text-sm text-muted-foreground">
+                <p className="px-3 py-5 text-sm text-muted-foreground">
                   Rien à l’horizon. Les prochaines actions apparaîtront ici.
                 </p>
               ) : (
-                agenda.map((c) => (
-                  <Link
-                    key={c.id}
-                    href={`/app/dossiers/${c.id}`}
-                    className="flex items-start gap-3 rounded-2xl px-4 py-3.5 transition-colors duration-300 hover:bg-muted"
-                  >
-                    <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-soft text-brand-strong">
-                      <CalendarClock className="size-4" />
-                    </span>
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium">
-                        {c.next_action_label}
-                      </span>
-                      <span className="block truncate text-xs text-muted-foreground">
-                        {relativeDays(c.next_action_at!)} · {c.debtor_name}
-                      </span>
-                    </span>
-                  </Link>
-                ))
+                <ol className="flex flex-col">
+                  {agenda.map((c, i) => {
+                    const overdue = c.next_action_at
+                      ? new Date(c.next_action_at).getTime() < nowMs
+                      : false;
+                    const last = i === agenda.length - 1;
+                    return (
+                      <li
+                        key={c.id}
+                        className="anim-load relative"
+                        style={{ "--delay": `${380 + i * 80}ms` } as React.CSSProperties}
+                      >
+                        {/* Ligne de liaison CONTINUE : du bas de cette icône au
+                            haut de la suivante (déborde sur le li suivant). */}
+                        {!last ? (
+                          <span
+                            aria-hidden
+                            className="absolute -bottom-2.5 left-6 top-[46px] w-px bg-border"
+                          />
+                        ) : null}
+                        <Link
+                          href={`/app/dossiers/${c.id}`}
+                          className="relative flex gap-3 rounded-2xl px-2 py-1 transition-colors duration-300 hover:bg-muted"
+                        >
+                          <span className="relative mt-1.5 flex size-8 shrink-0 items-center justify-center">
+                            {overdue ? (
+                              <span className="absolute inset-0 animate-ping rounded-full bg-amber-400/50 motion-reduce:hidden" />
+                            ) : null}
+                            <span
+                              className={`relative flex size-8 items-center justify-center rounded-full ${
+                                overdue
+                                  ? "bg-amber-100 text-amber-700"
+                                  : "bg-brand-soft text-brand-strong"
+                              }`}
+                            >
+                              <CalendarClock className="size-4" />
+                            </span>
+                          </span>
+                          <span className="min-w-0 py-2.5">
+                            <span className="block truncate text-sm font-medium">
+                              {c.next_action_label}
+                            </span>
+                            <span
+                              className={`block truncate text-xs ${
+                                overdue ? "font-medium text-amber-700" : "text-muted-foreground"
+                              }`}
+                            >
+                              {relativeDays(c.next_action_at!)} · {c.debtor_name}
+                            </span>
+                          </span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ol>
               )}
             </div>
             {(recentSends ?? []).length > 0 ? (
-              <>
+              <div className="anim-load" style={{ "--delay": "520ms" } as React.CSSProperties}>
                 <h2 className="mt-6 px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                   Envois suivis
                 </h2>
@@ -217,7 +300,7 @@ export default async function AppHomePage() {
                     <ArrowRight className="size-3.5" />
                   </Link>
                 </div>
-              </>
+              </div>
             ) : null}
             <p className="mt-3 px-1 text-xs leading-relaxed text-muted-foreground/80">
               Le « récupérable estimé » inclut l’indemnité forfaitaire légale de
@@ -227,6 +310,75 @@ export default async function AppHomePage() {
           </aside>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Tuile de chiffre du cockpit : icône, valeur qui se compte à l'ouverture,
+ * révélation en cascade, halo brand sur la tuile accentuée (Récupéré).
+ */
+function DashStat({
+  icon: Icon,
+  label,
+  valueCents,
+  valueCount,
+  sub,
+  accent = false,
+  pulse = false,
+  delay = 0,
+}: {
+  icon: LucideIcon;
+  label: string;
+  valueCents?: number;
+  valueCount?: number;
+  sub: string;
+  accent?: boolean;
+  pulse?: boolean;
+  delay?: number;
+}) {
+  return (
+    <div
+      className={
+        accent
+          ? "anim-load relative overflow-hidden rounded-[1.75rem] bg-ink p-5 text-ink-foreground transition-all duration-500 ease-fluid hover:-translate-y-0.5 hover:shadow-xl hover:shadow-zinc-950/[0.15] sm:p-6"
+          : "anim-load rounded-[1.75rem] border bg-card p-5 transition-all duration-500 ease-fluid hover:-translate-y-0.5 hover:shadow-lg hover:shadow-zinc-950/[0.05] sm:p-6"
+      }
+      style={{ "--delay": `${delay}ms` } as React.CSSProperties}
+    >
+      {accent ? (
+        <div aria-hidden className="absolute -right-10 -top-16 size-44 rounded-full bg-brand/25 blur-[70px]" />
+      ) : null}
+      <div className="relative flex min-w-0 items-center gap-2.5">
+        <span
+          className={`flex size-8 shrink-0 items-center justify-center rounded-lg ${
+            accent ? "bg-white/10 text-brand ring-1 ring-white/15" : "bg-brand-soft text-brand-strong"
+          }`}
+        >
+          <Icon className="size-4" />
+        </span>
+        <p
+          className={`min-w-0 truncate text-[11px] font-medium uppercase tracking-[0.14em] ${
+            accent ? "text-ink-muted" : "text-muted-foreground"
+          }`}
+        >
+          {label}
+        </p>
+      </div>
+      <p className="relative mt-3 flex items-baseline gap-2 text-xl font-bold tabular-nums tracking-tight sm:text-3xl">
+        {valueCents != null ? (
+          <CountUp value={valueCents} kind="euros" delayMs={delay + 150} />
+        ) : (
+          <CountUp value={valueCount ?? 0} kind="count" delayMs={delay + 150} />
+        )}
+        {pulse ? (
+          <span className="relative flex size-2 -translate-y-1" aria-hidden>
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-brand opacity-60 motion-reduce:hidden" />
+            <span className="relative inline-flex size-2 rounded-full bg-brand" />
+          </span>
+        ) : null}
+      </p>
+      <p className={`relative mt-1 text-xs ${accent ? "text-ink-muted" : "text-muted-foreground"}`}>{sub}</p>
     </div>
   );
 }
