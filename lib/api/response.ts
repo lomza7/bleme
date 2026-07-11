@@ -30,6 +30,40 @@ export function ok(data: unknown, status = 200): NextResponse {
   return NextResponse.json(data, { status });
 }
 
+/**
+ * Lit et parse un corps JSON avec un plafond de taille DUR — vrai garde-fou
+ * anti-OOM : on rejette tôt sur Content-Length s'il est présent, PUIS on lit le
+ * corps en flux en cumulant les octets et en abandonnant dès dépassement (le
+ * Content-Length pouvant être absent en chunked ou mensonger). On ne matérialise
+ * jamais plus de maxBytes en mémoire. maxBytes selon l'endpoint.
+ */
+export async function readJsonBody(req: Request, maxBytes: number): Promise<unknown> {
+  const cl = req.headers.get("content-length");
+  if (cl && Number(cl) > maxBytes) {
+    throw new ApiError("payload_too_large", 413, "Corps de requête trop volumineux.");
+  }
+  const reader = req.body?.getReader();
+  if (!reader) return {};
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new ApiError("payload_too_large", 413, "Corps de requête trop volumineux.");
+    }
+    chunks.push(value);
+  }
+  const raw = Buffer.concat(chunks).toString("utf8");
+  try {
+    return JSON.parse(raw || "{}");
+  } catch {
+    throw new ApiError("invalid_request", 422, "Corps JSON invalide.");
+  }
+}
+
 export function fail(code: string, status: number, message?: string, details?: unknown): NextResponse {
   return NextResponse.json({ error: { code, message, ...(details !== undefined ? { details } : {}) } }, { status });
 }
