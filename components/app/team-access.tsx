@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
@@ -92,7 +93,10 @@ function Shell({ children, onClose, label }: { children: React.ReactNode; onClos
     };
   }, []);
 
-  return (
+  // Portail vers <body> : sinon la modale (position: fixed) est piégée par le
+  // contexte de transformation d'une <section> animée parente et s'affiche
+  // rognée, décalée, sans voile plein écran.
+  const content = (
     <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
       <motion.button
         type="button"
@@ -119,6 +123,7 @@ function Shell({ children, onClose, label }: { children: React.ReactNode; onClos
       </motion.div>
     </div>
   );
+  return typeof document !== "undefined" ? createPortal(content, document.body) : null;
 }
 
 // ── Éditeur de droits d'un membre ────────────────────────────────────────────

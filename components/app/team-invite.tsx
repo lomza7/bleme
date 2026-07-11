@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState, useTransition } from "react";
+import { createPortal, useFormStatus } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useFormStatus } from "react-dom";
 import {
   ArrowRight,
   Calculator,
@@ -192,7 +192,8 @@ function InviteFlow({
 
   const transition = { duration: reduce ? 0 : 0.45, ease: EASE };
 
-  return (
+  // Portail vers <body> pour échapper à tout contexte de transformation parent.
+  const overlay = (
     <div className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4">
       <motion.button
         type="button"
@@ -270,6 +271,7 @@ function InviteFlow({
       </motion.div>
     </div>
   );
+  return typeof document !== "undefined" ? createPortal(overlay, document.body) : null;
 }
 
 // ── Étape 1 : choix du type ──────────────────────────────────────────────────
