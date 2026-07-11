@@ -3,8 +3,21 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { accessCan, getMyAccess } from "@/lib/permissions/server";
+import { createClient } from "@/lib/supabase/server";
+import { hasActivePro } from "@/lib/billing/pricing";
 import { mintApiKey, revokeApiKey } from "@/lib/api/keys";
 import { API_SCOPE_CAPS } from "@/lib/api/scopes";
+
+// L'API est une fonctionnalité du forfait Pro (annoncée sur la page tarifs).
+async function orgIsPro(orgId: string): Promise<boolean> {
+  const supabase = await createClient();
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("billing_plan, billing_status, subscription_current_period_end")
+    .eq("id", orgId)
+    .maybeSingle();
+  return !!org && hasActivePro(org);
+}
 
 /*
  * Actions d'administration des clés API. Gardées par la capacité 'api.manage'
@@ -18,6 +31,9 @@ export async function createApiKeyAction(_prev: ApiKeyState, formData: FormData)
   const access = await getMyAccess();
   if (!access?.organizationId || !accessCan(access, "api.manage")) {
     return { error: "Vous n'avez pas le droit de gérer les clés API." };
+  }
+  if (!(await orgIsPro(access.organizationId))) {
+    return { error: "L'API est réservée au forfait Pro. Activez Pro pour créer une clé." };
   }
 
   const name = String(formData.get("name") ?? "").trim();

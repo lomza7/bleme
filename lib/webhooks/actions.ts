@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { z } from "zod";
 import { accessCan, getMyAccess } from "@/lib/permissions/server";
-import { createServiceClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
+import { hasActivePro } from "@/lib/billing/pricing";
 import { encryptToken } from "@/lib/integrations/crypto";
 import { newSigningSecret } from "@/lib/webhooks/sign";
 import { assertPublicHttpsUrl } from "@/lib/webhooks/ssrf";
@@ -28,6 +29,16 @@ async function guard() {
 export async function createWebhookEndpoint(_prev: WebhookState, formData: FormData): Promise<WebhookState> {
   const access = await guard();
   if (!access?.organizationId) return { error: "Vous n'avez pas le droit de gérer les webhooks." };
+
+  const supabase = await createClient();
+  const { data: org } = await supabase
+    .from("organizations")
+    .select("billing_plan, billing_status, subscription_current_period_end")
+    .eq("id", access.organizationId)
+    .maybeSingle();
+  if (!org || !hasActivePro(org)) {
+    return { error: "Les webhooks sont réservés au forfait Pro. Activez Pro pour en créer." };
+  }
 
   const url = String(formData.get("url") ?? "").trim();
   const events = formData.getAll("events").map(String).filter((e) => WEBHOOK_EVENT_TYPES.includes(e));

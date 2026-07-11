@@ -186,6 +186,13 @@ export default function DeveloppeursPage() {
                 lang="cURL"
                 code={`curl ${api}/cases \\\n  -H "Authorization: Bearer $BLEME_KEY"`}
               />
+              <p className="text-sm text-muted-foreground">
+                L’API et les webhooks font partie du{" "}
+                <Link href="/tarifs" className="font-medium text-brand-strong underline-offset-4 hover:underline">
+                  forfait Pro
+                </Link>
+                .
+              </p>
             </Section>
 
             {/* Auth */}

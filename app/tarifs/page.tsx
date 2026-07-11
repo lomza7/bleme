@@ -225,6 +225,7 @@ export default function TarifsPage() {
                   "Veille des échéances et de la prescription",
                   "Documents d’entreprise illimités (Kbis, contrats, CGV)",
                   "Dossiers en préparation illimités",
+                  "API & webhooks pour connecter vos outils",
                 ].map((f) => (
                   <li key={f} className="flex items-start gap-3 text-[15px]">
                     <Check className="mt-1 size-4 shrink-0 text-brand" />
