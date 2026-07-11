@@ -3,15 +3,21 @@
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   Archive,
   ArchiveRestore,
   ArrowLeft,
+  CircleAlert,
+  CircleCheck,
+  CornerUpLeft,
   Download,
   FileText,
   FolderCheck,
+  FolderOpen,
   Inbox,
+  LoaderCircle,
   Mail,
   MailOpen,
   MailPlus,
@@ -19,9 +25,9 @@ import {
   Paperclip,
   Plus,
   Search,
+  Send,
   Sparkles,
   StickyNote,
-  Tag,
   Trash2,
   UploadCloud,
   X,
@@ -29,17 +35,16 @@ import {
 import {
   createSampleInbox,
   deleteInboxItem,
-  deleteLabel,
   deleteSampleInbox,
+  sendInboxReply,
   toggleItemArchived,
   toggleItemRead,
+  type InboxState,
 } from "@/lib/inbox/actions";
-import { LABEL_COLORS } from "@/lib/inbox/label-colors";
 import {
   CopyAddress,
   InboxUploader,
   ItemActions,
-  NewLabelForm,
   PasteEmailForm,
 } from "@/components/app/inbox";
 
@@ -63,20 +68,17 @@ export type InboxItem = {
   attachments: { id: string; file_name: string; mime_type: string; size_bytes: number }[];
 };
 
-type Label = { id: string; name: string; color: string };
 type Case = { id: string; title: string; case_type: string };
-type Override = { is_read?: boolean; is_archived?: boolean; deleted?: boolean };
+type Override = { is_read?: boolean; is_archived?: boolean; case_id?: string | null; deleted?: boolean };
 
-const SOURCE_META: Record<
-  string,
-  { icon: typeof Mail; label: string; tint: string }
-> = {
+const EASE = [0.16, 1, 0.3, 1] as const;
+
+const SOURCE_META: Record<string, { icon: typeof Mail; label: string; tint: string }> = {
   email: { icon: Mail, label: "Email", tint: "text-sky-600 bg-sky-50" },
   whatsapp: { icon: MessageCircle, label: "WhatsApp", tint: "text-[#1DA851] bg-[#25D366]/10" },
   fichier: { icon: FileText, label: "Fichier", tint: "text-brand-strong bg-brand-soft" },
   note: { icon: StickyNote, label: "Note", tint: "text-amber-700 bg-amber-50" },
 };
-
 function sourceMeta(s: string) {
   return SOURCE_META[s] ?? SOURCE_META.fichier;
 }
@@ -90,19 +92,17 @@ function fd(obj: Record<string, string>): FormData {
 function smartTime(iso: string, now: number): string {
   const d = new Date(iso);
   const t = d.getTime();
-  const sameDay = new Date(now).toDateString() === d.toDateString();
-  if (sameDay) return d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
-  const yesterday = now - t < 48 * 3600 * 1000 && new Date(now - 24 * 3600 * 1000).toDateString() === d.toDateString();
-  if (yesterday) return "hier";
+  if (new Date(now).toDateString() === d.toDateString())
+    return d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+  if (now - t < 48 * 3600 * 1000 && new Date(now - 24 * 3600 * 1000).toDateString() === d.toDateString())
+    return "hier";
   const sameYear = new Date(now).getFullYear() === d.getFullYear();
   return d.toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: sameYear ? undefined : "2-digit" });
 }
-
 function longWhen(iso: string): string {
   const d = new Date(iso);
   return `${d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long" })} à ${d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}`;
 }
-
 function fileSize(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} Mo`;
   return `${Math.max(1, Math.round(bytes / 1024))} Ko`;
@@ -110,69 +110,82 @@ function fileSize(bytes: number): string {
 
 export function InboxClient({
   items,
-  labels,
   cases,
   caseTitles,
   address,
   hasSamples,
 }: {
   items: InboxItem[];
-  labels: Label[];
   cases: Case[];
   caseTitles: Record<string, string>;
   address: string;
   hasSamples: boolean;
 }) {
+  const router = useRouter();
   const [folder, setFolder] = useState<string>("boite");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [overrides, setOverrides] = useState<Record<string, Override>>({});
-  const [modal, setModal] = useState<"upload" | "email" | "address" | "labels" | null>(null);
+  const [modal, setModal] = useState<"upload" | "email" | "address" | null>(null);
+  const [reply, setReply] = useState<InboxItem | null>(null);
   const [, startTransition] = useTransition();
   const markedRef = useRef<Set<string>>(new Set());
   // eslint-disable-next-line react-hooks/purity -- horodatage d'affichage relatif
   const nowMs = Date.now();
 
-  const labelById = useMemo(() => new Map(labels.map((l) => [l.id, l])), [labels]);
+  const caseById = useMemo(() => new Map(cases.map((c) => [c.id, c])), [cases]);
+  const titleOf = (id: string | null | undefined) =>
+    id ? caseById.get(id)?.title ?? caseTitles[id] ?? null : null;
 
   const merged = useMemo(
     () =>
       items
         .map((i) => {
           const o = overrides[i.id];
-          return o ? { ...i, is_read: o.is_read ?? i.is_read, is_archived: o.is_archived ?? i.is_archived } : i;
+          return o
+            ? {
+                ...i,
+                is_read: o.is_read ?? i.is_read,
+                is_archived: o.is_archived ?? i.is_archived,
+                case_id: o.case_id !== undefined ? o.case_id : i.case_id,
+              }
+            : i;
         })
         .filter((i) => !overrides[i.id]?.deleted),
     [items, overrides],
   );
 
+  // Un dossier se comporte comme un LIBELLÉ : il regroupe tous les éléments qui
+  // lui sont versés, même archivés (verser marque is_archived=true). « À trier »
+  // ne montre que le vrac non classé ; « Traités » = tout l'archivé.
   const counts = useMemo(() => {
-    const c = { unread: 0, verses: 0, traites: 0, byLabel: new Map<string, number>() };
+    const c = { unread: 0, traites: 0, byCase: new Map<string, number>() };
     for (const i of merged) {
       if (i.is_archived) c.traites += 1;
-      else {
-        if (!i.is_read) c.unread += 1;
-        if (i.label_id) c.byLabel.set(i.label_id, (c.byLabel.get(i.label_id) ?? 0) + 1);
-      }
-      if (i.case_id) c.verses += 1;
+      const filedOpen = i.case_id ? caseById.has(i.case_id) : false;
+      // Boîte « À trier » : non archivé et pas classé dans un dossier OUVERT
+      // (un élément versé vers un dossier clos y retombe pour rester joignable).
+      if (!i.is_archived && !filedOpen && !i.is_read) c.unread += 1;
+      // Compteur du dossier = total des éléments classés (vue « libellé »).
+      if (filedOpen) c.byCase.set(i.case_id!, (c.byCase.get(i.case_id!) ?? 0) + 1);
     }
     return c;
-  }, [merged]);
+  }, [merged, caseById]);
 
   const inFolder = (i: InboxItem) => {
-    if (folder === "boite") return !i.is_archived;
+    const filedOpen = i.case_id ? caseById.has(i.case_id) : false;
+    if (folder === "boite") return !i.is_archived && !filedOpen;
     if (folder === "traites") return i.is_archived;
-    if (folder === "verses") return !!i.case_id;
-    if (folder.startsWith("label:")) return !i.is_archived && i.label_id === folder.slice(6);
+    if (folder.startsWith("case:")) return i.case_id === folder.slice(5);
     return true;
   };
 
   const q = query.trim().toLowerCase();
-  // Changer de dossier sort toujours de la recherche (rail ET chips).
   const goFolder = (f: string) => {
     setFolder(f);
     setQuery("");
   };
+
   const visible = useMemo(() => {
     if (q) {
       return merged.filter((i) =>
@@ -187,7 +200,6 @@ export function InboxClient({
 
   const selected = selectedId ? merged.find((i) => i.id === selectedId) ?? null : null;
 
-  // Marque lu à l'ouverture (une seule fois), optimiste + action de fond.
   const openItem = (id: string) => {
     setSelectedId(id);
     const it = merged.find((i) => i.id === id);
@@ -196,11 +208,8 @@ export function InboxClient({
       setOverrides((o) => ({ ...o, [id]: { ...o[id], is_read: true } }));
       startTransition(() => void toggleItemRead(fd({ id, read: "true" })));
     }
-    if (typeof window !== "undefined") {
-      window.history.replaceState(null, "", `/app/inbox?item=${id}`);
-    }
+    if (typeof window !== "undefined") window.history.replaceState(null, "", `/app/inbox?item=${id}`);
   };
-
   const closeItem = () => {
     setSelectedId(null);
     if (typeof window !== "undefined") window.history.replaceState(null, "", "/app/inbox");
@@ -216,21 +225,17 @@ export function InboxClient({
     const advancing = archived && selectedId === id;
     const next = advancing ? neighbourAfter(id) : null;
     setOverrides((o) => ({ ...o, [id]: { ...o[id], is_archived: archived, is_read: true } }));
-    // Auto-avance comme un clic (openItem → marque lu + met à jour l'URL).
     if (advancing) {
       if (next) openItem(next);
       else closeItem();
     }
     startTransition(() => void toggleItemArchived(fd({ id, archived: String(archived) })));
   };
-
   const setUnread = (id: string) => {
-    // Retiré du set « déjà marqué lu » : rouvrir le message le re-marquera lu.
     markedRef.current.delete(id);
     setOverrides((o) => ({ ...o, [id]: { ...o[id], is_read: false } }));
     startTransition(() => void toggleItemRead(fd({ id, read: "false" })));
   };
-
   const remove = (id: string) => {
     const advancing = selectedId === id;
     const next = advancing ? neighbourAfter(id) : null;
@@ -242,8 +247,7 @@ export function InboxClient({
     startTransition(() => void deleteInboxItem(fd({ id })));
   };
 
-  // Deep-link ?item= : initialisation depuis l'URL APRÈS montage (pas dans
-  // l'initialiseur d'état, sinon décalage d'hydratation SSR/client).
+  // Deep-link ?item= : init après montage (évite un décalage d'hydratation).
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("item");
     // eslint-disable-next-line react-hooks/set-state-in-effect -- init une fois depuis l'URL
@@ -251,15 +255,13 @@ export function InboxClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Raccourcis clavier (hors champs de saisie et modales).
+  // Raccourcis clavier (hors champs de saisie et modales, y compris imbriquées).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const el = document.activeElement as HTMLElement | null;
       const typing =
         el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
-      // Une modale ouverte (nos modales OU l'analyse email imbriquée dans
-      // ItemActions, qui portent aria-modal) gèle les raccourcis.
-      if (typing || modal || document.querySelector("[aria-modal]")) return;
+      if (typing || modal || reply || document.querySelector("[aria-modal]")) return;
       const idx = selectedId ? visible.findIndex((i) => i.id === selectedId) : -1;
       if (e.key === "ArrowDown" || e.key === "j") {
         e.preventDefault();
@@ -280,24 +282,19 @@ export function InboxClient({
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible, selectedId, selected, modal]);
+  }, [visible, selectedId, selected, modal, reply]);
 
   const folderTitle = q
     ? `Résultats pour « ${query.trim()} »`
     : folder === "traites"
       ? "Traités"
-      : folder === "verses"
-        ? "Versés"
-        : folder.startsWith("label:")
-          ? labelById.get(folder.slice(6))?.name ?? "Libellé"
-          : "Boîte";
+      : folder.startsWith("case:")
+        ? titleOf(folder.slice(5)) ?? "Dossier"
+        : "À trier";
 
   return (
-    // Cadre à hauteur fixe = viewport moins le chrome réel (barre mobile 3.5rem +
-    // padding du main). Le bloc mail prend le reste (flex-1) : jamais de double
-    // barre de défilement de page, seules les colonnes défilent.
     <div className="flex min-h-[440px] flex-col gap-4 h-[calc(100dvh-7.5rem)] lg:h-[calc(100dvh-5rem)]">
-      {/* Header : titre + recherche + Nouveau */}
+      {/* Header */}
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Boîte de réception</h1>
         <div className="flex flex-1 items-center justify-end gap-2">
@@ -324,53 +321,46 @@ export function InboxClient({
         </div>
       </div>
 
-      {/* Chips de dossiers (mobile) */}
+      {/* Chips (mobile) */}
       <div className="flex shrink-0 gap-2 overflow-x-auto pb-1 lg:hidden">
-        <FolderChip active={folder === "boite" && !q} onClick={() => { setFolder("boite"); setQuery(""); }} icon={Inbox} label="Boîte" count={counts.unread} accent />
-        <FolderChip active={folder === "traites" && !q} onClick={() => { setFolder("traites"); setQuery(""); }} icon={Archive} label="Traités" />
-        <FolderChip active={folder === "verses" && !q} onClick={() => { setFolder("verses"); setQuery(""); }} icon={FolderCheck} label="Versés" count={counts.verses} />
-        {labels.map((l) => (
+        <FolderChip active={folder === "boite" && !q} onClick={() => goFolder("boite")} icon={Inbox} label="À trier" count={counts.unread} accent />
+        <FolderChip active={folder === "traites" && !q} onClick={() => goFolder("traites")} icon={Archive} label="Traités" />
+        {cases.map((c) => (
           <FolderChip
-            key={l.id}
-            active={folder === `label:${l.id}` && !q}
-            onClick={() => { setFolder(`label:${l.id}`); setQuery(""); }}
-            dot={LABEL_COLORS[l.color]?.dot ?? LABEL_COLORS.sable.dot}
-            label={l.name}
-            count={counts.byLabel.get(l.id) ?? 0}
+            key={c.id}
+            active={folder === `case:${c.id}` && !q}
+            onClick={() => goFolder(`case:${c.id}`)}
+            icon={FolderOpen}
+            label={c.title}
+            count={counts.byCase.get(c.id) ?? 0}
           />
         ))}
       </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden rounded-[1.75rem] border bg-card">
-        {/* Rail (desktop) */}
+        {/* Rail */}
         <aside className="hidden w-52 shrink-0 flex-col justify-between border-r bg-muted/20 lg:flex xl:w-56">
           <nav className="flex flex-col gap-1 overflow-y-auto p-3">
-            <RailItem active={folder === "boite" && !q} onClick={() => goFolder("boite")} icon={Inbox} label="Boîte" count={counts.unread} accent />
+            <RailItem active={folder === "boite" && !q} onClick={() => goFolder("boite")} icon={Inbox} label="À trier" count={counts.unread} accent />
             <RailItem active={folder === "traites" && !q} onClick={() => goFolder("traites")} icon={Archive} label="Traités" count={counts.traites} muted />
-            <RailItem active={folder === "verses" && !q} onClick={() => goFolder("verses")} icon={FolderCheck} label="Versés" count={counts.verses} muted />
-            {labels.length > 0 ? (
-              <p className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
-                Libellés
-              </p>
-            ) : null}
-            {labels.map((l) => {
-              const c = LABEL_COLORS[l.color] ?? LABEL_COLORS.sable;
-              const active = folder === `label:${l.id}` && !q;
-              return (
-                <div key={l.id} className="group/lbl relative">
-                  <RailItem active={active} onClick={() => goFolder(`label:${l.id}`)} dot={c.dot} label={l.name} count={counts.byLabel.get(l.id) ?? 0} muted />
-                  <form action={deleteLabel} className="absolute right-2 top-1/2 hidden -translate-y-1/2 group-hover/lbl:block">
-                    <input type="hidden" name="id" value={l.id} />
-                    <button type="submit" aria-label={`Supprimer ${l.name}`} className="flex size-5 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-red-600">
-                      <X className="size-3" />
-                    </button>
-                  </form>
-                </div>
-              );
-            })}
-            <div className="px-2 pt-2">
-              <NewLabelForm />
-            </div>
+            <p className="px-3 pb-1 pt-4 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/70">
+              Dossiers
+            </p>
+            {cases.length === 0 ? (
+              <p className="px-3 py-1 text-xs text-muted-foreground/70">Aucun dossier ouvert.</p>
+            ) : (
+              cases.map((c) => (
+                <RailItem
+                  key={c.id}
+                  active={folder === `case:${c.id}` && !q}
+                  onClick={() => goFolder(`case:${c.id}`)}
+                  icon={FolderOpen}
+                  label={c.title}
+                  count={counts.byCase.get(c.id) ?? 0}
+                  muted
+                />
+              ))
+            )}
           </nav>
           <button
             type="button"
@@ -402,7 +392,7 @@ export function InboxClient({
                   <MessageRow
                     key={it.id}
                     item={it}
-                    label={it.label_id ? labelById.get(it.label_id) ?? null : null}
+                    caseTitle={titleOf(it.case_id)}
                     selected={selectedId === it.id}
                     now={nowMs}
                     onOpen={() => openItem(it.id)}
@@ -419,13 +409,12 @@ export function InboxClient({
             <ReadingPane
               key={selected.id}
               item={selected}
-              labelName={selected.label_id ? labelById.get(selected.label_id)?.name ?? null : null}
-              labels={labels}
+              caseTitle={titleOf(selected.case_id)}
               cases={cases}
-              caseTitle={selected.case_id ? caseTitles[selected.case_id] ?? null : null}
               onArchive={() => setArchived(selected.id, !selected.is_archived)}
               onUnread={() => setUnread(selected.id)}
               onDelete={() => remove(selected.id)}
+              onReply={() => setReply(selected)}
             />
           ) : (
             <EmptyPane address={address} onNew={() => setModal("upload")} />
@@ -438,23 +427,29 @@ export function InboxClient({
         <kbd className="rounded border px-1">e</kbd> pour traiter, <kbd className="rounded border px-1">u</kbd> pour marquer non lu.
       </p>
 
-      {/* Lecture (mobile) : panneau plein écran en portail */}
+      {/* Lecture (mobile) : feuille plein écran en portail */}
       <MobileReader open={!!selected} onClose={closeItem}>
         {selected ? (
           <ReadingPane
             key={`m-${selected.id}`}
             item={selected}
-            labelName={selected.label_id ? labelById.get(selected.label_id)?.name ?? null : null}
-            labels={labels}
+            caseTitle={titleOf(selected.case_id)}
             cases={cases}
-            caseTitle={selected.case_id ? caseTitles[selected.case_id] ?? null : null}
             onArchive={() => setArchived(selected.id, !selected.is_archived)}
             onUnread={() => setUnread(selected.id)}
             onDelete={() => remove(selected.id)}
+            onReply={() => setReply(selected)}
             onBack={closeItem}
           />
         ) : null}
       </MobileReader>
+
+      {/* Répondre */}
+      <AnimatePresence>
+        {reply ? (
+          <ReplyModal key="reply" item={reply} cases={cases} caseTitle={titleOf(reply.case_id)} onClose={() => setReply(null)} onSent={() => { setReply(null); router.refresh(); }} />
+        ) : null}
+      </AnimatePresence>
 
       {/* Modales « + Nouveau » / adresse */}
       <AnimatePresence>
@@ -484,39 +479,6 @@ export function InboxClient({
               </form>
             ) : null}
           </Modal>
-        ) : modal === "labels" ? (
-          <Modal key="m-labels" title="Libellés" onClose={() => setModal(null)}>
-            {labels.length > 0 ? (
-              <ul className="mb-4 flex flex-col divide-y">
-                {labels.map((l) => {
-                  const c = LABEL_COLORS[l.color] ?? LABEL_COLORS.sable;
-                  return (
-                    <li key={l.id} className="flex items-center justify-between gap-3 py-2.5">
-                      <span className="flex items-center gap-2 text-sm">
-                        <span className={`size-2.5 rounded-full ${c.dot}`} />
-                        {l.name}
-                      </span>
-                      <form action={deleteLabel}>
-                        <input type="hidden" name="id" value={l.id} />
-                        <button
-                          type="submit"
-                          aria-label={`Supprimer ${l.name}`}
-                          className="flex size-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-red-50 hover:text-red-600"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-                      </form>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : (
-              <p className="mb-4 text-sm text-muted-foreground">
-                Aucun libellé pour l’instant. Créez-en un pour trier vos messages par chantier ou client.
-              </p>
-            )}
-            <NewLabelForm />
-          </Modal>
         ) : null}
       </AnimatePresence>
     </div>
@@ -528,7 +490,6 @@ function RailItem({
   active,
   onClick,
   icon: Icon,
-  dot,
   label,
   count,
   accent,
@@ -536,8 +497,7 @@ function RailItem({
 }: {
   active: boolean;
   onClick: () => void;
-  icon?: typeof Inbox;
-  dot?: string;
+  icon: typeof Inbox;
   label: string;
   count?: number;
   accent?: boolean;
@@ -552,7 +512,7 @@ function RailItem({
         active ? "bg-brand-soft font-semibold text-brand-strong" : "font-medium text-muted-foreground hover:bg-muted hover:text-foreground"
       }`}
     >
-      {Icon ? <Icon className="size-4.5 shrink-0" strokeWidth={1.75} /> : <span className={`size-2.5 shrink-0 rounded-full ${dot}`} />}
+      <Icon className="size-4.5 shrink-0" strokeWidth={1.75} />
       <span className="min-w-0 flex-1 truncate text-left">{label}</span>
       {count ? (
         <span
@@ -571,15 +531,13 @@ function FolderChip({
   active,
   onClick,
   icon: Icon,
-  dot,
   label,
   count,
   accent,
 }: {
   active: boolean;
   onClick: () => void;
-  icon?: typeof Inbox;
-  dot?: string;
+  icon: typeof Inbox;
   label: string;
   count?: number;
   accent?: boolean;
@@ -588,14 +546,14 @@ function FolderChip({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
+      className={`inline-flex max-w-[12rem] shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-colors ${
         active ? "bg-ink text-white" : "bg-muted text-muted-foreground hover:text-foreground"
       }`}
     >
-      {Icon ? <Icon className="size-3.5" /> : <span className={`size-2 rounded-full ${dot}`} />}
-      {label}
+      <Icon className="size-3.5 shrink-0" />
+      <span className="truncate">{label}</span>
       {count ? (
-        <span className={`rounded-full px-1 text-[10px] font-semibold ${accent && !active ? "bg-brand text-brand-foreground" : "opacity-80"}`}>
+        <span className={`shrink-0 rounded-full px-1 text-[10px] font-semibold ${accent && !active ? "bg-brand text-brand-foreground" : "opacity-80"}`}>
           {count}
         </span>
       ) : null}
@@ -606,25 +564,22 @@ function FolderChip({
 // ── Ligne de message ─────────────────────────────────────────────────────────
 function MessageRow({
   item,
-  label,
+  caseTitle,
   selected,
   now,
   onOpen,
 }: {
   item: InboxItem;
-  label: Label | null;
+  caseTitle: string | null;
   selected: boolean;
   now: number;
   onOpen: () => void;
 }) {
   const meta = sourceMeta(item.source);
-  const labelColor = label ? LABEL_COLORS[label.color] ?? LABEL_COLORS.sable : null;
   const unread = !item.is_read;
   const sender = item.from_name || item.subject;
   return (
-    <li
-      className={`relative border-b last:border-b-0 ${selected ? "bg-brand-soft/50" : "hover:bg-muted/50"}`}
-    >
+    <li className={`relative border-b last:border-b-0 ${selected ? "bg-brand-soft/50" : "hover:bg-muted/50"}`}>
       {selected ? <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] rounded-r bg-brand" /> : null}
       <button type="button" onClick={onOpen} className="flex w-full items-start gap-3 px-4 py-3 text-left">
         <span aria-hidden className={`mt-1.5 size-2 shrink-0 rounded-full ${unread ? "bg-brand" : "bg-transparent"}`} />
@@ -644,8 +599,11 @@ function MessageRow({
           <span className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
             {item.excerpt ? <span className="min-w-0 flex-1 truncate">{item.excerpt}</span> : <span className="flex-1" />}
             {item.is_sample ? <span className="shrink-0 rounded-full bg-muted px-1.5 text-[10px]">exemple</span> : null}
-            {labelColor ? <span aria-hidden className={`size-2 shrink-0 rounded-full ${labelColor.dot}`} title={label?.name} /> : null}
-            {item.case_id ? <FolderCheck className="size-3.5 shrink-0 text-emerald-600" /> : null}
+            {caseTitle ? (
+              <span className="flex shrink-0 items-center gap-0.5 text-emerald-600" title={`Versé · ${caseTitle}`}>
+                <FolderCheck className="size-3.5" />
+              </span>
+            ) : null}
             {item.attachments.length > 0 ? (
               <span className="flex shrink-0 items-center gap-0.5">
                 <Paperclip className="size-3" />
@@ -662,33 +620,29 @@ function MessageRow({
 // ── Panneau de lecture ───────────────────────────────────────────────────────
 function ReadingPane({
   item,
-  labelName,
-  labels,
-  cases,
   caseTitle,
+  cases,
   onArchive,
   onUnread,
   onDelete,
+  onReply,
   onBack,
 }: {
   item: InboxItem;
-  labelName: string | null;
-  labels: Label[];
-  cases: Case[];
   caseTitle: string | null;
+  cases: Case[];
   onArchive: () => void;
   onUnread: () => void;
   onDelete: () => void;
+  onReply: () => void;
   onBack?: () => void;
 }) {
-  // Note : le parent remonte ce composant via `key={item.id}` → confirmDel
-  // repart à false à chaque changement de message, sans effet.
   const meta = sourceMeta(item.source);
   const [confirmDel, setConfirmDel] = useState(false);
+  const canReply = item.source === "email" && !!item.from_contact;
 
   return (
     <div className="flex min-h-0 w-full flex-col">
-      {/* Header du message */}
       <div className="shrink-0 border-b px-5 py-4">
         {onBack ? (
           <button type="button" onClick={onBack} className="mb-3 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground lg:hidden">
@@ -708,20 +662,18 @@ function ReadingPane({
         </div>
         <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
           <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">{meta.label}</span>
-          {labelName ? <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[11px] font-medium text-brand-strong">{labelName}</span> : null}
           {item.case_id ? (
             <Link
               href={`/app/dossiers/${item.case_id}`}
               className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700 ring-1 ring-emerald-200 hover:bg-emerald-100"
             >
               <FolderCheck className="size-3" />
-              Versé{caseTitle ? ` · ${caseTitle}` : ""}
+              {caseTitle ?? "Versé"}
             </Link>
           ) : null}
         </div>
       </div>
 
-      {/* Corps + pièces jointes */}
       <div className="min-h-0 flex-1 overflow-y-auto bg-muted/20 px-5 py-4">
         {item.body_text ? (
           <pre className="whitespace-pre-wrap rounded-2xl bg-card p-4 font-sans text-[13.5px] leading-relaxed text-foreground/90 ring-1 ring-black/5">
@@ -729,9 +681,7 @@ function ReadingPane({
           </pre>
         ) : (
           <p className="rounded-2xl bg-card p-4 text-sm text-muted-foreground ring-1 ring-black/5">
-            {item.attachments.length > 0
-              ? "Pièce reçue sans message. Les fichiers sont ci-dessous."
-              : "Cet élément n’a pas de contenu texte."}
+            {item.attachments.length > 0 ? "Pièce reçue sans message. Les fichiers sont ci-dessous." : "Cet élément n’a pas de contenu texte."}
           </p>
         )}
 
@@ -769,7 +719,7 @@ function ReadingPane({
       <div className="shrink-0 border-t bg-card px-5 py-3">
         {item.case_id ? (
           <p className="mb-2.5 text-sm text-muted-foreground">
-            Déjà versé au dossier{" "}
+            Classé dans le dossier{" "}
             <Link href={`/app/dossiers/${item.case_id}`} className="font-medium text-brand-strong underline-offset-4 hover:underline">
               {caseTitle ?? "concerné"}
             </Link>
@@ -777,17 +727,27 @@ function ReadingPane({
           </p>
         ) : (
           <div className="mb-2.5">
-            <ItemActions itemId={item.id} source={item.source} labelId={item.label_id} labels={labels} cases={cases} />
+            <ItemActions itemId={item.id} source={item.source} labelId={null} labels={[]} cases={cases} />
           </div>
         )}
         <div className="flex flex-wrap items-center gap-2">
+          {canReply ? (
+            <button
+              type="button"
+              onClick={onReply}
+              className="inline-flex items-center gap-1.5 rounded-full bg-brand px-3.5 py-1.5 text-xs font-medium text-brand-foreground transition-all duration-300 hover:bg-brand-strong active:scale-[0.98]"
+            >
+              <CornerUpLeft className="size-3.5" />
+              Répondre
+            </button>
+          ) : null}
           <button
             type="button"
             onClick={onArchive}
             className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-brand/40 hover:text-foreground"
           >
             {item.is_archived ? <ArchiveRestore className="size-3.5" /> : <Archive className="size-3.5" />}
-            {item.is_archived ? "Remettre en boîte" : "Marquer traité"}
+            {item.is_archived ? "Remettre" : "Traiter"}
           </button>
           <button
             type="button"
@@ -795,15 +755,11 @@ function ReadingPane({
             className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-brand/40 hover:text-foreground"
           >
             <MailOpen className="size-3.5" />
-            Marquer non lu
+            Non lu
           </button>
           {confirmDel ? (
             <span className="inline-flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={onDelete}
-                className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700"
-              >
+              <button type="button" onClick={onDelete} className="inline-flex items-center gap-1.5 rounded-full bg-red-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700">
                 <Trash2 className="size-3.5" />
                 Confirmer
               </button>
@@ -824,6 +780,146 @@ function ReadingPane({
         </div>
       </div>
     </div>
+  );
+}
+
+// ── Répondre à un email (compose + envoi validé) ─────────────────────────────
+function ReplyModal({
+  item,
+  cases,
+  caseTitle,
+  onClose,
+  onSent,
+}: {
+  item: InboxItem;
+  cases: Case[];
+  caseTitle: string | null;
+  onClose: () => void;
+  onSent: () => void;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [result, setResult] = useState<InboxState>({});
+  const [caseId, setCaseId] = useState<string>(item.case_id ?? "");
+  // Champs CONTRÔLÉS : sur une erreur transitoire (gate de facturation, droit
+  // manquant) la modale reste ouverte ; React 16/19 réinitialise un formulaire
+  // non contrôlé après une action, ce qui effacerait la réponse déjà tapée.
+  const [toEmail, setToEmail] = useState(item.from_contact ?? "");
+  const [subject, setSubject] = useState(
+    /^\s*r[eé]\s*:/i.test(item.subject) ? item.subject : `Re: ${item.subject}`,
+  );
+  const [body, setBody] = useState("Bonjour,\n\n\n\nCordialement,");
+
+  const submit = () => {
+    const form = new FormData();
+    form.set("itemId", item.id);
+    form.set("caseId", caseId);
+    form.set("toEmail", toEmail);
+    form.set("subject", subject);
+    form.set("body", body);
+    startTransition(async () => {
+      const res = await sendInboxReply({}, form);
+      setResult(res);
+      if (res.success && !res.error) setTimeout(onSent, 900);
+    });
+  };
+
+  const inputClass =
+    "w-full rounded-2xl border bg-background px-4 py-3 text-[15px] transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-brand";
+  const noCase = cases.length === 0 && !item.case_id;
+
+  return (
+    <Modal title="Répondre" onClose={onClose}>
+      <form action={submit} className="flex flex-col gap-4">
+        {item.case_id ? (
+          <p className="text-sm text-muted-foreground">
+            Réponse rattachée au dossier <span className="font-medium text-foreground">{caseTitle ?? "concerné"}</span>.
+          </p>
+        ) : noCase ? (
+          <p className="rounded-xl bg-amber-50 px-3.5 py-2.5 text-sm text-amber-800 ring-1 ring-amber-200">
+            Créez d’abord un dossier : une réponse envoyée est un courrier rattaché au dossier (validation et preuve tracées).
+          </p>
+        ) : (
+          <div className="flex flex-col gap-2">
+            <label htmlFor="reply-case" className="text-sm font-medium">Dossier</label>
+            <select
+              id="reply-case"
+              value={caseId}
+              onChange={(e) => setCaseId(e.target.value)}
+              required
+              className={inputClass}
+            >
+              <option value="" disabled>Choisir le dossier…</option>
+              {cases.map((c) => (
+                <option key={c.id} value={c.id}>{c.title}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <div className="flex flex-col gap-2">
+          <label htmlFor="reply-to" className="text-sm font-medium">À</label>
+          <input
+            id="reply-to"
+            type="email"
+            value={toEmail}
+            onChange={(e) => setToEmail(e.target.value)}
+            required
+            className={inputClass}
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <label htmlFor="reply-subject" className="text-sm font-medium">Objet</label>
+          <input
+            id="reply-subject"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            required
+            className={inputClass}
+          />
+        </div>
+        <div className="flex flex-col gap-2">
+          <label htmlFor="reply-body" className="text-sm font-medium">Votre réponse</label>
+          <textarea
+            id="reply-body"
+            rows={7}
+            required
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            className={`${inputClass} resize-none font-sans`}
+          />
+        </div>
+
+        {result.error ? (
+          <p role="alert" className="flex items-start gap-2 rounded-xl bg-red-50 px-3.5 py-2.5 text-sm text-red-700 ring-1 ring-red-100">
+            <CircleAlert className="mt-0.5 size-4 shrink-0" />
+            {result.error}
+          </p>
+        ) : result.success ? (
+          <p role="status" className="flex items-start gap-2 rounded-xl bg-emerald-50 px-3.5 py-2.5 text-sm text-emerald-800 ring-1 ring-emerald-200">
+            <CircleCheck className="mt-0.5 size-4 shrink-0" />
+            {result.success}
+          </p>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            En validant, votre réponse part par email au client. La validation et l’empreinte du contenu sont enregistrées (pilier juridique).
+          </p>
+        )}
+
+        <div className="flex items-center justify-end gap-2">
+          <button type="button" onClick={onClose} className="rounded-full px-4 py-2.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground">
+            Annuler
+          </button>
+          <button
+            type="submit"
+            disabled={pending || noCase || !!result.success}
+            className="inline-flex items-center gap-2 rounded-full bg-brand px-5 py-2.5 text-sm font-medium text-brand-foreground transition-all duration-500 ease-fluid hover:bg-brand-strong active:scale-[0.98] disabled:opacity-60"
+          >
+            {pending ? <LoaderCircle className="size-4 animate-spin" /> : <Send className="size-4" />}
+            Valider &amp; envoyer
+          </button>
+        </div>
+      </form>
+    </Modal>
   );
 }
 
@@ -856,7 +952,7 @@ function EmptyList({ folder, q, hasSamples }: { folder: string; q: string; hasSa
         <Inbox className="size-5" strokeWidth={1.75} />
       </span>
       <p className="text-sm font-medium">
-        {q ? "Aucun résultat." : folder === "traites" ? "Rien de traité." : folder === "verses" ? "Rien de versé pour l’instant." : "Votre boîte est vide."}
+        {q ? "Aucun résultat." : folder === "traites" ? "Rien de traité." : folder.startsWith("case:") ? "Aucun message dans ce dossier." : "Rien à trier."}
       </p>
       {isBoite && !hasSamples ? (
         <form action={createSampleInbox}>
@@ -870,7 +966,7 @@ function EmptyList({ folder, q, hasSamples }: { folder: string; q: string; hasSa
 }
 
 // ── « + Nouveau » ────────────────────────────────────────────────────────────
-type NewKind = "upload" | "email" | "address" | "labels";
+type NewKind = "upload" | "email" | "address";
 
 function NewMenu({ onOpen }: { onOpen: (m: NewKind) => void }) {
   const [open, setOpen] = useState(false);
@@ -903,13 +999,12 @@ function NewMenu({ onOpen }: { onOpen: (m: NewKind) => void }) {
             initial={{ opacity: 0, y: -6, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -6, scale: 0.98 }}
-            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            transition={{ duration: 0.18, ease: EASE }}
             className="absolute right-0 z-20 mt-2 w-60 overflow-hidden rounded-2xl border bg-card p-1.5 shadow-xl shadow-ink/10"
           >
             <MenuRow icon={UploadCloud} title="Déposer un fichier" sub="Scan, photo, PDF, WhatsApp" onClick={() => pick("upload")} />
             <MenuRow icon={MailPlus} title="Coller un email" sub="Objet + contenu" onClick={() => pick("email")} />
             <MenuRow icon={Sparkles} title="Par transfert" sub="Votre adresse dédiée" onClick={() => pick("address")} />
-            <MenuRow icon={Tag} title="Gérer les libellés" sub="Créer, supprimer" onClick={() => pick("labels")} />
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -931,7 +1026,7 @@ function MenuRow({ icon: Icon, title, sub, onClick }: { icon: typeof Mail; title
   );
 }
 
-// ── Modale (portail + focus + Échap + verrou scroll) ─────────────────────────
+// ── Modale (portail + focus + piège + Échap + verrou scroll) ─────────────────
 function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   const reduce = useReducedMotion();
   const ref = useRef<HTMLDivElement>(null);
@@ -1000,7 +1095,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
         initial={reduce ? false : { opacity: 0, y: 24, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={reduce ? { opacity: 0 } : { opacity: 0, y: 24, scale: 0.98 }}
-        transition={{ duration: reduce ? 0 : 0.4, ease: [0.16, 1, 0.3, 1] }}
+        transition={{ duration: reduce ? 0 : 0.4, ease: EASE }}
         className="relative z-10 flex max-h-[92vh] w-full flex-col overflow-hidden rounded-t-[1.75rem] border bg-card shadow-2xl shadow-ink/10 outline-none sm:max-w-md sm:rounded-[1.75rem]"
       >
         <div className="flex items-center justify-between gap-3 border-b px-5 py-4">
@@ -1022,7 +1117,9 @@ function MobileReader({ open, onClose, children }: { open: boolean; onClose: () 
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      // Une modale au-dessus (ex. Répondre) capte Échap en premier : ne pas
+      // fermer aussi la lecture dessous.
+      if (e.key === "Escape" && !document.querySelector("[aria-modal]")) onClose();
     };
     document.addEventListener("keydown", onKey);
     const { overflow } = document.body.style;
@@ -1040,7 +1137,7 @@ function MobileReader({ open, onClose, children }: { open: boolean; onClose: () 
           initial={reduce ? false : { x: "100%" }}
           animate={{ x: 0 }}
           exit={reduce ? { opacity: 0 } : { x: "100%" }}
-          transition={{ duration: reduce ? 0 : 0.32, ease: [0.16, 1, 0.3, 1] }}
+          transition={{ duration: reduce ? 0 : 0.32, ease: EASE }}
           className="fixed inset-0 z-50 flex flex-col bg-card lg:hidden"
         >
           {children}

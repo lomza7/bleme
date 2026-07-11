@@ -12,6 +12,8 @@ import { touchCase } from "@/lib/cases/touch";
 import { runAgent } from "@/lib/ai/client";
 import { keepClean } from "@/lib/ai/guardrails";
 import { readDocumentFacts, amountToCents } from "@/lib/cases/vision";
+import { approveAndSendLetter } from "@/lib/cases/letters";
+import { canForOrg } from "@/lib/permissions/server";
 
 /*
  * Boîte de réception : import de fichiers et d'emails collés, libellés de
@@ -767,6 +769,99 @@ export async function deleteInboxItem(formData: FormData): Promise<void> {
     await supabase.storage.from("documents").remove([item.storage_path]);
   }
   revalidatePath("/app/inbox");
+}
+
+// ── Répondre à un email depuis la boîte ──────────────────────────────────────
+// La réponse est un COURRIER rattaché au dossier : on crée le brouillon puis on
+// passe par approveAndSendLetter — SEUL chemin d'envoi (garde 'letters.send',
+// validation loggée dans approval_logs avec hash du contenu, expédition gatée
+// par SEND_ENABLED, corrélation du suivi). On ne réimplémente aucun envoi.
+export async function sendInboxReply(
+  _prev: InboxState,
+  formData: FormData,
+): Promise<InboxState> {
+  const parsed = z
+    .object({
+      itemId: z.uuid(),
+      caseId: z.uuid(),
+      toEmail: z.string().trim().toLowerCase().email("Adresse email du destinataire invalide."),
+      subject: z.string().trim().min(1, "Ajoutez un objet.").max(200),
+      body: z.string().trim().min(20, "Votre réponse est trop courte."),
+    })
+    .safeParse({
+      itemId: formData.get("itemId"),
+      caseId: formData.get("caseId"),
+      toEmail: formData.get("toEmail"),
+      subject: formData.get("subject"),
+      body: formData.get("body"),
+    });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  const { itemId, caseId, toEmail, subject, body } = parsed.data;
+
+  const supabase = await createClient();
+  // Vérifie l'accès au dossier (RLS) et récupère son org + l'email débiteur actuel.
+  const { data: c } = await supabase
+    .from("cases")
+    .select("id, organization_id, debtor_email, billing_status, is_sample")
+    .eq("id", caseId)
+    .maybeSingle();
+  if (!c) return { error: "Dossier introuvable ou accès refusé." };
+
+  // Mêmes préconditions que approveAndSendLetter, vérifiées AVANT de créer le
+  // brouillon : sans ça, un échec (droit manquant, dossier non ouvert)
+  // laisserait un brouillon « custom » orphelin affiché comme courrier en
+  // attente du dossier, ré-accumulé à chaque tentative.
+  if (!(await canForOrg(c.organization_id, "letters.send"))) {
+    return { error: "Vous n'avez pas le droit de valider et d'envoyer un courrier." };
+  }
+  if (!c.is_sample && !["paid", "included"].includes(c.billing_status ?? "")) {
+    return {
+      error:
+        "Ouvrez le dossier avant d'envoyer une réponse. La préparation et la relecture restent gratuites.",
+    };
+  }
+
+  // Brouillon de courrier (RLS letters.prepare).
+  const { data: letter, error: insErr } = await supabase
+    .from("letters")
+    .insert({
+      organization_id: c.organization_id,
+      case_id: caseId,
+      kind: "custom",
+      tone: "factuel",
+      status: "draft",
+      subject,
+      body_md: body,
+    })
+    .select("id")
+    .single();
+  if (insErr || !letter) return { error: "Impossible de préparer la réponse." };
+
+  const fd = new FormData();
+  fd.set("letterId", letter.id);
+  fd.set("channel", "email");
+  fd.set("body", body);
+  fd.set("toEmail", toEmail);
+  const result = await approveAndSendLetter({}, fd);
+  if (result.error) return { error: result.error };
+
+  // Une réponse ne redéfinit PAS le débiteur du dossier. approveAndSendLetter
+  // mémorise le destinataire dans cases.debtor_email (pertinent pour un courrier
+  // ADRESSÉ au débiteur) ; ici le destinataire peut être un tiers (comptable,
+  // expéditeur non-débiteur). On restaure donc l'email débiteur d'origine pour
+  // ne pas corrompre le préremplissage des relances ni le matching des réponses.
+  if ((c.debtor_email ?? null) !== toEmail) {
+    await supabase.from("cases").update({ debtor_email: c.debtor_email ?? null }).eq("id", caseId);
+  }
+
+  // Réponse envoyée : l'email d'origine est classé (rattaché au dossier + traité).
+  await supabase
+    .from("inbox_items")
+    .update({ case_id: caseId, is_archived: true, is_read: true })
+    .eq("id", itemId);
+
+  revalidatePath("/app/inbox");
+  return { success: result.success ?? "Réponse envoyée." };
 }
 
 // ── Exemples (démo de la boîte) ──────────────────────────────────────────────

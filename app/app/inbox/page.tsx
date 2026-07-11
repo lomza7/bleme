@@ -28,9 +28,8 @@ export default async function InboxPage() {
     : { data: null };
   const address = `${org?.inbox_slug ?? "b-votreadresse"}@dossiers.bleme.fr`;
 
-  const [{ data: items }, { data: labels }, { data: openCases }] = await Promise.all([
+  const [{ data: items }, { data: openCases }] = await Promise.all([
     supabase.from("inbox_items").select("*").order("received_at", { ascending: false }),
-    supabase.from("inbox_labels").select("id, name, color").order("created_at"),
     supabase
       .from("cases")
       .select("id, title, status, case_type")
@@ -88,7 +87,6 @@ export default async function InboxPage() {
   return (
     <InboxClient
       items={enriched}
-      labels={labels ?? []}
       cases={openCases ?? []}
       caseTitles={caseTitles}
       address={address}

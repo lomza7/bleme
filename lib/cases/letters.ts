@@ -5,7 +5,7 @@ import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
-import { can } from "@/lib/permissions/server";
+import { canForOrg } from "@/lib/permissions/server";
 import { touchCase } from "@/lib/cases/touch";
 import { LETTER_KINDS, LETTER_PALIER, LETTER_MENTIONS, INDEMNITE_FORFAITAIRE } from "@/lib/cases/letter-meta";
 import { runAgent } from "@/lib/ai/client";
@@ -700,15 +700,6 @@ export async function approveAndSendLetter(
     fromAddress = exp.data;
   }
 
-  const org = await orgFor();
-  if (!org) return { error: "Session expirée, reconnectez-vous." };
-
-  // Droit de VALIDER & ENVOYER (pilier juridique) — gaté côté action car
-  // l'envoi passe par des chemins que la RLS ne voit pas.
-  if (!(await can("letters.send"))) {
-    return { error: "Vous n'avez pas le droit de valider et d'envoyer un courrier." };
-  }
-
   const supabase = await createClient();
   const { data: letter } = await supabase
     .from("letters")
@@ -718,16 +709,28 @@ export async function approveAndSendLetter(
   if (!letter) return { error: "Courrier introuvable." };
   if (letter.status === "sent") return { error: "Ce courrier a déjà été envoyé." };
 
+  // Org dérivée du DOSSIER de la letter — jamais d'une « première » adhésion
+  // arbitraire : le droit d'envoyer (pilier juridique) et l'attribution de la
+  // preuve (approval_logs) sont scoppés à l'org de CE dossier. Sans cela, un
+  // membre multi-org pourrait valider l'envoi d'un dossier d'une org où il n'a
+  // pas 'letters.send', son droit dans une autre org faisant écran.
   const { data: billedCase } = await supabase
     .from("cases")
-    .select("billing_status, is_sample")
+    .select("organization_id, billing_status, is_sample, organizations ( inbox_slug )")
     .eq("id", letter.case_id)
     .maybeSingle();
-  if (
-    billedCase &&
-    !billedCase.is_sample &&
-    !["paid", "included"].includes(billedCase.billing_status ?? "")
-  ) {
+  if (!billedCase) return { error: "Dossier introuvable." };
+  const orgId = billedCase.organization_id as string;
+  const inboxSlug =
+    (billedCase.organizations as unknown as { inbox_slug: string | null } | null)?.inbox_slug ?? null;
+
+  // Droit de VALIDER & ENVOYER dans l'org du dossier — gaté côté action car
+  // l'envoi passe par des chemins que la RLS ne voit pas.
+  if (!(await canForOrg(orgId, "letters.send"))) {
+    return { error: "Vous n'avez pas le droit de valider et d'envoyer un courrier." };
+  }
+
+  if (!billedCase.is_sample && !["paid", "included"].includes(billedCase.billing_status ?? "")) {
     return {
       error:
         "Ouvrez le dossier avant de valider l'envoi. Vous pouvez préparer et relire gratuitement ; le paiement débloque la validation des courriers.",
@@ -774,7 +777,7 @@ export async function approveAndSendLetter(
   const h = await headers();
 
   const { error: logErr } = await supabase.from("approval_logs").insert({
-    organization_id: org.orgId,
+    organization_id: orgId,
     letter_id: letter.id,
     case_id: letter.case_id,
     user_id: user?.id ?? null,
@@ -795,7 +798,7 @@ export async function approveAndSendLetter(
     subject: letter.subject ?? "Votre courrier",
     bodyMd: body,
     toEmail: channel === "email" ? toEmail : null,
-    replyTo: org.inboxSlug ? `${org.inboxSlug}@${serverEnv().CASE_EMAIL_DOMAIN}` : null,
+    replyTo: inboxSlug ? `${inboxSlug}@${serverEnv().CASE_EMAIL_DOMAIN}` : null,
     toAddress,
     fromAddress,
     reference: letter.id,
@@ -835,7 +838,7 @@ export async function approveAndSendLetter(
     await supabase.from("cases").update({ debtor_address: toAddress }).eq("id", letter.case_id);
     // L'adresse d'expéditeur sert à tous les dossiers de l'organisation.
     if (fromAddress) {
-      await supabase.from("organizations").update({ address_json: fromAddress }).eq("id", org.orgId);
+      await supabase.from("organizations").update({ address_json: fromAddress }).eq("id", orgId);
     }
   }
 
@@ -847,7 +850,7 @@ export async function approveAndSendLetter(
       : "";
   await supabase.from("case_events").insert({
     case_id: letter.case_id,
-    organization_id: org.orgId,
+    organization_id: orgId,
     event_type: "letter_sent",
     title: reallySent
       ? `Courrier envoyé (${dispatch.via === "postal" ? "recommandé" : "email"})`
