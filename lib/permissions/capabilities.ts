@@ -36,6 +36,8 @@ export const CAPABILITIES = [
   // Équipe
   "team.invite",
   "team.manage",
+  // Développeurs & API
+  "api.manage",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -128,6 +130,17 @@ export const CAPABILITY_GROUPS: {
     caps: [
       { cap: "team.invite", label: "Inviter des personnes" },
       { cap: "team.manage", label: "Gérer les droits de l'équipe", hint: "Peut modifier les droits des autres." },
+    ],
+  },
+  {
+    key: "developers",
+    label: "Développeurs & API",
+    caps: [
+      {
+        cap: "api.manage",
+        label: "Gérer les clés API & webhooks",
+        hint: "Sensible : accès programmatique à toutes les données de l'organisation.",
+      },
     ],
   },
 ];

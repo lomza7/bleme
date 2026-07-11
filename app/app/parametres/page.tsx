@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { Building2, Cable, ShieldAlert, UserRound } from "lucide-react";
+import { Building2, Cable, ChevronRight, Braces, ShieldAlert, UserRound } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { accessCan, getMyAccess } from "@/lib/permissions/server";
 import { PageHeader } from "@/components/app/ui";
 import { OrganizationForm, ProfileForm } from "@/components/app/settings-forms";
 import { IntegrationConnections, type IntegrationInfo } from "@/components/app/settings-connections";
@@ -15,6 +16,9 @@ export default async function ParametresPage() {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+
+  const access = await getMyAccess();
+  const canManageApi = accessCan(access, "api.manage");
 
   const [{ data: profile }, { data: org }, { data: integrations }] = await Promise.all([
     supabase.from("profiles").select("full_name, phone").eq("id", user.id).maybeSingle(),
@@ -75,6 +79,24 @@ export default async function ParametresPage() {
           <IntegrationConnections integrations={integrations ?? []} />
         </div>
       </section>
+
+      {canManageApi ? (
+        <Link
+          href="/app/parametres/api"
+          className="group flex items-center gap-3 rounded-[1.75rem] border bg-card p-8 transition-colors hover:border-brand/40"
+        >
+          <span className="flex size-10 items-center justify-center rounded-full bg-brand-soft text-brand-strong">
+            <Braces className="size-4.5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <h2 className="text-lg font-semibold">Clés API</h2>
+            <p className="text-xs text-muted-foreground">
+              Connectez BLEME à vos outils (facturation, CRM, scripts) en lecture.
+            </p>
+          </div>
+          <ChevronRight className="size-5 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+        </Link>
+      ) : null}
 
       <section className="rounded-[1.75rem] border border-red-200 bg-red-50/50 p-8">
         <div className="flex items-center gap-3">
