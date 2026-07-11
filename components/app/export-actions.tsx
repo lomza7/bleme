@@ -45,12 +45,30 @@ export function DownloadButton({
   icon?: React.ReactNode;
 }) {
   const [status, setStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const run = async () => {
     setStatus("loading");
+    setErrorMsg(null);
     try {
       const res = await fetch(url);
-      if (!res.ok) throw new Error(res.status === 403 ? "forbidden" : "failed");
+      if (!res.ok) {
+        // Le serveur renvoie une raison exploitable ({ error }) : on l'affiche
+        // plutôt qu'un message générique trompeur.
+        let serverMsg: string | null = null;
+        try {
+          serverMsg = ((await res.json()) as { error?: string }).error ?? null;
+        } catch {
+          /* réponse non-JSON */
+        }
+        setErrorMsg(
+          res.status === 403
+            ? "Vous n’avez pas le droit d’exporter. Demandez-le à un propriétaire."
+            : serverMsg || "Échec de l’export. Vérifiez votre connexion, puis réessayez.",
+        );
+        setStatus("error");
+        return;
+      }
       const blob = await res.blob();
       const name = filenameFromDisposition(res.headers.get("Content-Disposition")) || fallbackName;
       const objUrl = URL.createObjectURL(blob);
@@ -63,13 +81,14 @@ export function DownloadButton({
       setTimeout(() => URL.revokeObjectURL(objUrl), 4000);
       setStatus("idle");
     } catch {
+      setErrorMsg("Échec de l’export. Vérifiez votre connexion, puis réessayez.");
       setStatus("error");
     }
   };
 
   const pad = size === "sm" ? "px-4 py-2 text-[13px]" : "px-5 py-2.5 text-sm";
   return (
-    <div className="flex flex-col items-start gap-1.5">
+    <div className="flex min-w-0 flex-col items-start gap-1.5">
       <button
         type="button"
         onClick={run}
@@ -84,10 +103,10 @@ export function DownloadButton({
         )}
         {status === "loading" ? "Préparation…" : label}
       </button>
-      {status === "error" ? (
-        <span role="alert" className="flex items-center gap-1.5 text-xs text-red-600">
-          <CircleAlert className="size-3.5" />
-          Échec de l’export. Vérifiez vos droits, puis réessayez.
+      {status === "error" && errorMsg ? (
+        <span role="alert" className="flex items-start gap-1.5 text-xs text-red-600">
+          <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+          {errorMsg}
         </span>
       ) : null}
     </div>
@@ -106,29 +125,32 @@ export type ComptaRow = {
   resolvedAt: string | null;
 };
 
+// Périodes CALENDAIRES (mois civil / année civile) : les bornes sont calculées
+// côté serveur (Europe/Paris) et passées en props — même logique que la route.
 const PERIODS = [
-  { key: "mois", label: "Ce mois" },
-  { key: "annee", label: "12 mois" },
+  { key: "mois", label: "Ce mois-ci" },
+  { key: "annee", label: "Cette année" },
   { key: "tout", label: "Tout" },
 ] as const;
 type PeriodKey = (typeof PERIODS)[number]["key"];
 
-function withinPeriod(iso: string | null, period: PeriodKey, now: number): boolean {
-  if (period === "tout") return true;
-  if (!iso) return false;
-  const t = new Date(iso).getTime();
-  const days = period === "mois" ? 31 : 365;
-  return now - t <= days * 24 * 3600 * 1000;
-}
-
-export function ComptaExport({ rows, nowMs }: { rows: ComptaRow[]; nowMs: number }) {
+export function ComptaExport({
+  rows,
+  monthStartMs,
+  yearStartMs,
+}: {
+  rows: ComptaRow[];
+  monthStartMs: number;
+  yearStartMs: number;
+}) {
   const [period, setPeriod] = useState<PeriodKey>("mois");
 
-  const filtered = useMemo(
+  const filtered = useMemo(() => {
+    if (period === "tout") return rows;
+    const start = period === "mois" ? monthStartMs : yearStartMs;
     // On date par l'encaissement (résolu) si dispo, sinon la création.
-    () => rows.filter((r) => withinPeriod(r.resolvedAt ?? r.createdAt, period, nowMs)),
-    [rows, period, nowMs],
-  );
+    return rows.filter((r) => new Date(r.resolvedAt ?? r.createdAt).getTime() >= start);
+  }, [rows, period, monthStartMs, yearStartMs]);
 
   const totals = useMemo(() => {
     return filtered.reduce(
@@ -162,7 +184,7 @@ export function ComptaExport({ rows, nowMs }: { rows: ComptaRow[]; nowMs: number
         })}
       </div>
 
-      <div className="grid grid-cols-3 gap-2.5">
+      <div className="grid grid-cols-1 gap-2.5 min-[420px]:grid-cols-3">
         <Stat label="Encaissé" value={euros(totals.recovered)} accent />
         <Stat label="Indemnités" value={euros(totals.indemnity)} />
         <Stat label="Dossiers" value={String(filtered.length)} />
@@ -182,9 +204,12 @@ export function ComptaExport({ rows, nowMs }: { rows: ComptaRow[]; nowMs: number
 function Stat({ label, value, accent = false }: { label: string; value: string; accent?: boolean }) {
   return (
     <div
-      className={`rounded-2xl p-3.5 ${accent ? "bg-brand-soft ring-1 ring-brand/15" : "bg-muted/50"}`}
+      className={`min-w-0 rounded-2xl p-3.5 ${accent ? "bg-brand-soft ring-1 ring-brand/15" : "bg-muted/50"}`}
     >
-      <p className={`text-lg font-bold tabular-nums tracking-tight ${accent ? "text-brand-strong" : ""}`}>
+      <p
+        className={`truncate text-base font-bold tabular-nums tracking-tight sm:text-lg ${accent ? "text-brand-strong" : ""}`}
+        title={value}
+      >
         {value}
       </p>
       <p className="mt-0.5 text-[11px] uppercase tracking-[0.1em] text-muted-foreground">{label}</p>

@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { accessCan, getMyAccess } from "@/lib/permissions/server";
 import { euros } from "@/lib/format";
 import { CASE_TYPE_LABEL, STATUS_META } from "@/lib/cases/constants";
-import { fetchComptaCases, indemnityCents } from "@/lib/export/comptable";
+import { fetchComptaCases, indemnityCents, periodStartMs } from "@/lib/export/comptable";
 import { PageHeader } from "@/components/app/ui";
 import { ComptaExport, DownloadButton, type ComptaRow } from "@/components/app/export-actions";
 
@@ -52,6 +52,8 @@ export default async function ExportPage() {
 
   // eslint-disable-next-line react-hooks/purity -- horodatage de filtrage de période
   const nowMs = Date.now();
+  const monthStartMs = periodStartMs("mois", nowMs);
+  const yearStartMs = periodStartMs("annee", nowMs);
   const comptaRows: ComptaRow[] = comptaCases.map((c) => ({
     title: c.title,
     debtor: c.debtor_name,
@@ -183,7 +185,7 @@ export default async function ExportPage() {
           </div>
         </div>
         <div className="p-7 sm:p-8">
-          <ComptaExport rows={comptaRows} nowMs={nowMs} />
+          <ComptaExport rows={comptaRows} monthStartMs={monthStartMs} yearStartMs={yearStartMs} />
         </div>
       </section>
     </div>

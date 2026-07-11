@@ -6,10 +6,14 @@ export function euros(cents: number): string {
   }).format(cents / 100);
 }
 
+// timeZone explicite : le serveur (Vercel) est en UTC — sans elle, un
+// horodatage proche de minuit s'affiche la veille (et peut changer de mois
+// dans les exports comptables).
 export function dateFr(d: string | Date): string {
   return new Intl.DateTimeFormat("fr-FR", {
     day: "numeric",
     month: "short",
+    timeZone: "Europe/Paris",
   }).format(new Date(d));
 }
 
@@ -18,6 +22,7 @@ export function dateLongFr(d: string | Date): string {
     day: "numeric",
     month: "long",
     year: "numeric",
+    timeZone: "Europe/Paris",
   }).format(new Date(d));
 }
 

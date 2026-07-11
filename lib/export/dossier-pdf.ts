@@ -34,7 +34,10 @@ const MUTED = rgb(0.42, 0.42, 0.46);
 const BRAND = rgb(0.62, 0.25, 0.05);
 
 // pdf-lib (Helvetica/WinAnsi) couvre le français + € ; on remplace les
-// caractères typographiques hors jeu pour ne jamais lever à l'encodage.
+// caractères typographiques hors jeu et on RETIRE les caractères de contrôle
+// (C0 non-blancs, DEL, C1 0x80-0x9F : non encodables WinAnsi — un seul octet,
+// issu d'un email Windows-1252 mal décodé par exemple, ferait lever drawText
+// et planterait tout l'export). \n est préservé : wrap() splitte dessus.
 function safe(s: string): string {
   return (s || "")
     .replace(/[‘’‚‛]/g, "'")
@@ -42,7 +45,8 @@ function safe(s: string): string {
     .replace(/[–—]/g, "-")
     .replace(/…/g, "...")
     .replace(/[   ]/g, " ")
-    .replace(/[^\x00-\xFF€•·]/g, "");
+    .replace(/[\x00-\x09\x0B-\x1F\x7F-\x9F]/g, "")
+    .replace(/[^\x0A\x20-\xFF€•·]/g, "");
 }
 
 class Writer {
@@ -74,10 +78,31 @@ class Writer {
     this.y -= n;
   }
 
+  /** Coupe un « mot » plus large que la colonne (nom de fichier, URL) caractère par caractère. */
+  private breakWord(word: string, font: PDFFont, size: number, maxW: number): string[] {
+    const parts: string[] = [];
+    let cur = "";
+    for (const ch of word) {
+      if (font.widthOfTextAtSize(cur + ch, size) > maxW && cur) {
+        parts.push(cur);
+        cur = ch;
+      } else {
+        cur += ch;
+      }
+    }
+    if (cur) parts.push(cur);
+    return parts.length ? parts : [word];
+  }
+
   private wrap(text: string, font: PDFFont, size: number, maxW: number): string[] {
     const out: string[] = [];
     for (const rawLine of text.split("\n")) {
-      const words = rawLine.split(/\s+/).filter(Boolean);
+      const words = rawLine
+        .split(/\s+/)
+        .filter(Boolean)
+        .flatMap((w) =>
+          font.widthOfTextAtSize(w, size) > maxW ? this.breakWord(w, font, size, maxW) : [w],
+        );
       if (words.length === 0) {
         out.push("");
         continue;

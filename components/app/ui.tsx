@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronRight } from "lucide-react";
+import { CalendarClock, ChevronRight } from "lucide-react";
 import { euros, relativeDays } from "@/lib/format";
 import { CASE_TYPE_LABEL, STATUS_META } from "@/lib/cases/constants";
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
@@ -130,8 +130,30 @@ export function StatTile({
   );
 }
 
+// Teinte de l'avatar débiteur, alignée sur le ton du statut.
+const AVATAR_TONES: Record<string, string> = {
+  brand: "bg-brand-soft text-brand-strong ring-brand/15",
+  muted: "bg-muted text-muted-foreground ring-border",
+  green: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  amber: "bg-amber-50 text-amber-700 ring-amber-200",
+};
+
 export function CaseCard({ c, lastSend }: { c: CaseRow; lastSend?: LastSend | null }) {
-  const remaining = c.amount_claimed_cents - c.amount_recovered_cents;
+  const claimed = c.amount_claimed_cents;
+  const recovered = c.amount_recovered_cents;
+  const remaining = Math.max(0, claimed - recovered);
+  const resolved = c.status === "resolved";
+  const pct = claimed > 0 ? Math.min(100, Math.round((recovered / claimed) * 100)) : 0;
+  // eslint-disable-next-line react-hooks/purity -- urgence d'affichage (retard)
+  const overdue = !resolved && !!c.next_action_at && new Date(c.next_action_at).getTime() < Date.now();
+  const tone = AVATAR_TONES[STATUS_META[c.status]?.tone ?? "muted"] ?? AVATAR_TONES.muted;
+  const initials =
+    (c.debtor_name || "?")
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((p) => p[0]?.toUpperCase())
+      .join("") || "?";
   // Suivi du dernier envoi, visible sans ouvrir le dossier : « Mise en
   // demeure · En acheminement par La Poste », pastilles de progression.
   const send = lastSend?.sent_at ? lastSend : null;
@@ -145,29 +167,70 @@ export function CaseCard({ c, lastSend }: { c: CaseRow; lastSend?: LastSend | nu
   return (
     <Link
       href={`/app/dossiers/${c.id}`}
-      className="group rounded-[1.75rem] border bg-card p-5 transition-all duration-500 ease-fluid hover:-translate-y-0.5 hover:shadow-lg hover:shadow-zinc-950/[0.05] sm:p-6"
+      className="group rounded-[1.75rem] border bg-card p-4 transition-all duration-500 ease-fluid hover:-translate-y-0.5 hover:border-brand/40 hover:shadow-lg hover:shadow-brand/[0.06] sm:p-5"
     >
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <StatusChip status={c.status} />
-            <span className="text-xs text-muted-foreground">
-              {CASE_TYPE_LABEL[c.case_type]}
+      {/* En-tête : qui / quoi à gauche, l'argent à droite. */}
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-3">
+          <span
+            className={`flex size-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold ring-1 ${tone}`}
+            aria-hidden
+          >
+            {initials}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-[15px] font-semibold leading-snug">{c.title}</p>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {CASE_TYPE_LABEL[c.case_type]} · {c.debtor_name}
               {c.is_sample ? " · exemple" : ""}
-            </span>
+            </p>
           </div>
-          <p className="mt-2 truncate font-semibold">{c.title}</p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p
+            className={`text-[15px] font-bold tabular-nums tracking-tight ${resolved ? "text-emerald-700" : ""}`}
+          >
+            {euros(resolved ? recovered : remaining)}
+          </p>
+          <p className="text-[11px] text-muted-foreground">
+            {resolved ? "récupérés" : "restant dû"}
+          </p>
+        </div>
+      </div>
+
+      {/* Recouvrement : barre fine, visible dès le premier euro encaissé. */}
+      {claimed > 0 && recovered > 0 ? (
+        <div className="mt-3 flex items-center gap-2.5">
+          <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+            <div
+              className={`h-full rounded-full transition-[width] duration-700 ease-fluid ${resolved ? "bg-emerald-500" : "bg-brand"}`}
+              style={{ width: `${Math.max(pct, 5)}%` }}
+            />
+          </div>
+          <span className="shrink-0 text-[11px] font-medium tabular-nums text-muted-foreground">
+            {pct} % récupéré
+          </span>
+        </div>
+      ) : null}
+
+      {/* Pied : statut, prochaine action (retard en ambre), acheminement, phase. */}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-t pt-3">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+          <StatusChip status={c.status} />
           {c.next_action_label && c.next_action_at ? (
-            <p className="mt-1 truncate text-sm text-muted-foreground">
-              {c.next_action_label} · {relativeDays(c.next_action_at)}
-            </p>
-          ) : c.status === "resolved" ? (
-            <p className="mt-1 text-sm text-emerald-700">
-              {euros(c.amount_recovered_cents)} récupérés
-            </p>
+            <span
+              className={`inline-flex min-w-0 items-center gap-1.5 text-xs ${
+                overdue ? "font-medium text-amber-700" : "text-muted-foreground"
+              }`}
+            >
+              <CalendarClock className="size-3.5 shrink-0" />
+              <span className="truncate">
+                {c.next_action_label} · {relativeDays(c.next_action_at)}
+              </span>
+            </span>
           ) : null}
           {send && sendProgress ? (
-            <p className="mt-2 flex min-w-0 items-center gap-2">
+            <span className="inline-flex min-w-0 items-center gap-1.5">
               <TrackingDots
                 tracking={{
                   channel: send.channel,
@@ -181,19 +244,13 @@ export function CaseCard({ c, lastSend }: { c: CaseRow; lastSend?: LastSend | nu
               >
                 {LETTER_KINDS[send.kind]?.label ?? "Courrier"} · {sendProgress.label}
               </span>
-            </p>
+            </span>
           ) : null}
         </div>
-        <div className="flex shrink-0 flex-col items-end gap-2">
-          <p className="text-lg font-bold tracking-tight">
-            {euros(c.status === "resolved" ? c.amount_recovered_cents : remaining)}
-          </p>
+        <div className="flex shrink-0 items-center gap-2">
           <PhaseTrail variant="compact" phase={(c.phase ?? 1) as Phase} />
+          <ChevronRight className="size-4 text-muted-foreground/40 transition-all duration-300 group-hover:translate-x-0.5 group-hover:text-brand" />
         </div>
-      </div>
-      <div className="mt-3 flex items-center justify-end text-sm font-medium text-brand opacity-0 transition-opacity duration-300 group-hover:opacity-100">
-        Voir le dossier
-        <ChevronRight className="size-4" />
       </div>
     </Link>
   );

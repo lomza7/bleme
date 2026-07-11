@@ -27,6 +27,26 @@ function slug(s: string): string {
   );
 }
 
+/**
+ * Nom d'entrée ZIP sûr : file_name vient d'uploads/emails et peut contenir des
+ * séparateurs de chemin ou « .. » (zip-slip à l'extraction). Basename +
+ * caractères illégaux neutralisés, extension conservée.
+ */
+function safeEntryName(name: string): string {
+  const base = (name || "piece").split(/[\\/]/).pop() || "piece";
+  return (
+    base
+      .replace(/\.\.+/g, ".")
+      .replace(/[:*?"<>|\r\n\t]/g, "_")
+      .replace(/^\.+/, "")
+      .slice(0, 120) || "piece"
+  );
+}
+
+// Plafond mémoire : tout est bufferisé (pièces + ZIP) dans une fonction
+// serverless — au-delà, on refuse proprement plutôt que d'exploser en vol.
+const MAX_PIECES_BYTES = 150 * 1024 * 1024;
+
 function companyExtra(c: CompanySnapshot): string[] {
   const out: string[] = [];
   if (c.formeJuridique) out.push(c.formeJuridique);
@@ -53,7 +73,7 @@ export async function buildDossierZip(
     await Promise.all([
       userClient
         .from("documents")
-        .select("id, file_name, storage_path, created_at")
+        .select("id, file_name, storage_path, size_bytes, created_at")
         .eq("case_id", caseId)
         .order("created_at"),
       userClient
@@ -76,12 +96,40 @@ export async function buildDossierZip(
         .select("received_at, received_via, body_text")
         .eq("case_id", caseId)
         .order("received_at"),
-      userClient.from("organizations").select("name").limit(1).maybeSingle(),
+      // L'organisation DU DOSSIER (pas la première de l'utilisateur).
+      userClient.from("organizations").select("name").eq("id", c.organization_id).maybeSingle(),
     ]);
 
   const docList = docs ?? [];
   const letterList = letters ?? [];
   const company = (c.debtor_company ?? null) as CompanySnapshot | null;
+
+  // Cap mémoire avant tout téléchargement.
+  const totalBytes = docList.reduce((s, d) => s + (Number(d.size_bytes) || 0), 0);
+  if (totalBytes > MAX_PIECES_BYTES) {
+    const mo = Math.round(totalBytes / 1024 / 1024);
+    return {
+      error: `Ce dossier contient ${mo} Mo de pièces, au-delà de la limite d'export groupé (150 Mo). Téléchargez les pièces individuellement depuis Mes documents.`,
+    };
+  }
+
+  // Pièces téléchargées AVANT la synthèse : les fichiers indisponibles sont
+  // signalés dans le PDF au lieu d'être omis en silence.
+  const pieceFiles: { entryName: string; buf: Buffer }[] = [];
+  const pieceLabels: string[] = [];
+  let n = 0;
+  for (const d of docList) {
+    n += 1;
+    const prefix = String(n).padStart(2, "0");
+    const { data: blob } = await serviceClient.storage.from("documents").download(d.storage_path);
+    if (!blob) {
+      pieceLabels.push(`${d.file_name} (fichier indisponible)`);
+      continue;
+    }
+    const buf = Buffer.from(await blob.arrayBuffer());
+    pieceFiles.push({ entryName: `${prefix}-${safeEntryName(d.file_name)}`, buf });
+    pieceLabels.push(d.file_name);
+  }
 
   const pdfData: DossierPdfData = {
     orgName: org?.name ?? "",
@@ -116,7 +164,7 @@ export async function buildDossierZip(
       header: `${dateLongFr(r.received_at)}${r.received_via ? ` · ${r.received_via}` : ""}`,
       text: r.body_text ?? "",
     })),
-    documents: docList.map((d) => d.file_name),
+    documents: pieceLabels,
     eurosFmt: euros,
   };
 
@@ -133,14 +181,7 @@ export async function buildDossierZip(
   });
 
   const pieces = zip.folder("pieces");
-  let n = 0;
-  for (const d of docList) {
-    n += 1;
-    const { data: blob } = await serviceClient.storage.from("documents").download(d.storage_path);
-    if (!blob) continue;
-    const buf = Buffer.from(await blob.arrayBuffer());
-    pieces?.file(`${String(n).padStart(2, "0")}-${d.file_name}`, buf);
-  }
+  for (const p of pieceFiles) pieces?.file(p.entryName, p.buf);
 
   const buffer = await zip.generateAsync({ type: "nodebuffer" });
   return { buffer, filename: `dossier-${slug(c.title)}.zip` };

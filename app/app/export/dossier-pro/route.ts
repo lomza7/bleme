@@ -4,6 +4,9 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { can } from "@/lib/permissions/server";
 import { buildDossierZip } from "@/lib/export/dossier-zip";
 
+// Téléchargements Storage séquentiels + PDF : plus long qu'une requête classique.
+export const maxDuration = 60;
+
 /** ZIP « dossier prêt pour un professionnel » : synthèse PDF + courriers + pièces. */
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
@@ -18,14 +21,22 @@ export async function GET(request: NextRequest) {
   const id = z.string().uuid().safeParse(request.nextUrl.searchParams.get("id"));
   if (!id.success) return NextResponse.json({ error: "Dossier invalide" }, { status: 400 });
 
-  const res = await buildDossierZip(supabase, createServiceClient(), id.data);
-  if ("error" in res) return NextResponse.json({ error: res.error }, { status: 404 });
+  try {
+    const res = await buildDossierZip(supabase, createServiceClient(), id.data);
+    if ("error" in res) return NextResponse.json({ error: res.error }, { status: 404 });
 
-  return new NextResponse(new Uint8Array(res.buffer), {
-    headers: {
-      "Content-Type": "application/zip",
-      "Content-Disposition": `attachment; filename="${res.filename}"`,
-      "Cache-Control": "no-store",
-    },
-  });
+    return new NextResponse(new Uint8Array(res.buffer), {
+      headers: {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="${res.filename}"`,
+        "Cache-Control": "no-store",
+      },
+    });
+  } catch {
+    // Génération PDF/ZIP en échec : erreur claire, jamais un 500 brut.
+    return NextResponse.json(
+      { error: "La génération du dossier a échoué. Réessayez dans un instant." },
+      { status: 500 },
+    );
+  }
 }

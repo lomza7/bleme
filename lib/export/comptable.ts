@@ -26,23 +26,65 @@ export function indemnityCents(c: Pick<ComptaCase, "case_type">): number {
   return c.case_type === "unpaid_invoice" ? FIXED_INDEMNITY_CENTS : 0;
 }
 
+/**
+ * Début de période CALENDAIRE en Europe/Paris (un comptable raisonne au mois
+ * civil, pas en fenêtre glissante) : 1er du mois courant / 1er janvier.
+ */
+export function periodStartMs(period: Period, now: number): number {
+  if (period === "tout") return 0;
+  const parts = new Intl.DateTimeFormat("fr-FR", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date(now));
+  const year = Number(parts.find((p) => p.type === "year")?.value);
+  const month = Number(parts.find((p) => p.type === "month")?.value);
+  // Minuit Paris ≈ 22h/23h UTC la veille : UTC-2h couvre été comme hiver sans
+  // inclure le mois précédent (personne n'encaisse entre 22h et minuit près).
+  const utc = period === "mois" ? Date.UTC(year, month - 1, 1) : Date.UTC(year, 0, 1);
+  return utc - 2 * 3600 * 1000;
+}
+
 export function withinPeriod(c: ComptaCase, period: Period, now: number): boolean {
   if (period === "tout") return true;
   const iso = c.resolved_at ?? c.created_at;
-  const t = new Date(iso).getTime();
-  const days = period === "mois" ? 31 : 365;
-  return now - t <= days * 24 * 3600 * 1000;
+  return new Date(iso).getTime() >= periodStartMs(period, now);
+}
+
+/** Paginé jusqu'à épuisement : PostgREST plafonne à ~1000 lignes par requête —
+ * un agrégat comptable tronqué en silence serait faux. */
+async function fetchAll<T>(
+  query: (from: number, to: number) => PromiseLike<{ data: T[] | null }>,
+): Promise<T[]> {
+  const PAGE = 1000;
+  const out: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data } = await query(from, from + PAGE - 1);
+    const rows = data ?? [];
+    out.push(...rows);
+    if (rows.length < PAGE) return out;
+  }
 }
 
 /** Dossiers RÉELS (hors exemples) + date du dernier encaissement (event payment). */
 export async function fetchComptaCases(supabase: SupabaseClient): Promise<ComptaCase[]> {
-  const [{ data: cases }, { data: pays }] = await Promise.all([
-    supabase
-      .from("cases")
-      .select("id, title, debtor_name, case_type, status, amount_claimed_cents, amount_recovered_cents, created_at")
-      .eq("is_sample", false)
-      .order("created_at", { ascending: false }),
-    supabase.from("case_events").select("case_id, event_date").eq("event_type", "payment"),
+  const [cases, pays] = await Promise.all([
+    fetchAll((from, to) =>
+      supabase
+        .from("cases")
+        .select("id, title, debtor_name, case_type, status, amount_claimed_cents, amount_recovered_cents, created_at")
+        .eq("is_sample", false)
+        .order("created_at", { ascending: false })
+        .range(from, to),
+    ),
+    fetchAll((from, to) =>
+      supabase
+        .from("case_events")
+        .select("case_id, event_date")
+        .eq("event_type", "payment")
+        .order("event_date")
+        .range(from, to),
+    ),
   ]);
   const lastPayment = new Map<string, string>();
   for (const p of pays ?? []) {
@@ -61,14 +103,19 @@ export async function fetchComptaCases(supabase: SupabaseClient): Promise<Compta
   }));
 }
 
+// Sans séparateur de milliers : l'espace fine insécable de toLocaleString fait
+// basculer Excel FR en texte. « 1500,00 » reste un nombre.
 function amount(cents: number): string {
-  return (cents / 100).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (cents / 100).toFixed(2).replace(".", ",");
 }
 function dateFr(iso: string | null): string {
-  return iso ? new Date(iso).toLocaleDateString("fr-FR") : "";
+  return iso ? new Date(iso).toLocaleDateString("fr-FR", { timeZone: "Europe/Paris" }) : "";
 }
+// Échappement CSV + anti-injection de formule (CWE-1236) : une cellule qui
+// commence par = + - @ (titre/débiteur libres) serait évaluée par Excel.
 function cell(v: string): string {
-  return /[";\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+  const guarded = /^[=+\-@\t\r]/.test(v) ? `'${v}` : v;
+  return /[";\n\r]/.test(guarded) ? `"${guarded.replace(/"/g, '""')}"` : guarded;
 }
 
 export function buildComptaCsv(cases: ComptaCase[]): string {
