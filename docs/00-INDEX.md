@@ -33,6 +33,7 @@
 | 13 | [13-plan-claude-code.md](13-plan-claude-code.md) | 14 tâches techniques exécutables par Claude Code |
 | 14 | [14-recherche-whatsapp.md](14-recherche-whatsapp.md) | Recherche : ingestion des échanges WhatsApp |
 | 15 | [15-recherche-integration-compta.md](15-recherche-integration-compta.md) | Recherche : intégration comptable (Pennylane) — API v2, marché, architecture, décisions à acter |
+| 16 | [16-inbox-boite-mail.md](16-inbox-boite-mail.md) | Plan d'exécution : Boîte de réception façon client mail (3 volets, lecture, raccourcis) — sans migration |
 
 ## Comment utiliser cette base avec Claude Code
 
