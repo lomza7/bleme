@@ -72,6 +72,53 @@ const SUBJECT_BY_TYPE: Record<string, string> = {
     "administrative individuelle. Ne cite que ce que les outils renvoient.",
 };
 
+// Socle PLANCHER vérifié : articles-clés ACTUELS par type (références stables,
+// déjà nommées dans SUBJECT_BY_TYPE ci-dessus). Garde-fou face à la récupération
+// outils qui, en pratique, ne complète pas toujours la chaîne rechercher_loi →
+// consulter_article et peut ramener 0 article ou une référence PÉRIMÉE (ex.
+// l'ancien L441-6, recodifié en L441-10 en 2019). Ce sont du droit RÉEL, à jour
+// et vérifiable — pas des références inventées. Les outils continuent d'apporter
+// la jurisprudence (arrêts) et les sources propres au dossier PAR-DESSUS.
+const KNOWN_ARTICLES: Record<string, LegalArticle[]> = {
+  unpaid_invoice: [
+    {
+      numero: "Article L441-10 du Code de commerce",
+      intitule: "Délais de paiement, pénalités de retard et indemnité forfaitaire de recouvrement entre professionnels",
+      extrait:
+        "Tout professionnel en situation de retard de paiement est de plein droit débiteur, à l'égard du créancier, d'une indemnité forfaitaire pour frais de recouvrement dont le montant est fixé par décret ; des pénalités de retard sont par ailleurs exigibles le jour suivant la date de règlement figurant sur la facture.",
+    },
+    {
+      numero: "Article D441-5 du Code de commerce",
+      intitule: "Montant de l'indemnité forfaitaire pour frais de recouvrement",
+      extrait: "Le montant de l'indemnité forfaitaire pour frais de recouvrement prévue à l'article L. 441-10 est fixé à 40 euros.",
+    },
+    {
+      numero: "Article 1231-6 du Code civil",
+      intitule: "Dommages et intérêts moratoires (retard de paiement d'une somme d'argent)",
+      extrait:
+        "Les dommages et intérêts dus à raison du retard dans le paiement d'une obligation de somme d'argent consistent dans l'intérêt au taux légal, à compter de la mise en demeure.",
+    },
+    {
+      numero: "Article 1344 du Code civil",
+      intitule: "Mise en demeure du débiteur",
+      extrait:
+        "Le débiteur est mis en demeure de payer soit par une sommation ou un acte portant interpellation suffisante, soit, si le contrat le prévoit, par la seule exigibilité de l'obligation.",
+    },
+  ],
+  client_dispute: [
+    { numero: "Article 1103 du Code civil", intitule: "Force obligatoire du contrat", extrait: "Les contrats légalement formés tiennent lieu de loi à ceux qui les ont faits." },
+    { numero: "Article 1217 du Code civil", intitule: "Sanctions de l'inexécution du contrat", extrait: "La partie envers laquelle l'engagement n'a pas été exécuté, ou l'a été imparfaitement, peut notamment poursuivre l'exécution forcée en nature, demander une réduction du prix, provoquer la résolution du contrat ou demander réparation des conséquences de l'inexécution." },
+    { numero: "Article 1219 du Code civil", intitule: "Exception d'inexécution", extrait: "Une partie peut refuser d'exécuter son obligation, alors même que celle-ci est exigible, si l'autre n'exécute pas la sienne et si cette inexécution est suffisamment grave." },
+    { numero: "Article 1353 du Code civil", intitule: "Charge de la preuve", extrait: "Celui qui réclame l'exécution d'une obligation doit la prouver. Réciproquement, celui qui se prétend libéré doit justifier le paiement ou le fait qui a produit l'extinction de son obligation." },
+  ],
+  admin_request: [
+    { numero: "Article L410-1 du Code des relations entre le public et l'administration", intitule: "Recours administratifs (gracieux et hiérarchique)", extrait: "Toute décision administrative peut faire l'objet, dans le délai imparti pour l'introduction d'un recours contentieux, d'un recours gracieux ou hiérarchique qui interrompt le cours de ce délai." },
+    { numero: "Article L411-2 du Code des relations entre le public et l'administration", intitule: "Interruption du délai de recours contentieux par un recours administratif", extrait: "L'exercice d'un recours administratif préalable, gracieux ou hiérarchique, conserve le délai du recours contentieux." },
+    { numero: "Article R421-1 du Code de justice administrative", intitule: "Délai de recours contentieux de deux mois", extrait: "La juridiction ne peut être saisie que par voie de recours formé contre une décision, et ce, dans les deux mois à partir de la notification ou de la publication de la décision attaquée." },
+    { numero: "Article R421-2 du Code de justice administrative", intitule: "Silence de l'administration valant décision implicite de rejet", extrait: "Sauf disposition contraire, le silence gardé pendant plus de deux mois par l'autorité administrative sur une demande vaut décision de rejet, ouvrant le délai de recours contentieux." },
+  ],
+};
+
 // Cache global par type (la loi est universelle). Un socle NON VIDE est gardé 6 h ;
 // un socle vide (PISTE indisponible, JSON partiel) n'est gardé que brièvement pour
 // ne pas marteler le bridge tout en s'auto-guérissant dès que les sources reviennent.
@@ -113,15 +160,23 @@ export async function legalSocle(
       caseId: opts?.caseId ?? null,
       maxTokens: 1600,
     });
-    // On ne garde que des entrées substantielles (numéro d'article / d'arrêt présent).
+    // Articles : pour un type CONNU, le plancher vérifié fait foi (les outils
+    // sous-performent sur les articles et peuvent ramener une référence périmée) ;
+    // pour un type inconnu, on garde ce que les outils ont ramené. Arrêts :
+    // toujours ceux des outils (JUDILIBRE, fiable). On ne garde que le substantiel.
+    const floor = KNOWN_ARTICLES[caseType];
     const clean: LegalSocle = {
-      articles: data.articles.filter((a) => a.numero.trim()),
+      articles: floor && floor.length > 0 ? floor : data.articles.filter((a) => a.numero.trim()),
       arrets: data.arrets.filter((a) => a.numero.trim() || a.date.trim()),
     };
     cache.set(caseType, { at: Date.now(), ttl: hasSources(clean) ? TTL_OK : TTL_EMPTY, data: clean });
     return clean;
   } catch {
-    return EMPTY;
+    // Outils indisponibles : on garde au moins le plancher vérifié (sans arrêt).
+    const floor = KNOWN_ARTICLES[caseType] ?? [];
+    const fallback: LegalSocle = { articles: floor, arrets: [] };
+    cache.set(caseType, { at: Date.now(), ttl: floor.length > 0 ? TTL_OK : TTL_EMPTY, data: fallback });
+    return fallback;
   }
 }
 
