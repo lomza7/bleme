@@ -13,7 +13,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { euros, relativeDays } from "@/lib/format";
+import { euros } from "@/lib/format";
 import { FIXED_INDEMNITY_CENTS } from "@/lib/cases/constants";
 import { createSampleCases, deleteSampleCases } from "@/lib/cases/actions";
 import { lastSendByCase } from "@/lib/cases/tracking-summary";
@@ -21,7 +21,8 @@ import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { DraftBanner } from "@/components/app/draft-banner";
 import { ComptaPanel } from "@/components/app/compta-panel";
 import { LetterTrackingCompact } from "@/components/app/letter-tracking";
-import { CaseCard, OPEN_STATUSES, PageHeader, type CaseRow } from "@/components/app/ui";
+import { OPEN_STATUSES, PageHeader, type CaseRow } from "@/components/app/ui";
+import { DashDossierList } from "@/components/app/dash-dossiers";
 import { CountUp } from "@/components/app/count-up";
 
 export const metadata: Metadata = { title: "Tableau de bord" };
@@ -54,10 +55,12 @@ export default async function AppHomePage() {
   ]);
   const firstName = profile?.full_name?.split(" ")[0] ?? "";
   const all = cases ?? [];
-  // Suivi du dernier envoi par dossier (indicateur sur les cartes récentes).
-  const lastSends = await lastSendByCase(supabase, all.slice(0, 3).map((c) => c.id));
   const open = all.filter((c) => OPEN_STATUSES.includes(c.status));
   const hasSamples = all.some((c) => c.is_sample);
+  // Les dossiers listés sur le tableau de bord (en cours, triés par urgence via
+  // la requête) + le suivi de leur dernier envoi.
+  const listed = open.slice(0, 6);
+  const lastSends = await lastSendByCase(supabase, listed.map((c) => c.id));
 
   const atStake = open.reduce(
     (sum, c) => sum + Math.max(0, c.amount_claimed_cents - c.amount_recovered_cents),
@@ -74,10 +77,6 @@ export default async function AppHomePage() {
   const weekActions = open.filter(
     (c) => c.next_action_at && new Date(c.next_action_at).getTime() < weekHorizon,
   );
-  const agenda = open
-    .filter((c) => c.next_action_at && c.next_action_label)
-    .slice(0, 5);
-  const recents = all.slice(0, 3);
 
   // Salutation contextuelle + date du jour (heure de Paris).
   // parseInt : Intl renvoie « 18 h » (suffixe) — Number() donnerait NaN.
@@ -166,10 +165,13 @@ export default async function AppHomePage() {
         <EmptyState />
       ) : (
         <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
-          <section className="lg:col-span-2">
+          <section
+            className="anim-load lg:col-span-2"
+            style={{ "--delay": "320ms" } as React.CSSProperties}
+          >
             <div className="flex items-baseline justify-between gap-4 px-1">
               <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                Dossiers récents
+                Vos dossiers
               </h2>
               <Link
                 href="/app/dossiers"
@@ -179,96 +181,29 @@ export default async function AppHomePage() {
                 <ArrowRight className="size-3.5" />
               </Link>
             </div>
-            <div className="mt-3 flex flex-col gap-3">
-              {recents.map((c, i) => (
-                <div
-                  key={c.id}
-                  // flex : CaseCard est un <a> sans display propre — en enfant
-                  // de bloc simple il retomberait en inline (carte cassée).
-                  className="anim-load flex flex-col"
-                  style={{ "--delay": `${320 + i * 90}ms` } as React.CSSProperties}
-                >
-                  <CaseCard c={c} lastSend={lastSends[c.id]} />
+            <div className="mt-3">
+              {listed.length === 0 ? (
+                <div className="rounded-lg border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+                  Aucun dossier en cours. Les nouveaux apparaîtront ici.
                 </div>
-              ))}
+              ) : (
+                <DashDossierList cases={listed} lastSends={lastSends} nowMs={nowMs} />
+              )}
             </div>
           </section>
 
-          <aside>
-            <h2 className="px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              À venir
-            </h2>
-            {/* Mini-timeline : les prochaines actions reliées entre elles,
-                les retards cerclés d'ambre. */}
-            <div className="mt-3 rounded-[1.75rem] border bg-card p-3">
-              {agenda.length === 0 ? (
-                <p className="px-3 py-5 text-sm text-muted-foreground">
-                  Rien à l’horizon. Les prochaines actions apparaîtront ici.
-                </p>
-              ) : (
-                <ol className="flex flex-col">
-                  {agenda.map((c, i) => {
-                    const overdue = c.next_action_at
-                      ? new Date(c.next_action_at).getTime() < nowMs
-                      : false;
-                    const last = i === agenda.length - 1;
-                    return (
-                      <li
-                        key={c.id}
-                        className="anim-load relative"
-                        style={{ "--delay": `${380 + i * 80}ms` } as React.CSSProperties}
-                      >
-                        {/* Ligne de liaison CONTINUE : du bas de cette icône au
-                            haut de la suivante (déborde sur le li suivant). */}
-                        {!last ? (
-                          <span
-                            aria-hidden
-                            className="absolute -bottom-2.5 left-6 top-[46px] w-px bg-border"
-                          />
-                        ) : null}
-                        <Link
-                          href={`/app/dossiers/${c.id}`}
-                          className="relative flex gap-3 rounded-2xl px-2 py-1 transition-colors duration-300 hover:bg-muted"
-                        >
-                          <span
-                            className={`relative mt-1.5 flex size-8 shrink-0 items-center justify-center rounded-full ${
-                              overdue
-                                ? "bg-amber-100 text-amber-700 ring-1 ring-amber-300"
-                                : "bg-brand-soft text-brand-strong"
-                            }`}
-                          >
-                            <CalendarClock className="size-4" />
-                          </span>
-                          <span className="min-w-0 py-2.5">
-                            <span className="block truncate text-sm font-medium">
-                              {c.next_action_label}
-                            </span>
-                            <span
-                              className={`block truncate text-xs ${
-                                overdue ? "font-medium text-amber-700" : "text-muted-foreground"
-                              }`}
-                            >
-                              {relativeDays(c.next_action_at!)} · {c.debtor_name}
-                            </span>
-                          </span>
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ol>
-              )}
-            </div>
+          <aside className="flex flex-col gap-6">
             {(recentSends ?? []).length > 0 ? (
-              <div className="anim-load" style={{ "--delay": "520ms" } as React.CSSProperties}>
-                <h2 className="mt-6 px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              <div className="anim-load" style={{ "--delay": "420ms" } as React.CSSProperties}>
+                <h2 className="px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                   Envois suivis
                 </h2>
-                <div className="mt-3 rounded-[1.75rem] border bg-card p-2">
+                <div className="mt-3 rounded-lg border bg-card p-2">
                   {(recentSends ?? []).map((l) => (
                     <Link
                       key={l.id}
                       href={`/app/dossiers/${l.case_id}/courrier/${l.id}`}
-                      className="flex flex-col gap-1 rounded-2xl px-4 py-3.5 transition-colors duration-300 hover:bg-muted"
+                      className="flex flex-col gap-1 rounded-md px-4 py-3 transition-colors duration-300 hover:bg-muted"
                     >
                       <span className="truncate text-sm font-medium">
                         {LETTER_KINDS[l.kind]?.label ?? "Courrier"}
@@ -289,7 +224,7 @@ export default async function AppHomePage() {
                   ))}
                   <Link
                     href="/app/envois"
-                    className="flex items-center gap-1 rounded-2xl px-4 py-3 text-sm font-medium text-brand-strong transition-colors duration-300 hover:bg-muted"
+                    className="flex items-center gap-1 rounded-md px-4 py-3 text-sm font-medium text-brand-strong transition-colors duration-300 hover:bg-muted"
                   >
                     Tout le suivi
                     <ArrowRight className="size-3.5" />
@@ -297,7 +232,7 @@ export default async function AppHomePage() {
                 </div>
               </div>
             ) : null}
-            <p className="mt-3 px-1 text-xs leading-relaxed text-muted-foreground/80">
+            <p className="px-1 text-xs leading-relaxed text-muted-foreground/80">
               Le « récupérable estimé » inclut l’indemnité forfaitaire légale de
               40 € par facture impayée entre professionnels. Estimation
               indicative, pas un conseil juridique.
