@@ -47,14 +47,14 @@ const SOCLE_SCHEMA = z.object({
 // tombent sur les bonnes sources (une requête vague ramène du hors-sujet).
 const SUBJECT_BY_TYPE: Record<string, string> = {
   unpaid_invoice:
-    "Récupère via legifrance.consulter_article (id obtenu par legifrance.rechercher_loi) le texte des " +
+    "Récupère via legifrance.consulter_article, en passant le code et le numéro (ex. code « Code de commerce », numero « L441-10 »), le texte des " +
     "articles L441-10 et D441-5 du Code de commerce (pénalités de retard et indemnité forfaitaire de " +
     "recouvrement de 40 € entre professionnels) et des articles 1231-6 et 1344 du Code civil (mise en " +
     "demeure). Puis, via judilibre.rechercher (search précis, ex. « indemnité forfaitaire frais de " +
     "recouvrement professionnel retard de paiement »), trouve 1 arrêt de la Cour de cassation (chambre " +
     "commerciale de préférence) qui confirme le droit du créancier professionnel à ces sommes de plein droit.",
   client_dispute:
-    "Récupère via legifrance les articles pertinents du Code civil sur l'exécution du contrat : 1103 " +
+    "Récupère via legifrance.consulter_article (code « Code civil » + numero) les articles pertinents du Code civil sur l'exécution du contrat : 1103 " +
     "(force obligatoire), 1217 et 1219 (inexécution et exception d'inexécution), 1353 (charge de la preuve), " +
     "et le cas échéant la garantie légale de conformité / des vices. Puis, via judilibre.rechercher, trouve " +
     "1 arrêt pertinent sur la contestation d'une prestation, la réception sans réserve ou l'exception d'inexécution.",
@@ -63,7 +63,7 @@ const SUBJECT_BY_TYPE: Record<string, string> = {
   // (préfecture, ministère, DGFiP…). Les textes propres au domaine du dossier
   // (code de la route, LPF…) relèvent du volet agentique de Basile.
   admin_request:
-    "Récupère via legifrance.consulter_article (id obtenu par legifrance.rechercher_loi) le texte des " +
+    "Récupère via legifrance.consulter_article, en passant le code et le numéro (ex. code « Code des relations entre le public et l'administration », numero « L410-1 »), le texte des " +
     "articles L410-1 et L411-2 du Code des relations entre le public et l'administration (recours " +
     "administratifs gracieux et hiérarchique ; interruption du délai de recours contentieux) et des " +
     "articles R421-1 et R421-2 du Code de justice administrative (délai de recours contentieux de deux " +
@@ -74,8 +74,8 @@ const SUBJECT_BY_TYPE: Record<string, string> = {
 
 // Socle PLANCHER vérifié : articles-clés ACTUELS par type (références stables,
 // déjà nommées dans SUBJECT_BY_TYPE ci-dessus). Garde-fou face à la récupération
-// outils qui, en pratique, ne complète pas toujours la chaîne rechercher_loi →
-// consulter_article et peut ramener 0 article ou une référence PÉRIMÉE (ex.
+// outils qui, en pratique, via l'appel direct consulter_article {code, numero} ne renvoie pas
+// toujours l'article demandé et peut ramener 0 article ou une référence PÉRIMÉE (ex.
 // l'ancien L441-6, recodifié en L441-10 en 2019). Ce sont du droit RÉEL, à jour
 // et vérifiable — pas des références inventées. Les outils continuent d'apporter
 // la jurisprudence (arrêts) et les sources propres au dossier PAR-DESSUS.
@@ -147,7 +147,7 @@ export async function legalSocle(
       key: agentKey,
       input: {
         consigne:
-          "Utilise les outils legifrance (rechercher_loi, consulter_article) et judilibre " +
+          "Utilise les outils legifrance (consulter_article en passant code + numero pour un article de code ; rechercher_loi pour une loi ou un décret) et judilibre " +
           "(rechercher) pour identifier les sources juridiques FRANÇAISES applicables au sujet ci-dessous. " +
           "Ne cite QUE ce que les outils renvoient réellement — jamais de référence, de numéro d'arrêt ni " +
           "de date inventés. Renvoie 2 à 4 articles clés (avec un court extrait fidèle) et 1 à 2 arrêts de " +
