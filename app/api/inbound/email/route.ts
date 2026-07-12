@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { Resend } from "resend";
 import { createServiceClient } from "@/lib/supabase/server";
 import { getSecret } from "@/lib/secrets";
@@ -7,6 +7,8 @@ import { recomputeLetterTrackingStatus } from "@/lib/courrier/tracking-aggregate
 import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { notifyOrganization } from "@/lib/notifications/notify";
 import { enqueueWebhook } from "@/lib/webhooks/enqueue";
+import { touchCase } from "@/lib/cases/touch";
+import { draftAdaptedResponseCore } from "@/lib/cases/reply-draft";
 
 // Webhook non authentifié (exempté par proxy.ts) : c'est Resend qui appelle.
 // On vérifie la signature Svix, on résout l'organisation par inbox_slug, on
@@ -28,6 +30,14 @@ function displayName(raw: string): string | null {
 }
 function localPart(addr: string): string {
   return emailAddr(addr).split("@")[0]?.trim() ?? "";
+}
+// Plus-addressing : « slug+token » → { base: "slug", token: "token" }. Le token
+// (jeton par dossier, hex minuscule) route la réponse de façon déterministe.
+function parsePlusTag(local: string): { base: string; token: string | null } {
+  const i = local.indexOf("+");
+  if (i < 0) return { base: local, token: null };
+  const token = local.slice(i + 1).trim();
+  return { base: local.slice(0, i), token: token.length > 0 ? token : null };
 }
 function safeName(name: string): string {
   return name.replace(/[^\p{L}\p{N}._ -]/gu, "").slice(-120) || "piece";
@@ -79,31 +89,57 @@ export async function POST(req: Request): Promise<Response> {
   // 2. Résoudre l'organisation par inbox_slug (partie locale du destinataire).
   const recipients = [...(data.received_for ?? []), ...(data.to ?? [])];
   let orgId: string | null = null;
+  let inboundToken: string | null = null;
+  let fallbackOrgId: string | null = null; // slug matché mais SANS jeton (repli)
   for (const r of recipients) {
-    const slug = localPart(r);
-    if (!slug) continue;
+    const { base, token } = parsePlusTag(localPart(r));
+    if (!base) continue;
     const { data: org } = await sb
       .from("organizations")
       .select("id")
-      .eq("inbox_slug", slug)
+      .eq("inbox_slug", base)
       .maybeSingle();
-    if (org) {
+    if (!org) continue;
+    if (token) {
+      // Destinataire PORTEUR d'un jeton : prioritaire (routage déterministe). On
+      // ne s'arrête pas au 1er slug sans jeton, sinon <slug@…> présent dans les
+      // destinataires ferait perdre le <slug+token@…>.
       orgId = org.id;
+      inboundToken = token;
       break;
     }
+    if (!fallbackOrgId) fallbackOrgId = org.id;
   }
+  if (!orgId) orgId = fallbackOrgId;
   // Destinataire inconnu : on acquitte (200) sans rien écrire, sans révéler.
   if (!orgId) return NextResponse.json({ ignored: true });
 
-  // 3. Idempotence (rejeu du webhook) via message_id.
-  if (data.message_id) {
+  // 3. Idempotence (rejeu / at-least-once du webhook) via l'id Resend de l'email
+  //    (data.email_id : TOUJOURS présent, non contrôlé par l'expéditeur — le
+  //    Message-ID RFC, lui, peut manquer). Barrage AVANT tout effet aval.
+  if (data.email_id) {
     const { data: dup } = await sb
       .from("inbox_items")
       .select("id")
       .eq("organization_id", orgId)
-      .eq("message_id", data.message_id)
+      .eq("email_id", data.email_id)
       .maybeSingle();
     if (dup) return NextResponse.json({ duplicate: true });
+  }
+
+  // 3bis. Adresse par dossier : le jeton résout le dossier de façon DÉTERMINISTE.
+  //       Re-filtré sur orgId (service-role = RLS contournée) : un jeton pointant
+  //       un dossier d'une AUTRE org ne matche pas → on retombe sur les
+  //       heuristiques, jamais de franchissement de frontière inter-org.
+  let tokenCaseId: string | null = null;
+  if (inboundToken) {
+    const { data: tc } = await sb
+      .from("cases")
+      .select("id")
+      .eq("organization_id", orgId)
+      .eq("inbox_token", inboundToken)
+      .maybeSingle();
+    tokenCaseId = tc?.id ?? null;
   }
 
   // 4. Récupérer le CORPS (le webhook n'a que des métadonnées) + les headers
@@ -135,6 +171,8 @@ export async function POST(req: Request): Promise<Response> {
     .from("inbox_items")
     .insert({
       organization_id: orgId,
+      case_id: tokenCaseId, // classement déterministe sur le dossier (sinon null)
+      email_id: data.email_id ?? null, // clé d'idempotence (id Resend, garde 23505)
       source: "email",
       from_name: displayName(from),
       from_contact: emailAddr(from) || null,
@@ -203,7 +241,24 @@ export async function POST(req: Request): Promise<Response> {
     kind: string;
     subject: string;
   } | null = null;
-  if (referencedIds.length > 0) {
+  // Voie PRIMAIRE : le jeton par dossier a résolu le dossier → on rattache la
+  // réponse à sa dernière lettre email envoyée (sans garde « Re: » : une adresse
+  // par dossier non devinable EST pour ce dossier). Les heuristiques ci-dessous
+  // ne servent que de filet quand aucun jeton n'a matché (fils pré-feature).
+  if (tokenCaseId) {
+    repliedLetter = (
+      await sb
+        .from("letters")
+        .select(letterCols)
+        .eq("case_id", tokenCaseId)
+        .eq("channel", "email")
+        .not("sent_at", "is", null)
+        .order("sent_at", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    ).data;
+  }
+  if (!tokenCaseId && referencedIds.length > 0) {
     repliedLetter = (
       await sb
         .from("letters")
@@ -221,7 +276,7 @@ export async function POST(req: Request): Promise<Response> {
   // classé « réponse reçue » à tort et déclencherait une notification email.
   // Fwd:/Tr: (transfert) ne comptent PAS comme réponse.
   const looksLikeReply = /^\s*r[eé]\s*(\[\d+\])?\s*:/i.test(subject);
-  if (!repliedLetter && fromContact && looksLikeReply) {
+  if (!tokenCaseId && !repliedLetter && fromContact && looksLikeReply) {
     // Dossier OUVERT dont le destinataire a cette adresse (comparaison
     // insensible à la casse — % et _ échappés pour ilike).
     const { data: matchedCase } = await sb
@@ -248,54 +303,116 @@ export async function POST(req: Request): Promise<Response> {
     }
   }
 
-  if (repliedLetter) {
+  // Dossier cible : le jeton (déterministe) prime, sinon la lettre heuristique.
+  // On route les effets sur le DOSSIER même sans lettre envoyée (jeton minté mais
+  // réponse arrivée avant tout courrier).
+  const caseId = tokenCaseId ?? repliedLetter?.case_id ?? null;
+  if (caseId) {
     const quote = excerpt.length >= 160 ? `${excerpt.slice(0, 159)}…` : excerpt;
-    // Un jalon par email reçu (status_code = id de l'élément de boîte) : une
-    // DEUXIÈME réponse notifie aussi ; un rejeu du webhook ne duplique rien
-    // (l'idempotence amont sur message_id fait déjà barrage).
-    const { data: fresh } = await sb
-      .from("letter_tracking_events")
-      .upsert(
-        {
-          organization_id: repliedLetter.organization_id,
-          case_id: repliedLetter.case_id,
-          letter_id: repliedLetter.id,
-          channel: "email",
-          stage: "replied",
-          status_code: `inbound:${item.id}`,
-          label: "Réponse reçue",
-          detail: quote || null,
-          occurred_at: new Date().toISOString(),
-        },
-        { onConflict: "letter_id,stage,status_code", ignoreDuplicates: true },
-      )
-      .select("id");
-    if (fresh && fresh.length > 0) {
-      await recomputeLetterTrackingStatus(sb, repliedLetter.id);
+    // Jalon « Réponse reçue » sur la lettre répondue s'il y en a une. status_code
+    // = id de l'élément de boîte : un rejeu du webhook ne duplique rien
+    // (l'idempotence amont sur message_id fait déjà barrage en étape 3).
+    let fresh = true;
+    if (repliedLetter) {
+      const { data: freshRows } = await sb
+        .from("letter_tracking_events")
+        .upsert(
+          {
+            organization_id: orgId,
+            case_id: repliedLetter.case_id,
+            letter_id: repliedLetter.id,
+            channel: "email",
+            stage: "replied",
+            status_code: `inbound:${item.id}`,
+            label: "Réponse reçue",
+            detail: quote || null,
+            occurred_at: new Date().toISOString(),
+          },
+          { onConflict: "letter_id,stage,status_code", ignoreDuplicates: true },
+        )
+        .select("id");
+      fresh = !!(freshRows && freshRows.length > 0);
+      if (fresh) await recomputeLetterTrackingStatus(sb, repliedLetter.id);
+    }
+    if (fresh) {
       await sb.from("case_events").insert({
-        case_id: repliedLetter.case_id,
-        organization_id: repliedLetter.organization_id,
+        case_id: caseId,
+        organization_id: orgId,
         event_type: "letter_tracking",
         title: "Réponse reçue par email",
         description: quote || null,
         source: "system",
       });
-      const kindLabel = LETTER_KINDS[repliedLetter.kind]?.label ?? "Courrier";
+      const kindLabel = repliedLetter ? (LETTER_KINDS[repliedLetter.kind]?.label ?? "Courrier") : null;
       await notifyOrganization(sb, {
         organizationId: orgId,
-        caseId: repliedLetter.case_id,
-        letterId: repliedLetter.id,
+        caseId,
+        letterId: repliedLetter?.id,
         kind: "reply",
-        title: `Réponse reçue à votre ${kindLabel.toLowerCase()}`,
+        title: kindLabel ? `Réponse reçue à votre ${kindLabel.toLowerCase()}` : "Réponse reçue sur un dossier",
         body: `${displayName(from) ?? fromContact ?? "Le destinataire"} a répondu : « ${quote} »`,
         href: "/app/inbox",
         email: true,
       });
       await enqueueWebhook(orgId, "reply.received", {
-        case_id: repliedLetter.case_id,
-        letter_id: repliedLetter.id,
+        case_id: caseId,
+        letter_id: repliedLetter?.id ?? null,
         inbox_item_id: item.id,
       });
+      // Adresse par dossier (jeton CERTAIN) : on capte le retour et on LANCE
+      // l'analyse — un BROUILLON de réponse adaptée, jamais d'envoi (pilier #1).
+      // En arrière-plan (after()) : l'agent peut prendre plusieurs secondes, on
+      // ne bloque pas l'accusé de réception à Resend.
+      if (tokenCaseId) {
+        const replyBody = text || subject;
+        const { data: dr } = await sb
+          .from("debtor_replies")
+          .insert({
+            organization_id: orgId,
+            case_id: tokenCaseId,
+            received_via: "email",
+            body_text: replyBody,
+            letter_id: repliedLetter?.id ?? null,
+            handled: false,
+          })
+          .select("id")
+          .single();
+        const draftCaseId = tokenCaseId;
+        after(async () => {
+          const sb2 = createServiceClient();
+          // Claim ATOMIQUE du retour avant de rédiger : si l'UI (bouton « générer
+          // la réponse ») ou un rejeu a déjà pris ce retour, on ne produit pas un
+          // 2e brouillon. Le marquage handled fait office de verrou.
+          if (dr?.id) {
+            const { data: claimed } = await sb2
+              .from("debtor_replies")
+              .update({ handled: true })
+              .eq("id", dr.id)
+              .eq("handled", false)
+              .select("id")
+              .maybeSingle();
+            if (!claimed) return;
+          }
+          const { data: org2 } = await sb2
+            .from("organizations")
+            .select("name")
+            .eq("id", orgId)
+            .maybeSingle();
+          const res = await draftAdaptedResponseCore(
+            sb2,
+            orgId,
+            org2?.name ?? "Votre entreprise",
+            draftCaseId,
+            replyBody,
+          );
+          if ("error" in res) {
+            // Rédaction en échec : on relâche le retour pour une reprise manuelle.
+            if (dr?.id) await sb2.from("debtor_replies").update({ handled: false }).eq("id", dr.id);
+            return;
+          }
+          await touchCase(draftCaseId, { type: "letter_draft", label: "Réponse adaptée préparée" });
+        });
+      }
     }
   } else {
     await notifyOrganization(sb, {

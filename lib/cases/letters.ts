@@ -717,13 +717,16 @@ export async function approveAndSendLetter(
   // pas 'letters.send', son droit dans une autre org faisant écran.
   const { data: billedCase } = await supabase
     .from("cases")
-    .select("organization_id, billing_status, is_sample, organizations ( inbox_slug )")
+    .select("organization_id, billing_status, is_sample, inbox_token, organizations ( inbox_slug )")
     .eq("id", letter.case_id)
     .maybeSingle();
   if (!billedCase) return { error: "Dossier introuvable." };
   const orgId = billedCase.organization_id as string;
   const inboxSlug =
     (billedCase.organizations as unknown as { inbox_slug: string | null } | null)?.inbox_slug ?? null;
+  // Jeton de routage par dossier : les réponses arrivent sur <slug>+<token>@…
+  // et sont routées de façon déterministe vers CE dossier (cf. webhook inbound).
+  const inboxToken = (billedCase.inbox_token as string | null) ?? null;
 
   // Droit de VALIDER & ENVOYER dans l'org du dossier — gaté côté action car
   // l'envoi passe par des chemins que la RLS ne voit pas.
@@ -799,7 +802,14 @@ export async function approveAndSendLetter(
     subject: letter.subject ?? "Votre courrier",
     bodyMd: body,
     toEmail: channel === "email" ? toEmail : null,
-    replyTo: inboxSlug ? `${inboxSlug}@${serverEnv().CASE_EMAIL_DOMAIN}` : null,
+    // Adresse par dossier (plus-addressing) pour un routage déterministe des
+    // réponses ; repli slug-seul pour les dossiers legacy sans jeton (les
+    // heuristiques restent le filet). From reste stable (délivrabilité).
+    replyTo: inboxSlug
+      ? inboxToken
+        ? `${inboxSlug}+${inboxToken}@${serverEnv().CASE_EMAIL_DOMAIN}`
+        : `${inboxSlug}@${serverEnv().CASE_EMAIL_DOMAIN}`
+      : null,
     toAddress,
     fromAddress,
     reference: letter.id,
