@@ -125,10 +125,10 @@ marketplace — validation du besoin ET concurrent installé.
 
 1. **Avancer l'intégration compta de la Phase 3 à maintenant** (roadmap : « tout
    ajout = un retrait » — dire ce qu'on décale).
-2. **Pricing** : l'intégration est-elle un perk du plan Pro 9 € (rétention) ou
-   l'argument fondateur du futur Business/Scale (l'ancienne grille la mettait
-   dans Scale 199 €) ? Au passage, réaligner `00-INDEX.md` (décision 6, encore
-   en v1) avec `09-pricing.md` v2.
+2. **Pricing** : décision actée le 12/07 — l'intégration/API est un perk du
+   plan Pro 9 € (rétention), avec 1 dossier inclus par mois et dossiers
+   supplémentaires à 10 € HT. `00-INDEX.md` et `09-pricing.md` sont alignés en
+   v3.
 3. **Périmètre détection de paiement** : nouveau périmètre documentaire (le PRD
    ne couvre que la détection par mention email) — à écrire dans `03-prd.md` +
    `08-workflows.md` si acté.

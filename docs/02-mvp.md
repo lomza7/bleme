@@ -55,7 +55,7 @@ Le marketing et la landing restent centrés sur l'impayé (promesse chiffrable) 
 | 15 | Rappels / prochaines actions | "Relance J+7 prête", "Pas de réponse à la MED depuis 8 jours" — email + in-app |
 | 16 | Dashboard cash | Total impayés suivis, montant récupéré, dossiers à risque, prochaines actions |
 | 17 | Export dossier | PDF de synthèse + ZIP horodaté (docs + timeline + courriers) prêt pour avocat/commissaire |
-| 18 | Paiement | Stripe : premier dossier one-shot puis abonnement |
+| 18 | Paiement | Stripe : dossier à 19 € HT, Pro 9 € HT/mois avec 1 dossier inclus par mois |
 
 **Envoi recommandé** : en V1, BLEME **génère le PDF prêt à poster** + guide l'utilisateur (ou lien vers un service en ligne). L'API (Maileva/Merci Facteur) arrive en V1.5 — c'est une intégration à risque de friction (adresse invalide, suivi) qu'il ne faut pas mettre sur le chemin critique du lancement.
 
@@ -87,7 +87,7 @@ Le marketing et la landing restent centrés sur l'impayé (promesse chiffrable) 
 
 **Contexte : Karim, plombier, facture de 2 400 € impayée depuis 47 jours par un contractant général.**
 
-1. **Landing → "Créer mon premier dossier — 39 €"**. Inscription email + mot de passe (ou magic link). Pas de CB avant de voir la valeur : la CB arrive à l'étape 8.
+1. **Landing → "Créer mon premier dossier"**. Inscription email + mot de passe (ou magic link). Pas de CB avant de voir la valeur : la CB arrive à l'étape 8.
 2. **Choix du type** : deux choix actifs en V1 ("Facture impayée", "Litige client"), les autres (amende, démarche administrative) visibles "bientôt" (signal roadmap + capture d'intérêt par vote).
 3. **Mini-formulaire (30 s)** : nom du client débiteur (autocomplete SIRENE), montant approximatif, date de la facture. Juste assez pour créer le dossier.
 4. **Écran vocal** — le moment signature :
@@ -101,7 +101,7 @@ Le marketing et la landing restent centrés sur l'impayé (promesse chiffrable) 
    - Score de complétude : "7/10 — il manque : devis signé, preuve de fin de chantier".
    - Encadré "Point de vigilance" issu de l'avocat du diable : "Le client évoque un retard de chantier : ajoutez tout échange prouvant que le délai a été accepté."
 7. **Plan d'action proposé** : ① Relance amiable aujourd'hui → ② Relance ferme J+7 → ③ Mise en demeure recommandée J+15. Chaque étape = brouillon déjà prêt.
-8. **Paywall naturel** : "Votre dossier est prêt. Activez-le pour 39 € : envoi des relances, suivi des réponses, adresse email dédiée, export complet." Paiement Stripe.
+8. **Paywall naturel** : "Votre dossier est prêt. Ouvrez-le pour 19 € HT : envoi des relances, suivi des réponses, adresse email dédiée, export complet. Avec Pro, votre dossier mensuel inclus peut être utilisé." Paiement Stripe si le dossier n'est pas inclus.
 9. **Validation de la relance n°1** : brouillon affiché, éditable, bouton "J'ai relu, envoyer en mon nom". Envoi. Confetti sobre.
 10. **Suivi** : l'utilisateur reçoit un email à chaque réponse du débiteur et à chaque action planifiée. Il revient sur BLEME via ces emails — c'est la boucle de rétention.
 

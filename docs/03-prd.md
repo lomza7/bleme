@@ -8,7 +8,7 @@ BLEME transforme un problème professionnel (un "blème") en dossier suivi : pre
 
 ## 2. Objectifs
 
-**Business (6 mois)** : 200 clients payants, 30 % de conversion premier dossier → abonnement, MRR 8 k€.
+**Business (6 mois)** : 200 clients payants, 30 % de conversion vers Pro après ouverture d'un dossier, MRR 8 k€.
 **Produit** : un utilisateur non technique crée un dossier complet en < 15 minutes ; première relance envoyée dans la première session pour > 60 % des dossiers créés.
 **Preuve de valeur** : > 500 k€ d'impayés suivis, > 100 k€ marqués "récupérés" par les utilisateurs.
 
@@ -115,7 +115,7 @@ V1 minimal (protégé, rôle admin) : liste des comptes et dossiers (métadonné
 Acquisition : visiteurs → inscription (cible 5 %), inscription → dossier créé (60 %), dossier créé → payé (40 %).
 Activation : % de dossiers avec relance n°1 envoyée en première session (60 %), délai création → premier envoi.
 Valeur : € suivis, € récupérés, délai moyen de récupération, % dossiers résolus sans MED.
-Rétention : conversion premier dossier → abonnement (30 %), churn mensuel (< 5 %), dossiers actifs/compte.
+Rétention : conversion vers Pro après ouverture d'un dossier (30 %), churn mensuel (< 5 %), dossiers actifs/compte.
 Qualité IA : % d'extractions corrigées par l'utilisateur, % de brouillons envoyés sans modification, temps de review.
 
 ## 22. Critères de succès du MVP
@@ -128,7 +128,7 @@ Voir tableau complet dans [01-analyse-strategique.md](01-analyse-strategique.md)
 
 ## 24. Questions ouvertes
 
-**Tranchées le 04/07/2026** : prix du premier dossier = 39 € (à confirmer sur les 50 premiers clients) · provider recommandé = **Merci Facteur** · partenariat comptables = **non** (retiré de la roadmap) · CGU avocat = reporté (à re-planifier avant le lancement public) · litiges clients = inclus au MVP.
+**Tranchées le 12/07/2026** : pricing = 0 €/mois sans abonnement + 19 € HT par dossier ouvert ; Pro 9 € HT/mois avec 1 dossier inclus par mois, dossiers supplémentaires à 10 € HT, API/stockage/export · provider recommandé = **Merci Facteur** · partenariat comptables = **non** (retiré de la roadmap) · CGU avocat = reporté (à re-planifier avant le lancement public) · litiges clients = inclus au MVP.
 
 Restent ouvertes :
 1. Le "récupéré" est-il déclaratif ou faut-il une preuve (mention d'un paiement dans un email) ? V1 : déclaratif + détection assistée.

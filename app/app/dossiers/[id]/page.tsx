@@ -37,7 +37,12 @@ import { CaseEventsTimeline } from "@/components/app/case-events-timeline";
 import { CaseContextPanel } from "@/components/app/case-context";
 import { AgentObservations, type ObservationItem } from "@/components/app/agent-observations";
 import { CasePaymentBanner } from "@/components/app/billing";
-import { casePriceForOrg, hasActivePro } from "@/lib/billing/pricing";
+import {
+  PRO_INCLUDED_CASES_PER_MONTH,
+  billingMonthStartIso,
+  casePriceForOrg,
+  hasActivePro,
+} from "@/lib/billing/pricing";
 import { getSecret } from "@/lib/secrets";
 
 export const metadata: Metadata = { title: "Dossier" };
@@ -140,7 +145,20 @@ export default async function CaseDetailPage({
     (c.suggested_recipients as SuggestedRecipient[] | null) ?? []
   ).filter((r) => r && typeof r.nom === "string");
   const proPrice = hasActivePro(orgRow ?? {});
-  const casePriceCents = casePriceForOrg(orgRow ?? {});
+  const includedCaseOpen = ["paid", "included"].includes(c.billing_status ?? "");
+  const { count: includedCasesThisMonth } =
+    proPrice && !includedCaseOpen
+      ? await supabase
+          .from("cases")
+          .select("id", { count: "exact", head: true })
+          .eq("organization_id", c.organization_id)
+          .eq("billing_status", "included")
+          .eq("billing_amount_cents", 0)
+          .gte("billing_paid_at", billingMonthStartIso())
+      : { count: 0 };
+  const proIncludedCaseAvailable =
+    proPrice && !includedCaseOpen && (includedCasesThisMonth ?? 0) < PRO_INCLUDED_CASES_PER_MONTH;
+  const casePriceCents = casePriceForOrg(orgRow ?? {}, { proIncludedCaseAvailable });
   const stripeReady = Boolean(await getSecret("STRIPE_SECRET_KEY"));
 
   const docList = docs ?? [];

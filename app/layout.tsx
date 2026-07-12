@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     template: "%s · BLEME",
   },
   description:
-    "BLEME est l’assistant IA des artisans, freelances et TPE pour récupérer les factures impayées, gérer les litiges clients et suivre les démarches : relances cadencées, mise en demeure, dossier prêt pour un professionnel. Dès 9 €/mois, sans engagement.",
+    "BLEME est l’assistant IA des artisans, freelances et TPE pour récupérer les factures impayées, gérer les litiges clients et suivre les démarches : relances cadencées, mise en demeure, dossier prêt pour un professionnel. 0 €/mois, dossiers à partir de 19 € HT.",
   keywords: [
     "facture impayée",
     "relance client",
@@ -45,7 +45,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "BLEME · L’IA qui s’occupe de vos impayés, litiges et démarches",
     description:
-      "Impayés, litiges, démarches : l’IA qui s’occupe de vos problèmes. Dès 9 €/mois, sans engagement.",
+      "Impayés, litiges, démarches : l’IA qui s’occupe de vos problèmes. 0 €/mois, dossiers à partir de 19 € HT.",
     images: ["/og.png"],
   },
   robots: {

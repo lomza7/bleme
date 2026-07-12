@@ -2,11 +2,11 @@
 
 ## Phase 1 — MVP (30 jours)
 
-**Objectif** : un inconnu crée un dossier impayé, envoie sa première relance par email et paie 39 €. Tout le reste est secondaire.
+**Objectif** : un inconnu crée un dossier impayé, ouvre le dossier à 19 € HT (ou via le dossier inclus Pro) et envoie sa première relance par email. Tout le reste est secondaire.
 
-**Fonctionnalités** : auth + org · création dossier 2 types (impayé + litige client, wizard 3 étapes) · intake vocal + transcription + résumé + avocat du diable · upload docs + extraction + classification · score de complétude · timeline · brouillons relance 1/2 + MED (PDF) + courriers litige à la carte · validation + approval_logs · envoi email + adresse par dossier (inbound) · notifications email · dashboard simple · export PDF/ZIP · Stripe premier dossier · landing page.
+**Fonctionnalités** : auth + org · création dossier 2 types (impayé + litige client, wizard 3 étapes) · intake vocal + transcription + résumé + avocat du diable · upload docs + extraction + classification · score de complétude · timeline · brouillons relance 1/2 + MED (PDF) + courriers litige à la carte · validation + approval_logs · envoi email + adresse par dossier (inbound) · notifications email · dashboard simple · export PDF/ZIP · Stripe dossier à l'unité + Pro 9 € · landing page.
 
-**Hors périmètre assumé** : recommandé API, Gmail OAuth, abonnements multi-plans (un seul plan Starter suffit à encaisser les early adopters), admin panel complet, mobile app.
+**Hors périmètre assumé** : recommandé API, Gmail OAuth, abonnements multi-plans (un seul plan Pro suffit à encaisser les early adopters), admin panel complet, mobile app.
 
 **Risques** : qualité d'extraction sur photos (mitigation : édition manuelle fluide dès le jour 1) · délivrabilité email (domaine dédié configuré semaine 1, warm-up) · périmètre qui gonfle (ce document fait foi : tout ajout = un retrait).
 
@@ -18,9 +18,9 @@
 
 **Objectif** : prouver la conversion et la rétention sur 100+ vrais clients. C'est la phase de vérité commerciale.
 
-**Fonctionnalités** : recommandé via API Merci Facteur + suivi AR · grille tarifaire complète (Starter/Business/Scale + annuel) + upsell premier dossier → abonnement · analyse des réponses adverses (Agent Email complet) + suggestions de suite · relances amiables auto opt-in · amélioration continue des prompts sur les dossiers réels (boucle `agent_runs` → corrections utilisateurs) · admin back-office · onboarding dossier d'exemple · SEO programmatique ("facture impayée + [métier/situation]") · démarrage du process Google CASA pour Gmail (V3).
+**Fonctionnalités** : recommandé via API Merci Facteur + suivi AR · grille tarifaire complète (0 €/mois + 19 €/dossier, Pro 9 €/mois avec 1 dossier inclus et dossiers supplémentaires à 10 €) · analyse des réponses adverses (Agent Email complet) + suggestions de suite · relances amiables auto opt-in · amélioration continue des prompts sur les dossiers réels (boucle `agent_runs` → corrections utilisateurs) · admin back-office · onboarding dossier d'exemple · SEO programmatique ("facture impayée + [métier/situation]") · démarrage du process Google CASA pour Gmail (V3).
 
-**Risques** : conversion premier dossier → abonnement < 20 % (dans ce cas : revoir le moment d'upsell et le prix, pas tout le produit) · litiges V1 trop hétérogènes pour les prompts (mitigation : sous-types + checklists affinés sur les dossiers réels) · coûts de support (mitigation : FAQ in-app, statuts clairs).
+**Risques** : conversion vers Pro trop faible (dans ce cas : renforcer API/stockage/export et le moment d'upsell, pas basculer en commission) · litiges V1 trop hétérogènes pour les prompts (mitigation : sous-types + checklists affinés sur les dossiers réels) · coûts de support (mitigation : FAQ in-app, statuts clairs).
 
 **Livrables** : 100 clients payants · 1 partenariat fédération/groupement local · 10 témoignages chiffrés ("j'ai récupéré X €") · tableau de bord des KPIs interne.
 

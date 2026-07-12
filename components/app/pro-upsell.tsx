@@ -8,7 +8,9 @@ export function ProUpsell({ feature }: { feature: string }) {
       <Sparkles className="size-5 shrink-0 text-brand-strong" />
       <p className="min-w-0 flex-1 text-sm">
         <span className="font-medium">{feature} font partie du forfait Pro.</span>{" "}
-        <span className="text-muted-foreground">Passez au Pro (9 € HT/mois) pour créer et gérer.</span>
+        <span className="text-muted-foreground">
+          Passez au Pro (9 € HT/mois) : 1 dossier inclus par mois, API et stockage illimité.
+        </span>
       </p>
       <Link
         href="/app/abonnement"

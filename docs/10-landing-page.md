@@ -12,9 +12,9 @@
 
 **Sous-titre** : Racontez votre impayé à voix haute. L'IA monte le dossier, classe vos preuves, rédige les relances et la mise en demeure, et suit les réponses. Vous validez, ça avance.
 
-**CTA principal** : `Créer mon premier dossier — 39 €`
+**CTA principal** : `Créer mon premier dossier`
 **CTA secondaire** : `Voir comment ça marche (2 min)`
-**Réassurance sous CTA** : Sans abonnement · Remboursé si aucune relance n'est générée · Vos données restent les vôtres
+**Réassurance sous CTA** : 0 €/mois · 19 € HT par dossier ouvert · Vos données restent les vôtres
 
 *(Visuel : écran de dossier avec timeline + jauge vocale, sur fond de devis/factures qui se rangent.)*
 
@@ -105,14 +105,13 @@ Un écran. Fini les impayés qui dorment dans un coin de Gmail.
 
 ## Section pricing
 
-### Commencez par un dossier. Continuez si ça rapporte.
+### 0 €/mois si vos blèmes sont ponctuels. Pro si ça revient souvent.
 
-**Premier dossier — 39 €** · tout inclus, suivi 90 jours, remboursé si aucune relance générée
-**Pro Starter — 49 €/mois** · 3 dossiers actifs, cadences automatiques, dashboard
-**Pro Business — 99 €/mois** · 10 dossiers actifs, recommandés intégrés, templates personnalisés
-**Pro Scale — 199 €/mois** · illimité, multi-utilisateurs, intégrations
+**Sans abonnement — 0 €/mois** · 19 € HT par dossier ouvert, suivi jusqu'à résolution, exportable à vie
+**Pro — 9 € HT/mois** · 1 dossier inclus par mois, dossiers supplémentaires à 10 € HT
+**Pro inclut aussi** · API + webhooks, stockage illimité des preuves/docs, exports faciles vers avocat ou comptable
 
-*–20 % en annuel. Recommandés facturés au réel (~12 €). Vos données s'exportent à tout moment, même après résiliation.*
+*Pro annuel : 90 € HT/an. Envois au réel : lettre suivie 5 € HT, recommandé AR 10 € HT. Vos données s'exportent à tout moment, même après résiliation.*
 
 ---
 
@@ -142,6 +141,6 @@ BLEME n'est ni un cabinet d'avocats, ni une société de recouvrement. BLEME est
 
 Créez le dossier maintenant. Dans 15 minutes, la première relance est partie.
 
-`Créer mon premier dossier — 39 €`
+`Créer mon premier dossier`
 
-*Remboursé si aucune relance n'est générée. Sans abonnement. Sans engagement.*
+*0 €/mois sans abonnement. Sans engagement. Jamais de commission.*

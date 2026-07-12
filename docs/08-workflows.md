@@ -12,7 +12,7 @@ Notation : **[U]** action utilisateur, **[S]** système déterministe, **[IA]** 
 7. [U] Upload des documents (workflow 2 pour chacun).
 8. [IA] Agent Timeline + Agent Preuves (score de complétude) + Agent Risque (points de vigilance).
 9. [S] Génère le plan d'action (séquence du playbook) → `tasks` + `deadlines`.
-10. [U] Paiement (premier dossier ou dans le quota d'abonnement) → status `active`.
+10. [U] Ouverture du dossier (19 € HT, ou dossier mensuel inclus avec Pro) → validation des courriers débloquée.
 
 ## 2. Import d'une facture (tout document)
 1. [U] Drag & drop / photo / PJ d'email transféré.

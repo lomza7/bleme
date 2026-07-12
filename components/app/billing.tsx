@@ -1,4 +1,4 @@
-import { CheckCircle2, CreditCard, LoaderCircle, LockKeyhole } from "lucide-react";
+import { CheckCircle2, CreditCard, LoaderCircle, LockKeyhole, Sparkles } from "lucide-react";
 import { startCaseCheckout } from "@/lib/billing/actions";
 import { formatEuros } from "@/lib/billing/pricing";
 
@@ -36,6 +36,7 @@ export function CasePaymentBanner({
   }
 
   const pending = billingStatus === "pending" || checkout === "case-success";
+  const includedThisMonth = priceCents === 0 && proPrice;
 
   return (
     <section className="mt-6 rounded-[1.75rem] border bg-card p-6 sm:p-7">
@@ -43,14 +44,27 @@ export function CasePaymentBanner({
         <div className="max-w-xl">
           <div className="flex items-center gap-2">
             <span className="flex size-9 items-center justify-center rounded-xl bg-brand-soft text-brand-strong">
-              {stripeReady ? <CreditCard className="size-4" /> : <LockKeyhole className="size-4" />}
+              {includedThisMonth ? (
+                <Sparkles className="size-4" />
+              ) : stripeReady ? (
+                <CreditCard className="size-4" />
+              ) : (
+                <LockKeyhole className="size-4" />
+              )}
             </span>
             <h2 className="text-lg font-semibold">Ouvrir le dossier</h2>
           </div>
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            Vous pouvez préparer gratuitement. Le paiement débloque la validation
-            des courriers et le suivi du dossier.
+            {includedThisMonth
+              ? "Votre forfait Pro inclut encore un dossier ce mois-ci. L’ouverture débloque la validation des courriers et le suivi, sans paiement Stripe."
+              : "Vous pouvez préparer gratuitement. Le paiement débloque la validation des courriers et le suivi du dossier."}
           </p>
+          {checkout === "case-included" ? (
+            <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-800 ring-1 ring-emerald-200">
+              <CheckCircle2 className="size-3.5" />
+              Dossier ouvert avec votre forfait Pro.
+            </p>
+          ) : null}
           {pending ? (
             <p className="mt-3 inline-flex items-center gap-2 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
               <LoaderCircle className="size-3.5 animate-spin" />
@@ -64,18 +78,20 @@ export function CasePaymentBanner({
           ) : null}
         </div>
         <div className="shrink-0 sm:text-right">
-          <p className="text-2xl font-bold tracking-tight">{formatEuros(priceCents)}</p>
+          <p className="text-2xl font-bold tracking-tight">
+            {includedThisMonth ? "Inclus" : formatEuros(priceCents)}
+          </p>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            HT/dossier{proPrice ? " · tarif Pro" : ""}
+            {includedThisMonth ? "1 dossier/mois avec Pro" : `HT/dossier${proPrice ? " · tarif Pro" : ""}`}
           </p>
           <form action={startCaseCheckout.bind(null, caseId)} className="mt-4">
             <button
               type="submit"
-              disabled={!stripeReady}
+              disabled={!includedThisMonth && !stripeReady}
               className="inline-flex items-center gap-2 rounded-full bg-brand px-5 py-2.5 text-sm font-medium text-brand-foreground transition-all duration-300 hover:bg-brand-strong active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
             >
-              <CreditCard className="size-4" />
-              Payer et ouvrir
+              {includedThisMonth ? <Sparkles className="size-4" /> : <CreditCard className="size-4" />}
+              {includedThisMonth ? "Ouvrir avec Pro" : "Payer et ouvrir"}
             </button>
           </form>
         </div>

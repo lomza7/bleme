@@ -24,8 +24,8 @@ const PLANS = [
   },
   {
     nom: "Le dossier",
-    prix: "39 €",
-    suffixe: "HT/dossier · 19 € en Pro",
+    prix: "19 €",
+    suffixe: "HT/dossier · sans abonnement",
     populaire: true,
     inclus: [
       "Payé une fois, suivi jusqu’à résolution",
@@ -39,10 +39,11 @@ const PLANS = [
     prix: "9 €",
     suffixe: "HT/mois, sans engagement",
     inclus: [
-      "Dossiers à 19 € HT au lieu de 39 €",
+      "1 dossier inclus chaque mois",
+      "Dossiers supplémentaires à 10 € HT",
       "Boîte de réception illimitée + libellés",
-      "Veille des échéances et prescription",
-      "Documents d’entreprise illimités",
+      "API, webhooks et stockage illimité",
+      "Export facile vers avocat ou comptable",
     ],
   },
 ];
@@ -115,8 +116,8 @@ export default async function AbonnementPage({
             <p className="font-semibold">{proActive ? "Pro actif" : "Formule gratuite"}</p>
             <p className="mt-1 max-w-md text-sm leading-relaxed text-ink-muted">
               {proActive
-                ? `Vos dossiers passent à 19 € HT. Statut Stripe : ${STATUS_LABEL[org?.billing_status ?? "active"] ?? org?.billing_status}.`
-                : "Préparez gratuitement vos dossiers. Le paiement intervient à l'ouverture du dossier ou via Pro pour obtenir le tarif réduit."}
+                ? `Votre forfait inclut 1 dossier par mois ; les suivants sont à 10 € HT. Statut Stripe : ${STATUS_LABEL[org?.billing_status ?? "active"] ?? org?.billing_status}.`
+                : "Préparez gratuitement vos dossiers. Sans abonnement, chaque dossier ouvert coûte 19 € HT ; Pro ajoute 1 dossier inclus par mois."}
               {org?.subscription_cancel_at_period_end && org.subscription_current_period_end
                 ? ` Résiliation prévue le ${new Date(org.subscription_current_period_end).toLocaleDateString("fr-FR")}.`
                 : ""}
@@ -256,8 +257,9 @@ export default async function AbonnementPage({
           ) : (
             <>
               <p className="max-w-lg text-sm leading-relaxed text-muted-foreground">
-                Les paiements BLEME apparaîtront ici : abonnement, dossiers à
-                l’unité, recommandés. Les factures fiscales restent émises par Stripe.
+                Les ouvertures de dossiers apparaîtront ici, y compris les
+                dossiers inclus dans Pro. Les factures fiscales restent émises
+                par Stripe.
               </p>
               <p className="rounded-full bg-muted px-3.5 py-1.5 text-xs font-medium text-muted-foreground">
                 Aucun paiement pour l’instant.
@@ -268,12 +270,12 @@ export default async function AbonnementPage({
       </section>
 
       <p className="text-xs leading-relaxed text-muted-foreground/80">
-        Pro en annuel : 90 € HT (2 mois offerts). Envois au réel, validés
-        avant chaque paiement : relances email incluses, lettre suivie
-        5 € HT, recommandé papier avec AR 10 € HT, recommandé électronique
-        8 € HT (bientôt). Jamais de commission sur les sommes récupérées ;
-        vos dossiers clôturés restent consultables et exportables sans
-        limite.
+        Pro en annuel : 90 € HT (2 mois offerts). 1 dossier inclus chaque
+        mois ; dossiers supplémentaires à 10 € HT. Envois au réel, validés
+        avant chaque paiement : relances email incluses, lettre suivie 5 € HT,
+        recommandé papier avec AR 10 € HT, recommandé électronique 8 € HT
+        (bientôt). Jamais de commission sur les sommes récupérées ; vos
+        dossiers clôturés restent consultables et exportables sans limite.
       </p>
     </div>
   );

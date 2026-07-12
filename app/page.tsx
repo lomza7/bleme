@@ -47,8 +47,8 @@ export default function Home() {
           inLanguage: "fr-FR",
           offers: [
             { "@type": "Offer", name: "Gratuit", price: "0", priceCurrency: "EUR", description: "Préparer son dossier : récit vocal, preuves, boîte de réception, chronologie, brouillons visibles. Rien n'est envoyé." },
-            { "@type": "Offer", name: "Dossier à l'unité", price: "39", priceCurrency: "EUR", description: "Payé une fois, HT, suivi jusqu'à résolution : relances email cadencées, mise en demeure, export professionnel. 19 € HT avec l'abonnement Pro." },
-            { "@type": "Offer", name: "Pro", price: "9", priceCurrency: "EUR", description: "Par mois, HT, sans engagement : boîte de réception illimitée, veille des échéances, documents illimités, dossiers à 19 € HT." },
+            { "@type": "Offer", name: "Dossier à l'unité", price: "19", priceCurrency: "EUR", description: "Sans abonnement : 19 € HT par dossier ouvert, suivi jusqu'à résolution, relances email cadencées, mise en demeure et export professionnel." },
+            { "@type": "Offer", name: "Pro", price: "9", priceCurrency: "EUR", description: "Par mois, HT, sans engagement : 1 dossier inclus par mois, dossiers supplémentaires à 10 € HT, API, stockage illimité des preuves et exports professionnels." },
           ],
         }}
       />
@@ -472,12 +472,12 @@ function Pricing() {
       <div className="mx-auto max-w-6xl scroll-mt-24 px-6 py-24 lg:py-32">
         <Reveal>
           <h2 className="max-w-2xl text-3xl font-bold tracking-tight sm:text-4xl">
-            Gratuit pour préparer. Payez quand ça part.
+            0 € par mois. 19 € par dossier.
           </h2>
           <p className="mt-4 max-w-2xl text-lg text-muted-foreground">
-            Montez votre dossier sans sortir la carte. Vous payez au dossier,
-            quand les courriers partent, et jamais de commission sur ce que vous
-            récupérez.
+            Sans abonnement, vous payez seulement les dossiers ouverts. Avec
+            Pro, un dossier est inclus chaque mois, les suivants passent à 10 €,
+            et vous débloquez l’API, le stockage illimité et les exports pro.
           </p>
         </Reveal>
         <RevealStagger className="mt-12 grid grid-cols-1 gap-4 lg:grid-cols-2" stagger={0.12}>
@@ -493,8 +493,8 @@ function Pricing() {
                 </p>
                 <p className="mt-4 leading-relaxed text-muted-foreground">
                   Récit vocal, preuves, boîte de réception, chronologie et
-                  brouillons visibles en entier. Le dossier se monte au calme ;
-                  rien ne part tant que vous ne payez pas.
+                  brouillons visibles en entier. 0 € par mois ; chaque dossier
+                  ouvert coûte 19 € HT.
                 </p>
               </div>
               <PillCta href="/nouveau" className="mt-9 justify-center">
@@ -513,10 +513,10 @@ function Pricing() {
                   </span>
                 </p>
                 <p className="mt-4 leading-relaxed text-ink-muted">
-                  Le continu : boîte de réception illimitée, veille des
-                  échéances, documents sans limite, et le dossier à 19 € HT
-                  au lieu de 39 €. Sans engagement, rentabilisé dès le premier
-                  dossier de l’année.
+                  1 dossier inclus chaque mois, dossiers supplémentaires à
+                  10 € HT, boîte de réception illimitée, veille des échéances,
+                  API, stockage illimité des preuves et export facile vers
+                  avocat ou comptable.
                 </p>
               </div>
               <Link
@@ -531,10 +531,10 @@ function Pricing() {
         </RevealStagger>
         <Reveal delay={0.15}>
           <p className="mt-6 rounded-[1.5rem] border bg-card px-7 py-4 text-[13px] leading-relaxed text-muted-foreground">
-            Le dossier : <strong className="text-foreground">39 € HT</strong>{" "}
-            payé une fois, suivi jusqu’à résolution (19 € HT avec Pro).
-            Envois au réel, validés par vous : relances email incluses,
-            recommandé avec AR 10 € HT.{" "}
+            Sans abonnement : <strong className="text-foreground">19 € HT</strong>{" "}
+            par dossier ouvert. Pro : 9 € HT/mois avec 1 dossier inclus,
+            puis 10 € HT par dossier supplémentaire. Envois au réel, validés
+            par vous : relances email incluses, recommandé avec AR 10 € HT.{" "}
             <Link href="/tarifs" className="font-medium text-brand-strong underline-offset-4 hover:underline">
               Tous les tarifs en détail
             </Link>
@@ -573,7 +573,7 @@ const FAQ_ITEMS = [
     },
     {
       q: "Combien ça coûte, et il y a un engagement ?",
-      r: "Préparer un dossier est gratuit : récit, preuves, brouillons. Vous payez le dossier (39 € HT, ou 19 € HT avec l'abonnement Pro à 9 € HT/mois) quand les courriers partent, plus les envois au réel (recommandé avec AR 10 € HT). Sans engagement, jamais de commission sur les sommes récupérées, export libre même après départ.",
+      r: "Sans abonnement, BLEME coûte 0 € par mois et 19 € HT par dossier ouvert, plus les envois au réel (recommandé avec AR 10 € HT). Le forfait Pro coûte 9 € HT/mois : 1 dossier inclus chaque mois, dossiers supplémentaires à 10 € HT, API, stockage illimité des preuves et exports faciles. Sans engagement, jamais de commission sur les sommes récupérées.",
     },
 ];
 
@@ -609,8 +609,8 @@ function Faq() {
 
 function FinalCta() {
   const garanties = [
-    "9 € par mois, remboursé si aucune relance n’est générée",
-    "Sans abonnement, sans engagement",
+    "0 € par mois sans abonnement, 19 € HT par dossier",
+    "Pro 9 € HT/mois : 1 dossier inclus, puis 10 € HT",
     "Données hébergées en Europe, exportables à tout moment",
   ];
   return (

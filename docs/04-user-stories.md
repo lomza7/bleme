@@ -70,6 +70,6 @@ Personas : **Karim** (artisan plombier), **Sophie** (freelance), **Marc** (géra
 
 ## Compte et facturation
 
-- **US-28** — En tant que Karim, je veux payer mon premier dossier à l'unité avant de m'engager, afin de tester la valeur sans abonnement.
-- **US-29** — En tant que Marc, je veux passer à l'abonnement et voir mon premier dossier déduit, afin d'être récompensé d'avoir essayé.
+- **US-28** — En tant que Karim, je veux payer un dossier à l'unité sans abonnement, afin de traiter un impayé ponctuel sans engagement.
+- **US-29** — En tant que Marc, je veux passer à Pro et utiliser mon dossier mensuel inclus, afin de traiter mes impayés récurrents à coût prévisible.
 - **US-30** — En tant que Sophie, je veux exporter puis supprimer toutes mes données, afin de rester maîtresse de mes informations.

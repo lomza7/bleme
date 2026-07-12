@@ -134,13 +134,17 @@ Champs : `actor_type ('user'|'system'|'admin')`, `actor_id`, `organization_id nu
 
 ## Facturation
 
-### `subscriptions`
+### Colonnes billing sur `organizations`
 Rôle : état d'abonnement Stripe par organisation.
-Champs : `organization_id`, `stripe_customer_id`, `stripe_subscription_id`, `plan ('first_case'|'a_la_carte'|'starter'|'business'|'scale')`, `status ('trialing'|'active'|'past_due'|'canceled')`, `billing_interval ('month'|'year')`, `active_cases_limit int`, `current_period_end`.
+Champs : `stripe_customer_id`, `stripe_subscription_id`, `stripe_price_id`, `billing_plan ('free'|'pro')`, `billing_status`, `subscription_current_period_end`, `subscription_cancel_at_period_end`, `subscription_updated_at`.
 
-### `billing_events`
-Rôle : historique facturable (abonnements + frais variables).
-Champs : `organization_id`, `case_id null`, `kind ('subscription_payment'|'case_purchase'|'postal_fee'|'refund'|…)`, `amount_cents`, `stripe_ref`, `metadata jsonb`, `occurred_at`.
+### Colonnes billing sur `cases`
+Rôle : ouverture facturable du dossier.
+Champs : `billing_status ('unpaid'|'pending'|'paid'|'included'|'refunded')`, `billing_amount_cents`, `billing_currency`, `billing_paid_at`, `stripe_checkout_session_id`, `stripe_payment_intent_id`.
+
+### `billing_payments`
+Rôle : historique facturable des dossiers.
+Champs : `organization_id`, `case_id null`, `kind ('case')`, `status ('pending'|'paid'|'failed'|'refunded')`, `amount_subtotal_cents`, `amount_total_cents`, `currency`, `stripe_checkout_session_id`, `stripe_payment_intent_id`, `paid_at`, `created_at`.
 
 ## Relations clés (résumé)
 
@@ -151,7 +155,7 @@ organizations 1─N cases 1─N {case_parties, voice_intakes, documents, email_t
 documents 1─N document_extractions
 email_threads 1─N email_messages ─?→ letters
 letters 1─? postal_shipments ; letters 1─1 approval_logs (pour l'envoi)
-organizations 1─1 subscriptions 1─N billing_events
+organizations 1─N billing_payments ; cases 1─N billing_payments
 ```
 
 ## Index indispensables

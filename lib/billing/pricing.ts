@@ -1,5 +1,11 @@
-export const CASE_PRICE_STANDARD_CENTS = 3900;
-export const CASE_PRICE_PRO_CENTS = 1900;
+export const CASE_PRICE_STANDARD_CENTS = 1900;
+export const CASE_PRICE_PRO_EXTRA_CENTS = 1000;
+export const CASE_PRICE_PRO_CENTS = CASE_PRICE_PRO_EXTRA_CENTS;
+export const PRO_INCLUDED_CASES_PER_MONTH = 1;
+
+export function billingMonthStartIso(now = new Date()): string {
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString();
+}
 
 export function formatEuros(cents: number): string {
   return `${(cents / 100).toLocaleString("fr-FR", {
@@ -24,6 +30,7 @@ export function casePriceForOrg(org: {
   billing_plan?: string | null;
   billing_status?: string | null;
   subscription_current_period_end?: string | null;
-}): number {
-  return hasActivePro(org) ? CASE_PRICE_PRO_CENTS : CASE_PRICE_STANDARD_CENTS;
+}, opts?: { proIncludedCaseAvailable?: boolean }): number {
+  if (!hasActivePro(org)) return CASE_PRICE_STANDARD_CENTS;
+  return opts?.proIncludedCaseAvailable ? 0 : CASE_PRICE_PRO_EXTRA_CENTS;
 }

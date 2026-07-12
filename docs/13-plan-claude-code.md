@@ -104,11 +104,11 @@ Découpage en 14 tâches ordonnées, chacune livrable et testable indépendammen
 
 ## T13 — Billing Stripe
 
-**Objectif** : premier dossier 39 € one-shot, puis abonnement Starter (V1 : un seul plan), crédit du premier dossier.
+**Objectif** : dossier à l'unité 19 € HT, Pro 9 € HT/mois avec 1 dossier inclus par mois et dossiers supplémentaires à 10 € HT.
 **Fichiers** : `lib/services/stripe.ts`, `app/api/webhooks/stripe/route.ts`, `app/(app)/settings/billing/page.tsx`, `components/PaywallDialog` (à l'activation du dossier), Stripe Customer Portal pour la gestion.
-**Tables** : `subscriptions`, `billing_events`.
-**Validations** : webhook signé, idempotent (event id unique) ; état d'accès dérivé de `subscriptions.status` (pas d'un flag local) ; dossier actif au-delà du quota → lecture seule + invite upgrade, jamais de blocage de l'export.
-**Edge cases** : paiement échoué après création du dossier (dossier reste `draft` activable) ; past_due (grâce 7 j) ; remboursement premier dossier (process admin) ; TVA (Stripe Tax, TTC affiché pour le one-shot, HT pour les plans).
+**Tables** : `organizations` (état Stripe), `cases` (billing_status), `billing_payments`.
+**Validations** : webhook signé, idempotent (event id unique) ; état Pro dérivé de Stripe ; crédit mensuel Pro = 1 dossier inclus par organisation et par mois ; jamais de blocage de l'export.
+**Edge cases** : paiement échoué après création du dossier (dossier reste activable) ; past_due (grâce 7 j) ; double ouverture simultanée du crédit mensuel Pro (prévoir contrainte/table dédiée si volume) ; TVA (Stripe Tax, prix HT affichés).
 
 ## T14 — Admin panel + tests + hardening
 

@@ -17,14 +17,14 @@ import { ImpayeTypeTabs, SimulateurAnnee } from "@/components/tarifs/simulateur"
 import { JsonLd } from "@/components/seo/json-ld";
 
 /*
- * Page tarifs : le modèle hybride (docs/09-pricing.md, révision v2).
- * Gratuit pour préparer, dossier payé au moment de l'envoi, Pro 9 € pour
- * le continu, envois au réel affichés avant validation.
+ * Page tarifs : le modèle hybride (docs/09-pricing.md, révision v3).
+ * 0 €/mois sans abonnement + dossier à l'unité, Pro 9 € avec un dossier
+ * inclus par mois et les dossiers supplémentaires à prix réduit.
  */
 
-const TITLE = "Tarifs : gratuit pour préparer, payez quand ça part";
+const TITLE = "Tarifs : 0 €/mois, 19 € par dossier";
 const DESCRIPTION =
-  "BLEME est gratuit pour monter votre dossier : récit vocal, preuves, brouillons. Vous payez au dossier (39 € HT, ou 19 € HT avec l'abonnement Pro à 9 € HT/mois) quand les courriers partent. Envois au réel : recommandé avec AR 10 € HT. Jamais de commission sur les sommes récupérées.";
+  "BLEME coûte 0 € par mois sans abonnement : vous payez 19 € HT par dossier ouvert. Le forfait Pro à 9 € HT/mois inclut 1 dossier par mois, l'API, le stockage illimité des preuves et les dossiers supplémentaires à 10 € HT.";
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -36,15 +36,15 @@ export const metadata: Metadata = {
 const FAQ = [
   {
     q: "Qu'est-ce qui est vraiment gratuit ?",
-    r: "Tout ce qui prépare : raconter votre blème à voix haute, importer vos preuves (photos, emails, exports WhatsApp), la boîte de réception, la chronologie du dossier et la lecture des brouillons de courriers. Vous ne payez que lorsque quelque chose part réellement : c'est l'ouverture payante du dossier qui débloque les envois.",
+    r: "Le compte et la préparation coûtent 0 € par mois : raconter votre blème à voix haute, importer vos preuves (photos, emails, exports WhatsApp), organiser la chronologie et relire les brouillons. Vous payez seulement quand vous ouvrez un dossier pour le suivre et valider les courriers.",
   },
   {
-    q: "Que comprend exactement un dossier à 39 € (ou 19 € en Pro) ?",
+    q: "Que comprend exactement un dossier à 19 € ?",
     r: "Le dossier payé une fois est suivi jusqu'à sa résolution ou sa clôture : relances par email incluses et cadencées, mise en demeure préparée et mise à jour, suivi des réponses, chronologie complète et export professionnel (synthèse + pièces ordonnées). Seuls les envois postaux (lettre, recommandé) sont facturés en plus, au réel. Un dossier clôturé reste consultable et exportable à vie.",
   },
   {
-    q: "Pourquoi un abonnement Pro si je paie déjà au dossier ?",
-    r: "Le Pro à 9 € HT/mois achète le continu, pas les dossiers : boîte de réception illimitée avec libellés, veille des échéances et de la prescription, documents d'entreprise illimités, dossiers en préparation illimités, et le tarif dossier réduit à 19 € HT au lieu de 39 €. Dès un dossier dans l'année, il est rentabilisé.",
+    q: "Pourquoi prendre Pro si je peux rester à 0 €/mois ?",
+    r: "Pro est pensé pour les pros qui ont des impayés récurrents ou veulent brancher leurs outils : 9 € HT/mois, 1 dossier inclus chaque mois, dossiers supplémentaires à 10 € HT, API et webhooks, stockage illimité des preuves et documents, exports faciles vers un avocat ou un comptable.",
   },
   {
     q: "Prenez-vous une commission sur les sommes récupérées ?",
@@ -56,7 +56,7 @@ const FAQ = [
   },
   {
     q: "Combien coûte un impayé type, au total ?",
-    r: "Pour une facture impayée classique : 39 € HT d'ouverture de dossier + 10 € HT de recommandé avec accusé de réception pour la mise en demeure, soit 49 € HT au total (29 € HT pour un abonné Pro). En comparaison, une mise en demeure rédigée par un avocat se facture généralement 90 à 300 €, et une société de recouvrement prendrait 240 à 480 € de commission sur une facture de 2 400 €.",
+    r: "Pour une facture impayée classique sans abonnement : 19 € HT d'ouverture de dossier + 10 € HT de recommandé avec accusé de réception pour la mise en demeure, soit 29 € HT au total. Avec Pro, le premier dossier du mois est inclus : 9 € HT d'abonnement + 10 € HT de recommandé, soit 19 € HT le mois du dossier. En comparaison, une mise en demeure rédigée par un avocat se facture généralement 90 à 300 €, et une société de recouvrement prendrait 240 à 480 € de commission sur une facture de 2 400 €.",
   },
 ];
 
@@ -143,14 +143,14 @@ export default function TarifsPage() {
         <Reveal onLoad>
           <div className="mx-auto max-w-2xl pt-16 text-center lg:pt-20">
             <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">
-              Gratuit pour préparer.
+              0 € par mois.
               <br />
-              Payez quand ça part.
+              19 € par dossier.
             </h1>
             <p className="mt-5 text-lg leading-relaxed text-muted-foreground">
-              Montez votre dossier sans sortir la carte : récit, preuves,
-              brouillons. Vous ne payez que lorsque les courriers partent
-              vraiment, et jamais de commission sur ce que vous récupérez.
+              Restez sans abonnement si vos blèmes sont ponctuels. Passez Pro
+              si vous voulez un dossier inclus chaque mois, l’API, le stockage
+              illimité des preuves et des exports prêts pour vos pros.
             </p>
             <p className="mt-4 inline-flex items-center gap-2 rounded-full bg-emerald-50 px-4 py-1.5 text-[13px] font-medium text-emerald-700 ring-1 ring-emerald-200">
               <Sparkles className="size-3.5" />
@@ -171,7 +171,8 @@ export default function TarifsPage() {
                 </span>
               </p>
               <p className="mt-4 leading-relaxed text-muted-foreground">
-                Tout ce qu’il faut pour monter un dossier béton, au calme.
+                La formule simple : aucun abonnement, vous payez uniquement les
+                dossiers que vous ouvrez.
               </p>
               <ul className="mt-6 flex-1 space-y-3">
                 {[
@@ -179,7 +180,7 @@ export default function TarifsPage() {
                   "Preuves centralisées : photos, emails, exports WhatsApp",
                   "Boîte de réception et chronologie du dossier",
                   "Brouillons de relances et de mise en demeure, visibles en entier",
-                  "1 dossier en préparation",
+                  "19 € HT par dossier ouvert, suivi jusqu’au bout",
                 ].map((f) => (
                   <li key={f} className="flex items-start gap-3 text-[15px]">
                     <Check className="mt-1 size-4 shrink-0 text-brand" />
@@ -188,8 +189,8 @@ export default function TarifsPage() {
                 ))}
               </ul>
               <p className="mt-6 rounded-2xl bg-muted px-5 py-3.5 text-[13px] leading-relaxed text-muted-foreground">
-                Rien n’est envoyé en gratuit : vos courriers attendent, prêts.
-                L’ouverture du dossier débloque les envois.
+                0 € par mois, sans engagement. L’ouverture du dossier débloque
+                les envois et le suivi.
               </p>
               <Link
                 href="/nouveau"
@@ -215,17 +216,18 @@ export default function TarifsPage() {
                 </span>
               </p>
               <p className="mt-4 leading-relaxed text-ink-muted">
-                Le continu qui évite le prochain impayé, et le tarif dossier
-                divisé par deux.
+                Le forfait pour ceux qui veulent traiter leurs dossiers en
+                continu et connecter BLEME à leurs outils.
               </p>
               <ul className="mt-6 flex-1 space-y-3">
                 {[
-                  "Dossiers à 19 € HT au lieu de 39 €",
+                  "1 dossier inclus chaque mois",
+                  "Dossier supplémentaire à 10 € HT",
                   "Boîte de réception illimitée, libellés de tri",
                   "Veille des échéances et de la prescription",
-                  "Documents d’entreprise illimités (Kbis, contrats, CGV)",
-                  "Dossiers en préparation illimités",
+                  "Stockage illimité des preuves et documents",
                   "API & webhooks pour connecter vos outils",
+                  "Export facile vers avocat ou comptable",
                 ].map((f) => (
                   <li key={f} className="flex items-start gap-3 text-[15px]">
                     <Check className="mt-1 size-4 shrink-0 text-brand" />
@@ -235,8 +237,7 @@ export default function TarifsPage() {
               </ul>
               <p className="mt-6 rounded-2xl bg-white/10 px-5 py-3.5 text-[13px] leading-relaxed text-ink-muted ring-1 ring-white/10">
                 Sans engagement, résiliable en un clic. 90 € HT/an en annuel
-                (2 mois offerts). Rentabilisé dès le premier dossier de
-                l’année.
+                (2 mois offerts). Le dossier inclus revient chaque mois.
               </p>
               <Link
                 href="/signup?next=/app"
@@ -253,24 +254,26 @@ export default function TarifsPage() {
         <Reveal>
           <section className="mx-auto mt-20 max-w-4xl">
             <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">
-              Le dossier, payé une fois, suivi jusqu’au bout.
+              Chaque dossier ouvert est suivi jusqu’au bout.
             </h2>
             <p className="mt-3 max-w-2xl leading-relaxed text-muted-foreground">
-              Quand vos courriers sont prêts à partir, vous ouvrez le dossier.
-              Un prix unique, quel que soit le montant en jeu : jamais un
-              pourcentage de votre argent.
+              Un prix fixe, quel que soit le montant en jeu : jamais un
+              pourcentage de votre argent, jamais de commission de recouvrement.
             </p>
             <div className="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="rounded-[1.75rem] border bg-card p-7">
                 <p className="text-sm font-semibold text-muted-foreground">Sans abonnement</p>
                 <p className="mt-2 text-4xl font-bold tracking-tight">
-                  39 €<span className="text-base font-normal text-muted-foreground"> HT/dossier</span>
+                  19 €<span className="text-base font-normal text-muted-foreground"> HT/dossier</span>
                 </p>
               </div>
               <div className="rounded-[1.75rem] border-2 border-brand/40 bg-brand-soft/40 p-7">
                 <p className="text-sm font-semibold text-brand-strong">Avec Pro (9 € HT/mois)</p>
                 <p className="mt-2 text-4xl font-bold tracking-tight">
-                  19 €<span className="text-base font-normal text-muted-foreground"> HT/dossier</span>
+                  1 inclus<span className="text-base font-normal text-muted-foreground"> /mois</span>
+                </p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  puis 10 € HT par dossier supplémentaire
                 </p>
               </div>
             </div>

@@ -12,8 +12,8 @@ import { Info } from "lucide-react";
  */
 
 const PRIX = {
-  dossier: 39,
-  dossierPro: 19,
+  dossier: 19,
+  dossierProExtra: 10,
   proMois: 9,
   recommande: 10,
 } as const;
@@ -25,8 +25,8 @@ const eur = (n: number) =>
 
 export function ImpayeTypeTabs() {
   const [pro, setPro] = useState(false);
-  const dossier = pro ? PRIX.dossierPro : PRIX.dossier;
-  const total = dossier + PRIX.recommande;
+  const dossier = pro ? 0 : PRIX.dossier;
+  const total = dossier + PRIX.recommande + (pro ? PRIX.proMois : 0);
 
   return (
     <section className="mx-auto mt-20 max-w-4xl rounded-[2rem] bg-ink p-8 text-ink-foreground sm:p-10">
@@ -90,10 +90,12 @@ export function ImpayeTypeTabs() {
               pro ? "text-muted-foreground" : "text-ink-muted"
             }`}
           >
-            Dossier {eur(dossier)} + recommandé AR {eur(PRIX.recommande)}.
             {pro
-              ? ` L’abonnement Pro (${eur(PRIX.proMois)} HT/mois) divise le prix du dossier par deux.`
-              : " Et 29 € HT pour un abonné Pro."}
+              ? `Abonnement ${eur(PRIX.proMois)} + dossier inclus + recommandé AR ${eur(PRIX.recommande)}.`
+              : `Dossier ${eur(dossier)} + recommandé AR ${eur(PRIX.recommande)}.`}
+            {pro
+              ? ` Les dossiers supplémentaires du même mois sont à ${eur(PRIX.dossierProExtra)} HT.`
+              : " Avec Pro, le premier dossier du mois est inclus."}
           </p>
         </div>
         <div className="rounded-2xl bg-white/5 p-6 ring-1 ring-white/10">
@@ -151,7 +153,8 @@ export function SimulateurAnnee() {
   const enJeu = nb * montant;
   const indemnites = nb * 40;
   const coutUnite = nb * (PRIX.dossier + PRIX.recommande);
-  const coutPro = 12 * PRIX.proMois + nb * (PRIX.dossierPro + PRIX.recommande);
+  const dossiersProPayants = Math.max(0, nb - 12);
+  const coutPro = 12 * PRIX.proMois + nb * PRIX.recommande + dossiersProPayants * PRIX.dossierProExtra;
   const meilleur = Math.min(coutUnite, coutPro);
   const partDefense = enJeu > 0 ? (meilleur / enJeu) * 100 : 0;
   const recouvreur = enJeu * 0.15;
@@ -254,8 +257,8 @@ export function SimulateurAnnee() {
             </p>
             <p className="mt-2 text-[13px] leading-relaxed text-muted-foreground">
               {coutPro < coutUnite
-                ? `Avec Pro : ${eur(12 * PRIX.proMois)} d’abonnement + ${nb} dossier${nb > 1 ? "s" : ""} à ${eur(PRIX.dossierPro + PRIX.recommande)} (recommandé compris). À l’unité : ${eur(coutUnite)}.`
-                : `${nb} dossier${nb > 1 ? "s" : ""} à ${eur(PRIX.dossier + PRIX.recommande)}, recommandé compris. Avec Pro : ${eur(coutPro)}.`}
+                ? `Avec Pro : ${eur(12 * PRIX.proMois)} d’abonnement + ${nb} recommandé${nb > 1 ? "s" : ""}. Le premier dossier de chaque mois est inclus${dossiersProPayants > 0 ? ` ; ${dossiersProPayants} dossier${dossiersProPayants > 1 ? "s" : ""} supplémentaire${dossiersProPayants > 1 ? "s" : ""} à ${eur(PRIX.dossierProExtra)}.` : "."} À l’unité : ${eur(coutUnite)}.`
+                : `${nb} dossier${nb > 1 ? "s" : ""} à ${eur(PRIX.dossier + PRIX.recommande)}, recommandé compris. Avec Pro : ${eur(coutPro)} avec un dossier inclus par mois.`}
             </p>
           </div>
           <div className="border-t bg-brand-soft/40 p-7 sm:border-l sm:border-t-0 sm:p-8">

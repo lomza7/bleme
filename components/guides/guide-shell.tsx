@@ -61,7 +61,7 @@ export function GuideShell({
           <p className="text-sm leading-relaxed text-ink-muted">
             Racontez votre impayé ou votre litige à voix haute : BLEME monte le
             dossier, prépare les courriers et suit chaque étape. Vous validez,
-            ça avance. Dès 9 €/mois, sans engagement.
+            ça avance. 0 €/mois, puis 19 € HT par dossier ouvert.
           </p>
           <Link
             href="/nouveau"

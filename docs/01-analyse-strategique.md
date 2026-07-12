@@ -24,7 +24,7 @@ L'opportunité est réelle et monétisable, mais le produit tel que décrit est 
 2. **L'intake vocal est un vrai différenciateur pour CETTE cible.** Un artisan ne rédigera jamais un formulaire de 15 champs ; il racontera son problème au téléphone dans sa camionnette. C'est un avantage d'onboarding, pas un gadget.
 3. **Le concept "dossier"** (preuves + chronologie + actions + export) est la bonne unité produit. C'est ce qui manque à tous les concurrents : quand ça part chez l'avocat ou le commissaire de justice, le client arrive avec un dossier propre. Valeur énorme, coût marginal faible.
 4. **L'"avocat du diable"** ("qu'est-ce que l'autre partie pourrait répondre ?") est une excellente idée : elle améliore la qualité du dossier ET protège juridiquement BLEME (on aide à documenter, on ne promet pas la victoire).
-5. **Le timing** : les LLM rendent enfin possible l'extraction/classement/rédaction à un coût compatible avec un abonnement à 49 €/mois.
+5. **Le timing** : les LLM rendent enfin possible l'extraction/classement/rédaction à un coût compatible avec un dossier à 19 € HT et un Pro léger à 9 € HT/mois.
 
 ## 3. Ce qui est faible
 
@@ -54,7 +54,7 @@ L'opportunité est réelle et monétisable, mais le produit tel que décrit est 
 ## 6. Pourquoi B2B d'abord (et pas B2C)
 
 1. **Récurrence** : un artisan a des impayés tous les mois → abonnement justifié. Un particulier a un litige tous les 3 ans → one-shot, churn structurel.
-2. **Willingness to pay** : 49-99 €/mois est une dépense pro déductible, comparée aux 15 % de commission d'un recouvreur ou aux heures perdues. Un particulier compare à "gratuit".
+2. **Willingness to pay** : 19 € HT par dossier et 9 € HT/mois en Pro sont des dépenses pro quasi indolores, comparées aux 15 % de commission d'un recouvreur ou aux heures perdues. Un particulier compare à "gratuit".
 3. **Risque réglementaire moindre** : pas de droit de la consommation côté client, litiges B2B plus standardisés (facture, devis, bon de livraison).
 4. **LTV/CAC** : le B2B permet des canaux ciblés (comptables, fédérations, logiciels métiers) ; le B2C exige de la pub mass-market hors de portée.
 5. **Les données B2B sont meilleures** : factures et devis structurés → extraction IA plus fiable → produit plus impressionnant dès la démo.

@@ -5,7 +5,12 @@ import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { can as hasCapability, type PermissionSet } from "@/lib/permissions/capabilities";
 import { publicEnv } from "@/lib/env";
 import { getStripe, isStripeConfigured } from "@/lib/billing/stripe";
-import { casePriceForOrg, hasActivePro } from "@/lib/billing/pricing";
+import {
+  PRO_INCLUDED_CASES_PER_MONTH,
+  billingMonthStartIso,
+  casePriceForOrg,
+  hasActivePro,
+} from "@/lib/billing/pricing";
 import { getSecret } from "@/lib/secrets";
 
 type BillingOrg = {
@@ -79,6 +84,19 @@ function appUrl(path: string): string {
   return `${publicEnv().NEXT_PUBLIC_APP_URL.replace(/\/$/, "")}${path}`;
 }
 
+async function hasAvailableProIncludedCase(organizationId: string): Promise<boolean> {
+  const service = createServiceClient();
+  const { count } = await service
+    .from("cases")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", organizationId)
+    .eq("billing_status", "included")
+    .eq("billing_amount_cents", 0)
+    .gte("billing_paid_at", billingMonthStartIso());
+
+  return (count ?? 0) < PRO_INCLUDED_CASES_PER_MONTH;
+}
+
 export async function startProCheckout(formData: FormData): Promise<void> {
   const ctx = await currentBillingContext();
   if (!ctx) redirect("/login");
@@ -149,10 +167,55 @@ export async function startCaseCheckout(
   if (c.is_sample || ["paid", "included"].includes(c.billing_status ?? "")) {
     redirect(`/app/dossiers/${caseId}`);
   }
+  const pro = hasActivePro(ctx.org);
+  const includedCaseAvailable = pro ? await hasAvailableProIncludedCase(ctx.org.id) : false;
+  const amountCents = casePriceForOrg(ctx.org, { proIncludedCaseAvailable: includedCaseAvailable });
+  if (amountCents === 0) {
+    const service = createServiceClient();
+    const paidAt = new Date().toISOString();
+    const { data: opened } = await service
+      .from("cases")
+      .update({
+        billing_status: "included",
+        billing_amount_cents: 0,
+        billing_currency: "EUR",
+        billing_paid_at: paidAt,
+        stripe_checkout_session_id: null,
+        stripe_payment_intent_id: null,
+      })
+      .eq("id", caseId)
+      .eq("organization_id", ctx.org.id)
+      .eq("billing_status", c.billing_status ?? "unpaid")
+      .select("id")
+      .maybeSingle();
+
+    if (!opened) redirect(`/app/dossiers/${caseId}`);
+
+    await service.from("billing_payments").insert({
+      organization_id: ctx.org.id,
+      case_id: caseId,
+      kind: "case",
+      status: "paid",
+      amount_subtotal_cents: 0,
+      amount_total_cents: 0,
+      currency: "EUR",
+      paid_at: paidAt,
+    });
+
+    await service.from("case_events").insert({
+      case_id: caseId,
+      organization_id: ctx.org.id,
+      event_type: "payment",
+      title: "Dossier inclus ouvert",
+      description: "Dossier ouvert avec le crédit mensuel du forfait Pro.",
+      source: "system",
+    });
+
+    redirect(`/app/dossiers/${caseId}?checkout=case-included`);
+  }
+
   if (!(await isStripeConfigured())) redirect(`/app/dossiers/${caseId}?paiement=config`);
 
-  const amountCents = casePriceForOrg(ctx.org);
-  const pro = hasActivePro(ctx.org);
   const stripe = await getStripe();
   const customerId = await getOrCreateCustomer(ctx.org, ctx.user);
   const metadata = {
