@@ -136,7 +136,7 @@ function deletionMessage(status?: string): { tone: "ok" | "warn" | "error"; text
     case "storage":
       return { tone: "error", text: "Suppression bloquée : certains fichiers Storage n’ont pas pu être supprimés." };
     case "introuvable":
-      return { tone: "error", text: "Utilisateur introuvable côté Supabase Auth." };
+      return { tone: "ok", text: "Utilisateur déjà absent côté Supabase Auth. La liste est à jour." };
     case "admin":
       return { tone: "error", text: "Accès réservé aux administrateurs." };
     case "invalide":

@@ -40,6 +40,16 @@ function adminRedirect(status: string): never {
   redirect(`/admin?suppression=${encodeURIComponent(status)}`);
 }
 
+function isAuthUserNotFound(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const status = "status" in error ? Number((error as { status?: unknown }).status) : null;
+  const message =
+    "message" in error && typeof (error as { message?: unknown }).message === "string"
+      ? (error as { message: string }).message
+      : "";
+  return status === 404 || /user.*not.*found|not.*found/i.test(message);
+}
+
 async function removeStorageObjects(paths: string[]): Promise<boolean> {
   const uniquePaths = [...new Set(paths.filter(Boolean))];
   if (uniquePaths.length === 0) return true;
@@ -70,7 +80,11 @@ export async function deletePlatformUser(formData: FormData): Promise<void> {
   const service = createServiceClient();
   const { data: targetRes, error: targetErr } = await service.auth.admin.getUserById(userId);
   const target = targetRes?.user;
-  if (targetErr || !target?.email) adminRedirect("introuvable");
+  if ((targetErr && isAuthUserNotFound(targetErr)) || (!targetErr && !target?.email)) {
+    revalidatePath("/admin");
+    adminRedirect("introuvable");
+  }
+  if (targetErr || !target?.email) adminRedirect("erreur");
   if (confirmation.toLowerCase() !== target.email.toLowerCase()) adminRedirect("confirmation");
 
   const { data: memberships, error: membershipsErr } = await service
@@ -141,7 +155,7 @@ export async function deletePlatformUser(formData: FormData): Promise<void> {
   }
 
   const { error: authErr } = await service.auth.admin.deleteUser(userId, false);
-  if (authErr) adminRedirect("partiel");
+  if (authErr && !isAuthUserNotFound(authErr)) adminRedirect("partiel");
 
   revalidatePath("/admin");
   adminRedirect("ok");
