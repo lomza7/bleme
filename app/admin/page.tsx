@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight, Trash2 } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { BarChart, Donut, Funnel, HBars } from "@/components/admin/charts";
+import { DeleteUserForm } from "@/components/admin/delete-user-form";
 import { SpriteAvatar } from "@/components/landing/sprite-avatar";
-import { deletePlatformUser } from "@/lib/admin/users-actions";
 import { TOOL_APIS } from "@/lib/tool-apis";
 import { getToolApiReadiness } from "@/lib/admin/hermes-actions";
 
@@ -126,7 +126,7 @@ function deletionMessage(status?: string): { tone: "ok" | "warn" | "error"; text
     case "ok":
       return { tone: "ok", text: "Utilisateur supprimé définitivement. Les organisations mono-utilisateur et leurs fichiers ont été purgés." };
     case "partiel":
-      return { tone: "warn", text: "Utilisateur supprimé, mais la purge d’une organisation a échoué. À vérifier côté base." };
+      return { tone: "warn", text: "La purge des organisations a été lancée, mais la suppression du compte Auth a échoué. À vérifier côté Supabase Auth." };
     case "confirmation":
       return { tone: "error", text: "Confirmation invalide : il faut retaper exactement l’email de l’utilisateur." };
     case "soi":
@@ -1262,40 +1262,7 @@ export default async function AdminOverview({
                           Votre compte
                         </span>
                       ) : (
-                        <details className="inline-block text-left">
-                          <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 ring-1 ring-red-100 transition-colors hover:bg-red-100">
-                            <Trash2 className="size-3.5" />
-                            Supprimer
-                          </summary>
-                          <form action={deletePlatformUser} className="mt-2 w-72 rounded-2xl border border-red-100 bg-red-50 p-3 text-left shadow-sm">
-                            <input type="hidden" name="userId" value={u.id} />
-                            <p className="text-xs font-medium text-red-900">
-                              Suppression définitive
-                            </p>
-                            <p className="mt-1 text-[11px] leading-relaxed text-red-800/80">
-                              Retire le compte Auth. Si ses organisations sont mono-utilisateur, purge aussi dossiers, preuves, API, compta et fichiers.
-                            </p>
-                            <label className="mt-2 block text-[11px] font-medium text-red-900" htmlFor={`delete-${u.id}`}>
-                              Retapez l’email
-                            </label>
-                            <input
-                              id={`delete-${u.id}`}
-                              name="confirmation"
-                              type="email"
-                              required
-                              autoComplete="off"
-                              placeholder={u.email}
-                              className="mt-1 w-full rounded-xl border border-red-200 bg-white px-3 py-2 text-xs text-red-950 outline-none transition focus:border-red-400"
-                            />
-                            <button
-                              type="submit"
-                              className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-full bg-red-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-red-700 active:scale-[0.98]"
-                            >
-                              <Trash2 className="size-3.5" />
-                              Supprimer définitivement
-                            </button>
-                          </form>
-                        </details>
+                        <DeleteUserForm userId={u.id} email={u.email} />
                       )}
                     </td>
                   </tr>

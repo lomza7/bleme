@@ -132,16 +132,16 @@ export async function deletePlatformUser(formData: FormData): Promise<void> {
     if (!storageRemoved) adminRedirect("storage");
   }
 
-  const { error: authErr } = await service.auth.admin.deleteUser(userId, false);
-  if (authErr) adminRedirect("erreur");
-
   if (soleOrgIds.length > 0) {
     const { error: orgDeleteErr } = await service
       .from("organizations")
       .delete()
       .in("id", soleOrgIds);
-    if (orgDeleteErr) adminRedirect("partiel");
+    if (orgDeleteErr) adminRedirect("erreur");
   }
+
+  const { error: authErr } = await service.auth.admin.deleteUser(userId, false);
+  if (authErr) adminRedirect("partiel");
 
   revalidatePath("/admin");
   adminRedirect("ok");
