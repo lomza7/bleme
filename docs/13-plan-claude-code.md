@@ -113,10 +113,10 @@ Découpage en 14 tâches ordonnées, chacune livrable et testable indépendammen
 ## T14 — Admin panel + tests + hardening
 
 **Objectif** : back-office minimal, suite de tests, passe sécurité.
-**Fichiers** : `app/(admin)/admin/…` (rôle admin : comptes, dossiers-métadonnées, jobs en échec, quarantaine, remboursements — chaque accès loggé avec raison), tests : Vitest (unit : agents parsing, sequence machine, hash/approval), Playwright (e2e : parcours complet création → relance envoyée en mode mock IA), script de test RLS.
+**Fichiers** : `app/(admin)/admin/…` (rôle admin : comptes enrichis avec activité/revenus/dossiers/tokens/coût IA/marge/API/compta/suppression définitive, dossiers-métadonnées, jobs en échec, quarantaine, remboursements — chaque accès support à un dossier loggé avec raison), tests : Vitest (unit : agents parsing, sequence machine, hash/approval), Playwright (e2e : parcours complet création → relance envoyée en mode mock IA), script de test RLS.
 **Tables** : `audit_logs` (complétée partout).
 **Validations** : rate limiting (Upstash) sur auth/upload/IA ; headers sécurité (CSP) ; Sentry ; audit des policies RLS ; revue "aucun chemin d'envoi sans approval" (test dédié).
-**Edge cases** : admin qui tente de modifier `approval_logs` (impossible en base) ; montée en charge d'un compte (100 dossiers) ; suppression de compte → job de purge 30 j avec export préalable proposé.
+**Edge cases** : admin qui tente de modifier `approval_logs` (impossible en base) ; montée en charge d'un compte (100 dossiers) ; suppression de compte → confirmation forte, refus d'auto-suppression, garde Stripe, purge Storage + orgs mono-utilisateur ; V2 hardening : export préalable proposé + journal `audit_logs` append-only.
 
 ---
 

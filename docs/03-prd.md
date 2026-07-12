@@ -108,7 +108,7 @@ Tuiles : Montant en jeu / Récupéré (déclaré par l'utilisateur ou détecté 
 
 ## 20. Back-office interne
 
-V1 minimal (protégé, rôle admin) : liste des comptes et dossiers (métadonnées, pas le contenu des documents sans raison de support loggée), état des jobs IA (échecs de transcription/extraction), monitoring des emails entrants en quarantaine, gestion des remboursements Stripe, feature flags. Chaque accès support à un dossier client est tracé dans `audit_logs`.
+V1 minimal (protégé, rôle admin) : vue comptes enrichie (dernière connexion, dernière activité produit, dossiers, montants rapportés via paiements de dossiers, tokens IA consommés, coût IA, marge brute estimée, stockage, état Pro, intégrations compta, clés API), liste des dossiers (métadonnées, pas le contenu des documents sans raison de support loggée), état des jobs IA (échecs de transcription/extraction), monitoring des emails entrants en quarantaine, gestion des remboursements Stripe, feature flags. L'admin peut supprimer définitivement un utilisateur : confirmation par email, refus d'auto-suppression, annulation Stripe si nécessaire, purge des organisations mono-utilisateur et de leurs fichiers. Chaque accès support à un dossier client sera tracé dans `audit_logs` dès que la table de journalisation sera activée.
 
 ## 21. KPIs
 

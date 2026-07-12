@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Trash2 } from "lucide-react";
+import type { User } from "@supabase/supabase-js";
 import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { BarChart, Donut, Funnel, HBars } from "@/components/admin/charts";
 import { SpriteAvatar } from "@/components/landing/sprite-avatar";
+import { deletePlatformUser } from "@/lib/admin/users-actions";
 import { TOOL_APIS } from "@/lib/tool-apis";
 import { getToolApiReadiness } from "@/lib/admin/hermes-actions";
 
@@ -59,6 +61,24 @@ const ROLE_LABELS: Record<string, string> = {
   autre: "Autre",
 };
 
+const BILLING_LABELS: Record<string, string> = {
+  free: "Free",
+  active: "Pro actif",
+  trialing: "Pro essai",
+  past_due: "Pro impayé",
+  canceled: "Pro résilié",
+  unpaid: "Pro impayé",
+  incomplete: "Pro incomplet",
+  incomplete_expired: "Pro expiré",
+  paused: "Pro en pause",
+};
+
+const PROVIDER_LABELS: Record<string, string> = {
+  pennylane: "Pennylane",
+  sellsy: "Sellsy",
+  axonaut: "Axonaut",
+};
+
 function euros(cents: number): string {
   return `${Math.round(cents / 100).toLocaleString("fr-FR")} €`;
 }
@@ -72,8 +92,59 @@ function eurosIA(microcents: number): string {
   })} €`;
 }
 
+function fmtDateTime(iso?: string | null): string {
+  if (!iso) return "Jamais";
+  return new Date(iso).toLocaleString("fr-FR", {
+    day: "numeric",
+    month: "short",
+    year: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: "Europe/Paris",
+  });
+}
+
+function latestIso(...values: Array<string | null | undefined>): string | null {
+  let latest: string | null = null;
+  for (const value of values) {
+    if (!value) continue;
+    if (!latest || Date.parse(value) > Date.parse(latest)) latest = value;
+  }
+  return latest;
+}
+
+function bytesMo(bytes: number): string {
+  return `${(bytes / 1024 / 1024).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} Mo`;
+}
+
 function dayKey(d: Date): string {
   return d.toISOString().slice(0, 10);
+}
+
+function deletionMessage(status?: string): { tone: "ok" | "warn" | "error"; text: string } | null {
+  switch (status) {
+    case "ok":
+      return { tone: "ok", text: "Utilisateur supprimé définitivement. Les organisations mono-utilisateur et leurs fichiers ont été purgés." };
+    case "partiel":
+      return { tone: "warn", text: "Utilisateur supprimé, mais la purge d’une organisation a échoué. À vérifier côté base." };
+    case "confirmation":
+      return { tone: "error", text: "Confirmation invalide : il faut retaper exactement l’email de l’utilisateur." };
+    case "soi":
+      return { tone: "error", text: "Impossible de supprimer votre propre compte admin depuis cette page." };
+    case "stripe":
+      return { tone: "error", text: "Suppression bloquée : un abonnement Stripe actif doit être annulé correctement avant la purge." };
+    case "storage":
+      return { tone: "error", text: "Suppression bloquée : certains fichiers Storage n’ont pas pu être supprimés." };
+    case "introuvable":
+      return { tone: "error", text: "Utilisateur introuvable côté Supabase Auth." };
+    case "admin":
+      return { tone: "error", text: "Accès réservé aux administrateurs." };
+    case "invalide":
+    case "erreur":
+      return { tone: "error", text: "Suppression impossible. Réessayez après avoir vérifié l’utilisateur et ses données associées." };
+    default:
+      return null;
+  }
 }
 
 const PERIODES = [
@@ -83,12 +154,52 @@ const PERIODES = [
   { jours: 365, label: "12 mois" },
 ] as const;
 
+type ServiceClient = ReturnType<typeof createServiceClient>;
+type AuthUsers = User[];
+type AdminAgentRun = {
+  organization_id: string | null;
+  status: string;
+  simulated: boolean;
+  input_tokens: number;
+  output_tokens: number;
+  cost_microcents: number | string;
+  created_at: string;
+};
+
+async function listAllAuthUsers(service: ServiceClient): Promise<AuthUsers> {
+  const users: AuthUsers = [];
+  const perPage = 1000;
+  for (let page = 1; page < 100; page += 1) {
+    const { data, error } = await service.auth.admin.listUsers({ page, perPage });
+    if (error || !data?.users) break;
+    users.push(...data.users);
+    if (data.users.length < perPage || users.length >= (data.total ?? users.length)) break;
+  }
+  return users;
+}
+
+async function listAllAgentRuns(service: ServiceClient): Promise<AdminAgentRun[]> {
+  const runs: AdminAgentRun[] = [];
+  const pageSize = 1000;
+  for (let from = 0; from < 100_000; from += pageSize) {
+    const { data, error } = await service
+      .from("agent_runs")
+      .select("organization_id, status, simulated, input_tokens, output_tokens, cost_microcents, created_at")
+      .order("created_at", { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (error || !data) break;
+    runs.push(...(data as AdminAgentRun[]));
+    if (data.length < pageSize) break;
+  }
+  return runs;
+}
+
 export default async function AdminOverview({
   searchParams,
 }: {
-  searchParams: Promise<{ periode?: string }>;
+  searchParams: Promise<{ periode?: string; suppression?: string }>;
 }) {
-  const { periode: periodeParam } = await searchParams;
+  const { periode: periodeParam, suppression } = await searchParams;
   const periode = PERIODES.find((p) => String(p.jours) === periodeParam)?.jours ?? 30;
   // Double garde (le layout redirige déjà les non-admins).
   const userClient = await createClient();
@@ -98,7 +209,8 @@ export default async function AdminOverview({
   const { data: me } = user
     ? await userClient.from("profiles").select("is_admin").eq("id", user.id).maybeSingle()
     : { data: null };
-  if (!me?.is_admin) return null;
+  if (!user || !me?.is_admin) return null;
+  const currentAdminId = user.id;
 
   const service = createServiceClient();
   // eslint-disable-next-line react-hooks/purity -- bornes temporelles du reporting, recalculées à chaque requête
@@ -114,22 +226,46 @@ export default async function AdminOverview({
   monthStart.setUTCHours(0, 0, 0, 0);
 
   const [
-    usersRes,
+    users,
     { count: orgCount },
+    { data: organizations },
+    { data: memberships },
+    { data: profiles },
     { data: cases },
     { data: docs },
     { data: inboxItems },
+    { data: payments },
+    { data: integrations },
+    { data: apiKeys },
+    allUserRuns,
     { data: runs },
   ] = await Promise.all([
-    service.auth.admin.listUsers({ page: 1, perPage: 1000 }),
+    listAllAuthUsers(service),
     service.from("organizations").select("id", { count: "exact", head: true }),
+    service
+      .from("organizations")
+      .select("id, name, billing_plan, billing_status, subscription_current_period_end"),
+    service.from("organization_members").select("organization_id, user_id, role"),
+    service.from("profiles").select("id, full_name, acquisition_source, role_title, onboarding_state"),
     service
       .from("cases")
       .select(
-        "id, organization_id, case_type, status, stage, amount_claimed_cents, amount_recovered_cents, is_sample, created_at",
+        "id, organization_id, case_type, status, stage, amount_claimed_cents, amount_recovered_cents, is_sample, created_at, updated_at",
       ),
-    service.from("documents").select("id, size_bytes, doc_class"),
-    service.from("inbox_items").select("id, source, is_read, is_archived, is_sample"),
+    service.from("documents").select("id, organization_id, size_bytes, doc_class, created_at"),
+    service
+      .from("inbox_items")
+      .select("id, organization_id, source, is_read, is_archived, is_sample, received_at, created_at"),
+    service
+      .from("billing_payments")
+      .select("organization_id, status, amount_total_cents, paid_at, created_at"),
+    service
+      .from("org_integrations")
+      .select("organization_id, provider, status, company_name, connected_at, last_sync_at, last_error"),
+    service
+      .from("api_keys")
+      .select("organization_id, revoked_at, expires_at, last_used_at, created_at"),
+    listAllAgentRuns(service),
     service
       .from("agent_runs")
       .select("agent_key, status, model, simulated, input_tokens, output_tokens, cost_microcents, created_at")
@@ -137,7 +273,6 @@ export default async function AdminOverview({
   ]);
 
   // ── Utilisateurs ────────────────────────────────────────────────────────────
-  const users = usersRes.data?.users ?? [];
   const new7 = users.filter((u) => new Date(u.created_at) >= d7).length;
   const prev7 = users.filter(
     (u) => new Date(u.created_at) >= d14 && new Date(u.created_at) < d7,
@@ -145,9 +280,6 @@ export default async function AdminOverview({
   const actifs7 = users.filter(
     (u) => u.last_sign_in_at && new Date(u.last_sign_in_at) >= d7,
   ).length;
-  const derniers = [...users]
-    .sort((a, b) => +new Date(b.created_at) - +new Date(a.created_at))
-    .slice(0, 6);
 
   // ── Dossiers (réels vs exemples) ────────────────────────────────────────────
   const allCases = cases ?? [];
@@ -258,14 +390,206 @@ export default async function AdminOverview({
     byAgent.set(r.agent_key, a);
   }
 
+  // ── Détail utilisateurs : activité, revenus, dossiers, connexions ──────────
+  const allOrgs = organizations ?? [];
+  const allMemberships = memberships ?? [];
+  const allPayments = payments ?? [];
+  const allIntegrations = integrations ?? [];
+  const allApiKeys = apiKeys ?? [];
+  const profilesByUser = new Map((profiles ?? []).map((p) => [p.id, p]));
+  const orgById = new Map(allOrgs.map((o) => [o.id, o]));
+
+  const membershipsByUser = new Map<string, typeof allMemberships>();
+  const memberCountsByOrg = new Map<string, number>();
+  for (const m of allMemberships) {
+    membershipsByUser.set(m.user_id, [...(membershipsByUser.get(m.user_id) ?? []), m]);
+    memberCountsByOrg.set(m.organization_id, (memberCountsByOrg.get(m.organization_id) ?? 0) + 1);
+  }
+
+  const casesByOrg = new Map<string, typeof reels>();
+  for (const c of reels) {
+    casesByOrg.set(c.organization_id, [...(casesByOrg.get(c.organization_id) ?? []), c]);
+  }
+
+  const docsByOrg = new Map<string, { count: number; bytes: number; latest: string | null }>();
+  for (const d of allDocs) {
+    const row = docsByOrg.get(d.organization_id) ?? { count: 0, bytes: 0, latest: null };
+    row.count += 1;
+    row.bytes += Number(d.size_bytes);
+    row.latest = latestIso(row.latest, d.created_at);
+    docsByOrg.set(d.organization_id, row);
+  }
+
+  const inboxByOrg = new Map<string, { count: number; latest: string | null }>();
+  for (const item of inbox) {
+    const row = inboxByOrg.get(item.organization_id) ?? { count: 0, latest: null };
+    row.count += 1;
+    row.latest = latestIso(row.latest, item.received_at, item.created_at);
+    inboxByOrg.set(item.organization_id, row);
+  }
+
+  const paymentsByOrg = new Map<string, { cents: number; count: number; latest: string | null }>();
+  for (const p of allPayments) {
+    if (p.status !== "paid") continue;
+    const amount = Number(p.amount_total_cents ?? 0);
+    const row = paymentsByOrg.get(p.organization_id) ?? { cents: 0, count: 0, latest: null };
+    row.cents += amount;
+    if (amount > 0) row.count += 1;
+    row.latest = latestIso(row.latest, p.paid_at, p.created_at);
+    paymentsByOrg.set(p.organization_id, row);
+  }
+
+  const integrationsByOrg = new Map<string, typeof allIntegrations>();
+  for (const i of allIntegrations) {
+    integrationsByOrg.set(i.organization_id, [...(integrationsByOrg.get(i.organization_id) ?? []), i]);
+  }
+
+  const apiKeysByOrg = new Map<string, typeof allApiKeys>();
+  for (const k of allApiKeys) {
+    apiKeysByOrg.set(k.organization_id, [...(apiKeysByOrg.get(k.organization_id) ?? []), k]);
+  }
+
+  const aiUsageByOrg = new Map<
+    string,
+    {
+      tokens: number;
+      costMicrocents: number;
+      runs: number;
+      errors: number;
+      simulated: number;
+      latest: string | null;
+    }
+  >();
+  for (const r of allUserRuns) {
+    if (!r.organization_id) continue;
+    const row = aiUsageByOrg.get(r.organization_id) ?? {
+      tokens: 0,
+      costMicrocents: 0,
+      runs: 0,
+      errors: 0,
+      simulated: 0,
+      latest: null,
+    };
+    row.tokens += tokensOf(r);
+    row.costMicrocents += Number(r.cost_microcents);
+    row.runs += 1;
+    if (r.status === "error") row.errors += 1;
+    if (r.simulated) row.simulated += 1;
+    row.latest = latestIso(row.latest, r.created_at);
+    aiUsageByOrg.set(r.organization_id, row);
+  }
+
+  const userRows = users
+    .map((u) => {
+      const userMemberships = membershipsByUser.get(u.id) ?? [];
+      const orgIds = [...new Set(userMemberships.map((m) => m.organization_id))];
+      const userCases = orgIds.flatMap((orgId) => casesByOrg.get(orgId) ?? []);
+      const userDocs = orgIds.map((orgId) => docsByOrg.get(orgId)).filter(Boolean);
+      const userInbox = orgIds.map((orgId) => inboxByOrg.get(orgId)).filter(Boolean);
+      const userPayments = orgIds.map((orgId) => paymentsByOrg.get(orgId)).filter(Boolean);
+      const userIntegrations = orgIds.flatMap((orgId) => integrationsByOrg.get(orgId) ?? []);
+      const userApiKeys = orgIds.flatMap((orgId) => apiKeysByOrg.get(orgId) ?? []);
+      const userAiUsage = orgIds.map((orgId) => aiUsageByOrg.get(orgId)).filter(Boolean);
+      const activeApiKeys = userApiKeys.filter(
+        (k) => !k.revoked_at && (!k.expires_at || Date.parse(k.expires_at) > now),
+      );
+      const connectedIntegrations = userIntegrations.filter((i) => i.status === "connected");
+      const erroredIntegrations = userIntegrations.filter((i) => i.status === "error");
+      const orgLabels = orgIds
+        .map((orgId) => orgById.get(orgId)?.name)
+        .filter((name): name is string => Boolean(name));
+      const userOrgs = orgIds
+        .map((orgId) => orgById.get(orgId))
+        .filter((org): org is NonNullable<(typeof allOrgs)[number]> => Boolean(org));
+      const orgPlans = userOrgs.map((org) =>
+        org.billing_plan === "pro" ? (BILLING_LABELS[org.billing_status] ?? "Pro") : "Free",
+      );
+      const latestCaseActivity = userCases.reduce<string | null>(
+        (latest, c) => latestIso(latest, c.updated_at, c.created_at),
+        null,
+      );
+      const latestDocActivity = userDocs.reduce<string | null>(
+        (latest, d) => latestIso(latest, d?.latest),
+        null,
+      );
+      const latestInboxActivity = userInbox.reduce<string | null>(
+        (latest, i) => latestIso(latest, i?.latest),
+        null,
+      );
+      const latestPaymentActivity = userPayments.reduce<string | null>(
+        (latest, p) => latestIso(latest, p?.latest),
+        null,
+      );
+      const latestIntegrationActivity = userIntegrations.reduce<string | null>(
+        (latest, i) => latestIso(latest, i.last_sync_at, i.connected_at),
+        null,
+      );
+      const latestApiActivity = userApiKeys.reduce<string | null>(
+        (latest, k) => latestIso(latest, k.last_used_at, k.created_at),
+        null,
+      );
+      const latestAiActivity = userAiUsage.reduce<string | null>(
+        (latest, a) => latestIso(latest, a?.latest),
+        null,
+      );
+      const profile = profilesByUser.get(u.id);
+      const memberRoles = [...new Set(userMemberships.map((m) => m.role))];
+      const revenueCents = userPayments.reduce((sum, p) => sum + (p?.cents ?? 0), 0);
+      const aiCostMicrocents = userAiUsage.reduce((sum, a) => sum + (a?.costMicrocents ?? 0), 0);
+
+      return {
+        id: u.id,
+        email: u.email ?? "Email inconnu",
+        name: profile?.full_name ?? u.user_metadata?.full_name ?? null,
+        createdAt: u.created_at,
+        lastSignInAt: u.last_sign_in_at ?? null,
+        lastActivityAt: latestIso(
+          u.last_sign_in_at,
+          latestCaseActivity,
+          latestDocActivity,
+          latestInboxActivity,
+          latestPaymentActivity,
+          latestIntegrationActivity,
+          latestApiActivity,
+          latestAiActivity,
+        ),
+        acquisition: profile?.acquisition_source ? (ACQ_LABELS[profile.acquisition_source] ?? profile.acquisition_source) : null,
+        roleTitle: profile?.role_title ? (ROLE_LABELS[profile.role_title] ?? profile.role_title) : null,
+        onboardingDone: profile?.onboarding_state === "done",
+        orgIds,
+        orgLabels,
+        memberRoles,
+        memberCount: orgIds.reduce((sum, orgId) => sum + (memberCountsByOrg.get(orgId) ?? 0), 0),
+        plans: [...new Set(orgPlans)],
+        cases: userCases.length,
+        resolvedCases: userCases.filter((c) => c.status === "resolved").length,
+        claimedCents: userCases.reduce((sum, c) => sum + Number(c.amount_claimed_cents), 0),
+        recoveredCents: userCases.reduce((sum, c) => sum + Number(c.amount_recovered_cents), 0),
+        revenueCents,
+        paymentCount: userPayments.reduce((sum, p) => sum + (p?.count ?? 0), 0),
+        aiTokens: userAiUsage.reduce((sum, a) => sum + (a?.tokens ?? 0), 0),
+        aiCostMicrocents,
+        aiGrossMarginMicrocents: revenueCents * 10_000 - aiCostMicrocents,
+        aiRunCount: userAiUsage.reduce((sum, a) => sum + (a?.runs ?? 0), 0),
+        aiErrorCount: userAiUsage.reduce((sum, a) => sum + (a?.errors ?? 0), 0),
+        aiSimulatedCount: userAiUsage.reduce((sum, a) => sum + (a?.simulated ?? 0), 0),
+        storageBytes: userDocs.reduce((sum, d) => sum + (d?.bytes ?? 0), 0),
+        documentCount: userDocs.reduce((sum, d) => sum + (d?.count ?? 0), 0),
+        inboxCount: userInbox.reduce((sum, i) => sum + (i?.count ?? 0), 0),
+        connectedIntegrations,
+        erroredIntegrations,
+        apiKeyCount: activeApiKeys.length,
+        apiLastUsedAt: activeApiKeys.reduce<string | null>((latest, k) => latestIso(latest, k.last_used_at), null),
+      };
+    })
+    .sort((a, b) => Date.parse(b.lastActivityAt ?? b.createdAt) - Date.parse(a.lastActivityAt ?? a.createdAt));
+  const deletion = deletionMessage(suppression);
+
   // ── Onboarding : canaux d'acquisition + rôles déclarés (/bienvenue) ─────────
-  const { data: profilesOnb } = await service
-    .from("profiles")
-    .select("acquisition_source, role_title, onboarding_state");
   const acqByChannel = new Map<string, number>();
   const rolesByTitle = new Map<string, number>();
   let onboarded = 0;
-  for (const p of profilesOnb ?? []) {
+  for (const p of profiles ?? []) {
     if (p.onboarding_state === "done") onboarded += 1;
     if (p.acquisition_source) acqByChannel.set(p.acquisition_source, (acqByChannel.get(p.acquisition_source) ?? 0) + 1);
     if (p.role_title) rolesByTitle.set(p.role_title, (rolesByTitle.get(p.role_title) ?? 0) + 1);
@@ -744,31 +1068,241 @@ export default async function AdminOverview({
         </div>
       </div>
 
-      {/* Dernières inscriptions */}
+      {/* Utilisateurs */}
       <section>
-        <h2 className="px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-          Dernières inscriptions
-        </h2>
-        <div className="mt-3 overflow-hidden rounded-[1.75rem] border bg-card">
-          {derniers.map((u, i) => (
-            <div
-              key={u.id}
-              className={`flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-5 py-3.5 ${i > 0 ? "border-t" : ""}`}
-            >
-              <span className="min-w-0 truncate text-sm font-medium">{u.email}</span>
-              <span className="text-xs tabular-nums text-muted-foreground">
-                inscrit le{" "}
-                {new Date(u.created_at).toLocaleDateString("fr-FR", {
-                  day: "numeric",
-                  month: "short",
-                  year: "numeric",
-                })}
-                {u.last_sign_in_at
-                  ? ` · vu le ${new Date(u.last_sign_in_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}`
-                  : " · jamais connecté"}
-              </span>
-            </div>
-          ))}
+        <div className="flex flex-wrap items-end justify-between gap-3 px-1">
+          <div>
+            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              Utilisateurs
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {userRows.length.toLocaleString("fr-FR")} compte{userRows.length > 1 ? "s" : ""} · revenus affichés = paiements de dossiers tracés en base.
+            </p>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Dernière activité = connexion, dossier, document, inbox, paiement, IA, API ou sync compta.
+          </p>
+        </div>
+        {deletion ? (
+          <p
+            className={`mt-3 rounded-2xl px-4 py-3 text-sm ring-1 ${
+              deletion.tone === "ok"
+                ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+                : deletion.tone === "warn"
+                  ? "bg-amber-50 text-amber-800 ring-amber-200"
+                  : "bg-red-50 text-red-800 ring-red-200"
+            }`}
+          >
+            {deletion.text}
+          </p>
+        ) : null}
+        <div className="mt-3 overflow-x-auto rounded-[1.75rem] border bg-card">
+          <table className="w-full min-w-[1340px] text-sm">
+            <thead>
+              <tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground">
+                <th className="px-5 py-3 font-medium">Utilisateur</th>
+                <th className="px-4 py-3 font-medium">Dernière venue</th>
+                <th className="px-4 py-3 font-medium">Dossiers</th>
+                <th className="px-4 py-3 font-medium">Rapporté</th>
+                <th className="px-4 py-3 font-medium">IA / rentabilité</th>
+                <th className="px-4 py-3 font-medium">Compta / API</th>
+                <th className="px-4 py-3 font-medium">Plan</th>
+                <th className="px-5 py-3 text-right font-medium">Suppression</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {userRows.map((u) => {
+                const integrationLabels = u.connectedIntegrations.map(
+                  (i) => PROVIDER_LABELS[i.provider] ?? i.provider,
+                );
+                const erroredLabels = u.erroredIntegrations.map(
+                  (i) => PROVIDER_LABELS[i.provider] ?? i.provider,
+                );
+                return (
+                  <tr key={u.id} className="align-top">
+                    <td className="px-5 py-4">
+                      <div className="max-w-[280px]">
+                        <p className="truncate font-medium">{u.name || u.email}</p>
+                        <p className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{u.email}</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {u.onboardingDone ? (
+                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                              onboarding terminé
+                            </span>
+                          ) : (
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                              onboarding incomplet
+                            </span>
+                          )}
+                          {u.roleTitle ? (
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                              {u.roleTitle}
+                            </span>
+                          ) : null}
+                          {u.acquisition ? (
+                            <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                              {u.acquisition}
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">
+                          {u.orgLabels.length > 0 ? u.orgLabels.join(" · ") : "Aucune organisation"}
+                        </p>
+                        <p className="mt-1 font-mono text-[10px] text-muted-foreground/70">{u.id}</p>
+                      </div>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-medium tabular-nums">{fmtDateTime(u.lastSignInAt)}</p>
+                      <p className="mt-1 text-xs tabular-nums text-muted-foreground">
+                        Activité : {fmtDateTime(u.lastActivityAt)}
+                      </p>
+                      <p className="mt-1 text-[11px] text-muted-foreground/75">
+                        Inscrit : {fmtDateTime(u.createdAt)}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-semibold tabular-nums">
+                        {u.cases.toLocaleString("fr-FR")}
+                        <span className="ml-1 font-normal text-muted-foreground">dossier{u.cases > 1 ? "s" : ""}</span>
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {u.resolvedCases.toLocaleString("fr-FR")} résolu{u.resolvedCases > 1 ? "s" : ""} · {euros(u.claimedCents)} réclamés
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {euros(u.recoveredCents)} récupérés · {u.documentCount.toLocaleString("fr-FR")} doc{u.documentCount > 1 ? "s" : ""} · {bytesMo(u.storageBytes)}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="text-base font-semibold tabular-nums">{euros(u.revenueCents)}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {u.paymentCount.toLocaleString("fr-FR")} paiement{u.paymentCount > 1 ? "s" : ""} dossier
+                      </p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <p className="font-semibold tabular-nums">
+                        {u.aiTokens.toLocaleString("fr-FR")}
+                        <span className="ml-1 font-normal text-muted-foreground">tokens</span>
+                      </p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Coût IA : {eurosIA(u.aiCostMicrocents)}
+                      </p>
+                      <p
+                        className={`mt-1 text-xs font-medium tabular-nums ${
+                          u.aiGrossMarginMicrocents >= 0 ? "text-emerald-700" : "text-red-700"
+                        }`}
+                      >
+                        Marge brute : {eurosIA(u.aiGrossMarginMicrocents)}
+                      </p>
+                      <p className="mt-1 text-[11px] text-muted-foreground">
+                        {u.aiRunCount.toLocaleString("fr-FR")} run{u.aiRunCount > 1 ? "s" : ""}
+                        {u.aiErrorCount > 0 ? ` · ${u.aiErrorCount} erreur${u.aiErrorCount > 1 ? "s" : ""}` : ""}
+                        {u.aiSimulatedCount > 0 ? ` · ${u.aiSimulatedCount} simulé${u.aiSimulatedCount > 1 ? "s" : ""}` : ""}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex flex-wrap gap-1.5">
+                        {integrationLabels.length > 0 ? (
+                          integrationLabels.map((label) => (
+                            <span key={label} className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-800">
+                              Compta {label}
+                            </span>
+                          ))
+                        ) : erroredLabels.length > 0 ? (
+                          erroredLabels.map((label) => (
+                            <span key={label} className="rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-medium text-red-700">
+                              Compta {label} en erreur
+                            </span>
+                          ))
+                        ) : (
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                            Pas de compta connectée
+                          </span>
+                        )}
+                        {u.apiKeyCount > 0 ? (
+                          <span className="rounded-full bg-brand-soft px-2 py-0.5 text-[10px] font-medium text-brand-strong">
+                            API BLEME active ×{u.apiKeyCount}
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                            API BLEME inactive
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-2 text-[11px] text-muted-foreground">
+                        {u.apiLastUsedAt ? `Dernier appel API : ${fmtDateTime(u.apiLastUsedAt)}` : "Aucun appel API actif connu"}
+                      </p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <div className="flex flex-wrap gap-1.5">
+                        {(u.plans.length > 0 ? u.plans : ["Free"]).map((plan) => (
+                          <span
+                            key={plan}
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                              plan.includes("Pro actif")
+                                ? "bg-emerald-100 text-emerald-800"
+                                : plan.includes("Pro")
+                                  ? "bg-amber-100 text-amber-800"
+                                  : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            {plan}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="mt-2 text-[11px] text-muted-foreground">
+                        {u.orgIds.length.toLocaleString("fr-FR")} org · {u.memberCount.toLocaleString("fr-FR")} membre{u.memberCount > 1 ? "s" : ""} total
+                      </p>
+                      {u.memberRoles.length > 0 ? (
+                        <p className="mt-1 font-mono text-[10px] text-muted-foreground/75">{u.memberRoles.join(", ")}</p>
+                      ) : null}
+                    </td>
+                    <td className="px-5 py-4 text-right">
+                      {u.id === currentAdminId ? (
+                        <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+                          Votre compte
+                        </span>
+                      ) : (
+                        <details className="inline-block text-left">
+                          <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-full bg-red-50 px-3 py-1.5 text-xs font-medium text-red-700 ring-1 ring-red-100 transition-colors hover:bg-red-100">
+                            <Trash2 className="size-3.5" />
+                            Supprimer
+                          </summary>
+                          <form action={deletePlatformUser} className="mt-2 w-72 rounded-2xl border border-red-100 bg-red-50 p-3 text-left shadow-sm">
+                            <input type="hidden" name="userId" value={u.id} />
+                            <p className="text-xs font-medium text-red-900">
+                              Suppression définitive
+                            </p>
+                            <p className="mt-1 text-[11px] leading-relaxed text-red-800/80">
+                              Retire le compte Auth. Si ses organisations sont mono-utilisateur, purge aussi dossiers, preuves, API, compta et fichiers.
+                            </p>
+                            <label className="mt-2 block text-[11px] font-medium text-red-900" htmlFor={`delete-${u.id}`}>
+                              Retapez l’email
+                            </label>
+                            <input
+                              id={`delete-${u.id}`}
+                              name="confirmation"
+                              type="email"
+                              required
+                              autoComplete="off"
+                              placeholder={u.email}
+                              className="mt-1 w-full rounded-xl border border-red-200 bg-white px-3 py-2 text-xs text-red-950 outline-none transition focus:border-red-400"
+                            />
+                            <button
+                              type="submit"
+                              className="mt-2 inline-flex w-full items-center justify-center gap-2 rounded-full bg-red-600 px-3 py-2 text-xs font-medium text-white transition hover:bg-red-700 active:scale-[0.98]"
+                            >
+                              <Trash2 className="size-3.5" />
+                              Supprimer définitivement
+                            </button>
+                          </form>
+                        </details>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </section>
 
