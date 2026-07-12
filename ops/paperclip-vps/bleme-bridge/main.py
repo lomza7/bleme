@@ -32,6 +32,7 @@ import subprocess
 import sys
 import threading
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -216,7 +217,7 @@ def _vision_chat(
             {"role": "system", "content": system},
             {"role": "user", "content": content},
         ],
-        "max_tokens": 800,
+        "max_tokens": 1500,
         "usage": {"include": True},
     }
     if has_pdf:
@@ -825,7 +826,10 @@ def _skills_context(names: list[str]) -> str:
 
 TOOL_HTTP_TIMEOUT = 20
 TOOL_RESULT_MAX = 3500
-TOOL_CALLS_MAX = 4
+# Plafond d'appels outils par run. Relevé de 4 à 8 : une chaîne « socle » réaliste
+# enchaîne plusieurs consulter_article (un par article de code) + une recherche
+# JUDILIBRE + la consultation de l'arrêt ; 4 étranglait la récupération.
+TOOL_CALLS_MAX = 8
 
 _piste_tokens: dict[str, tuple[str, float]] = {}  # client_id → (token, expiry)
 
@@ -945,6 +949,103 @@ def _legifrance_search(fond: str, mots_cles: str, credentials: dict) -> dict:
     return {"total": payload.get("totalResultNumber", len(resultats)), "resultats": resultats}
 
 
+def _lf_norm(s: str) -> str:
+    """Comparaison de noms de code insensible à la casse/aux accents."""
+    s = unicodedata.normalize("NFD", str(s or "")).encode("ascii", "ignore").decode().lower()
+    return re.sub(r"[^a-z0-9]+", " ", s).strip()
+
+
+def _legifrance_getarticle(art_id: str, credentials: dict) -> dict:
+    payload = _legifrance_post("/consult/getArticle", {"id": str(art_id or "")}, credentials)
+    if "erreur" in payload:
+        return payload
+    article = payload.get("article") or {}
+    return {
+        "id": article.get("id", ""),
+        "numero": article.get("num", ""),
+        "etat": article.get("etat", ""),
+        "contexte": re.sub(r"<[^>]+>", "", str(article.get("fullSectionsTitre") or "")),
+        "texte": re.sub(r"<[^>]+>", "", str(article.get("texte") or ""))[:2500],
+    }
+
+
+def _legifrance_code_article(code: str, numero: str, credentials: dict) -> dict:
+    """Résout un article de CODE (ex. « L441-10 » du « Code de commerce ») vers sa
+    version EN VIGUEUR AUJOURD'HUI, et renvoie son texte intégral.
+
+    Approche (validée sur l'API PISTE, déterministe) : fond CODE_DATE + filtre
+    DATE_VERSION (aujourd'hui) + filtre NOM_CODE. Cette combinaison lève les deux
+    pièges d'une recherche naïve :
+      - un même numéro existe dans 7+ codes (L441-10 : commerce, CESEDA, éducation,
+        assurances…) → le filtre NOM_CODE (ignoré dans CODE_ETAT, mais respecté
+        dans CODE_DATE) restreint AU code demandé ;
+      - le libellé « etat » est trompeur (la version applicable de L441-10 C.com est
+        libellée ABROGE_DIFF car une réécriture différée existe) → DATE_VERSION
+        sélectionne la version réellement en vigueur ce jour, jamais d'après etat.
+    On revérifie ensuite, via getArticle, que la plage de dates couvre bien le jour
+    présent : on ne renvoie jamais une source périmée ou à effet différé.
+    """
+    numero = str(numero or "").strip().replace(" ", "")
+    code = str(code or "").strip()
+    if not numero:
+        return {"erreur": "numéro d'article manquant"}
+    if not code:
+        return {"erreur": "nom du code manquant"}
+    now_ms = int(time.time() * 1000)
+    payload = _legifrance_post("/search", {
+        "fond": "CODE_DATE",
+        "recherche": {
+            "champs": [{
+                "typeChamp": "NUM_ARTICLE",
+                "criteres": [{"typeRecherche": "EXACTE", "valeur": numero, "operateur": "ET"}],
+                "operateur": "ET",
+            }],
+            "filtres": [
+                {"facette": "DATE_VERSION", "singleDate": now_ms},
+                {"facette": "NOM_CODE", "valeurs": [code]},
+            ],
+            "pageNumber": 1,
+            "pageSize": 10,
+            "operateur": "ET",
+            "sort": "PERTINENCE",
+            "typePagination": "ARTICLE",
+        },
+    }, credentials)
+    if "erreur" in payload:
+        return payload
+    want = _lf_norm(code)
+    for r in (payload.get("results") or []):
+        code_name = ""
+        for t in (r.get("titles") or []):
+            if t.get("title"):
+                code_name = t["title"]
+                break
+        if want and want not in _lf_norm(code_name):
+            continue  # garde-fou : le filtre serveur a laissé passer un autre code
+        for section in (r.get("sections") or []):
+            for ext in (section.get("extracts") or []):
+                if str(ext.get("num")) != numero or not ext.get("id"):
+                    continue
+                article = (_legifrance_post("/consult/getArticle", {"id": ext["id"]}, credentials) or {}).get("article") or {}
+                if str(article.get("num")) != numero:
+                    continue
+                dd = article.get("dateDebut") or 0
+                df = article.get("dateFin")
+                if not (dd <= now_ms and (not df or df > now_ms)):
+                    continue  # sécurité : version passée ou à effet différé, écartée
+                return {
+                    "id": article.get("id", ""),
+                    "numero": article.get("num", ""),
+                    "etat": article.get("etat", ""),
+                    # Le libellé etat peut dire ABROGE_DIFF/MODIFIE alors que le texte
+                    # est bien celui applicable aujourd'hui : on l'affirme.
+                    "en_vigueur": True,
+                    "contexte": re.sub(r"<[^>]+>", "", str(article.get("fullSectionsTitre") or "")),
+                    "texte": re.sub(r"<[^>]+>", "", str(article.get("texte") or ""))[:2500],
+                }
+    return {"erreur": f"aucune version en vigueur trouvée pour l'article {numero} dans « {code} »"}
+
+
 def _tool_legifrance(action: str, params: dict, credentials: dict) -> dict:
     if action == "rechercher_loi":
         return _legifrance_search("LODA_DATE", str(params.get("mots_cles", "")), credentials)
@@ -953,17 +1054,14 @@ def _tool_legifrance(action: str, params: dict, credentials: dict) -> dict:
     if action == "rechercher_convention":
         return _legifrance_search("KALI", str(params.get("mots_cles", "")), credentials)
     if action == "consulter_article":
-        payload = _legifrance_post("/consult/getArticle", {"id": str(params.get("id", ""))}, credentials)
-        if "erreur" in payload:
-            return payload
-        article = payload.get("article") or {}
-        return {
-            "id": article.get("id", ""),
-            "numero": article.get("num", ""),
-            "etat": article.get("etat", ""),
-            "contexte": article.get("fullSectionsTitre", ""),
-            "texte": re.sub(r"<[^>]+>", "", str(article.get("texte") or ""))[:2500],
-        }
+        art_id = str(params.get("id", "")).strip()
+        code = str(params.get("code", "")).strip()
+        numero = str(params.get("numero") or params.get("article") or params.get("num") or "").strip()
+        # Article de code par nom + numéro : on résout la version en vigueur du jour.
+        # On ne bascule sur cette voie que si aucun id LEGIARTI explicite n'est fourni.
+        if code and numero and not art_id.upper().startswith("LEGIARTI"):
+            return _legifrance_code_article(code, numero, credentials)
+        return _legifrance_getarticle(art_id, credentials)
     return {"erreur": f"action legifrance inconnue : {action}"}
 
 
@@ -1486,10 +1584,11 @@ TOOL_APIS = {
         "executor": _tool_legifrance,
         "spec": (
             "### legifrance — textes officiels (Légifrance)\n"
-            "- legifrance.rechercher_loi {\"mots_cles\": \"...\"} : lois et décrets en vigueur.\n"
+            "- legifrance.consulter_article {\"code\": \"Code de commerce\", \"numero\": \"L441-10\"} : texte intégral de la version EN VIGUEUR AUJOURD'HUI d'un article de code — voie directe et fiable pour un article de code dont tu connais le numéro (Code civil, Code de commerce, CRPA, CJA…). Renvoie {numero, etat, contexte, texte}.\n"
+            "- legifrance.consulter_article {\"id\": \"LEGIARTI...\"} : variante par identifiant précis (id obtenu via une recherche).\n"
+            "- legifrance.rechercher_loi {\"mots_cles\": \"...\"} : lois, ordonnances et décrets (fond LODA) — PAS les articles de code (pour un article de code, utilise consulter_article avec code+numero).\n"
             "- legifrance.rechercher_jurisprudence {\"mots_cles\": \"...\"} : décisions de justice judiciaire.\n"
-            "- legifrance.rechercher_convention {\"mots_cles\": \"...\"} : conventions collectives et accords de branche (fond KALI).\n"
-            "- legifrance.consulter_article {\"id\": \"LEGIARTI...\"} : texte intégral d'un article (id obtenu via une recherche)."
+            "- legifrance.rechercher_convention {\"mots_cles\": \"...\"} : conventions collectives et accords de branche (fond KALI)."
         ),
     },
     "judilibre": {
