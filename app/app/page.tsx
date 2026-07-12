@@ -17,10 +17,8 @@ import { euros } from "@/lib/format";
 import { FIXED_INDEMNITY_CENTS } from "@/lib/cases/constants";
 import { createSampleCases, deleteSampleCases } from "@/lib/cases/actions";
 import { lastSendByCase } from "@/lib/cases/tracking-summary";
-import { LETTER_KINDS } from "@/lib/cases/letter-meta";
 import { DraftBanner } from "@/components/app/draft-banner";
 import { ComptaPanel } from "@/components/app/compta-panel";
-import { LetterTrackingCompact } from "@/components/app/letter-tracking";
 import { OPEN_STATUSES, PageHeader, type CaseRow } from "@/components/app/ui";
 import { DashDossierList } from "@/components/app/dash-dossiers";
 import { CountUp } from "@/components/app/count-up";
@@ -34,7 +32,7 @@ export default async function AppHomePage() {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [{ data: profile }, { data: cases }, { data: recentSends }] = await Promise.all([
+  const [{ data: profile }, { data: cases }] = await Promise.all([
     supabase.from("profiles").select("full_name").eq("id", user.id).maybeSingle(),
     supabase
       .from("cases")
@@ -44,14 +42,6 @@ export default async function AppHomePage() {
       .neq("status", "closed")
       .order("next_action_at", { ascending: true, nullsFirst: false })
       .returns<CaseRow[]>(),
-    // Vitrine du suivi : les 3 derniers envois réels, avec leur progression.
-    supabase
-      .from("letters")
-      .select("id, case_id, kind, channel, sent_at, tracking_status, tracking_status_at")
-      .eq("status", "sent")
-      .not("sent_at", "is", null)
-      .order("sent_at", { ascending: false })
-      .limit(3),
   ]);
   const firstName = profile?.full_name?.split(" ")[0] ?? "";
   const all = cases ?? [];
@@ -164,15 +154,22 @@ export default async function AppHomePage() {
       {all.length === 0 ? (
         <EmptyState />
       ) : (
-        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
-          <section
-            className="anim-load lg:col-span-2"
-            style={{ "--delay": "320ms" } as React.CSSProperties}
-          >
-            <div className="flex items-baseline justify-between gap-4 px-1">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                Vos dossiers
-              </h2>
+        <section
+          className="anim-load"
+          style={{ "--delay": "320ms" } as React.CSSProperties}
+        >
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 px-1">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+              Vos dossiers
+            </h2>
+            <div className="flex items-center gap-4">
+              <Link
+                href="/app/envois"
+                className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors duration-300 hover:text-foreground"
+              >
+                Tout le suivi
+                <ArrowRight className="size-3.5" />
+              </Link>
               <Link
                 href="/app/dossiers"
                 className="inline-flex items-center gap-1 text-sm font-medium text-brand-strong transition-colors duration-300 hover:text-brand"
@@ -181,64 +178,22 @@ export default async function AppHomePage() {
                 <ArrowRight className="size-3.5" />
               </Link>
             </div>
-            <div className="mt-3">
-              {listed.length === 0 ? (
-                <div className="rounded-lg border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-                  Aucun dossier en cours. Les nouveaux apparaîtront ici.
-                </div>
-              ) : (
-                <DashDossierList cases={listed} lastSends={lastSends} nowMs={nowMs} />
-              )}
-            </div>
-          </section>
-
-          <aside className="flex flex-col gap-6">
-            {(recentSends ?? []).length > 0 ? (
-              <div className="anim-load" style={{ "--delay": "420ms" } as React.CSSProperties}>
-                <h2 className="px-1 text-sm font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                  Envois suivis
-                </h2>
-                <div className="mt-3 rounded-lg border bg-card p-2">
-                  {(recentSends ?? []).map((l) => (
-                    <Link
-                      key={l.id}
-                      href={`/app/dossiers/${l.case_id}/courrier/${l.id}`}
-                      className="flex flex-col gap-1 rounded-md px-4 py-3 transition-colors duration-300 hover:bg-muted"
-                    >
-                      <span className="truncate text-sm font-medium">
-                        {LETTER_KINDS[l.kind]?.label ?? "Courrier"}
-                        <span className="font-normal text-muted-foreground">
-                          {" "}
-                          · {l.channel === "postal" ? "recommandé" : "email"}
-                        </span>
-                      </span>
-                      <LetterTrackingCompact
-                        tracking={{
-                          channel: l.channel,
-                          sentAt: l.sent_at,
-                          trackingStatus: l.tracking_status,
-                          trackingStatusAt: l.tracking_status_at,
-                        }}
-                      />
-                    </Link>
-                  ))}
-                  <Link
-                    href="/app/envois"
-                    className="flex items-center gap-1 rounded-md px-4 py-3 text-sm font-medium text-brand-strong transition-colors duration-300 hover:bg-muted"
-                  >
-                    Tout le suivi
-                    <ArrowRight className="size-3.5" />
-                  </Link>
-                </div>
+          </div>
+          <div className="mt-3">
+            {listed.length === 0 ? (
+              <div className="rounded-lg border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
+                Aucun dossier en cours. Les nouveaux apparaîtront ici.
               </div>
-            ) : null}
-            <p className="px-1 text-xs leading-relaxed text-muted-foreground/80">
-              Le « récupérable estimé » inclut l’indemnité forfaitaire légale de
-              40 € par facture impayée entre professionnels. Estimation
-              indicative, pas un conseil juridique.
-            </p>
-          </aside>
-        </div>
+            ) : (
+              <DashDossierList cases={listed} lastSends={lastSends} nowMs={nowMs} />
+            )}
+          </div>
+          <p className="mt-4 px-1 text-xs leading-relaxed text-muted-foreground/80">
+            Le « récupérable estimé » inclut l’indemnité forfaitaire légale de
+            40 € par facture impayée entre professionnels. Estimation indicative,
+            pas un conseil juridique.
+          </p>
+        </section>
       )}
     </div>
   );
